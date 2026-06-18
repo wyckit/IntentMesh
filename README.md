@@ -134,6 +134,17 @@ runtime.
 | `dataset/` | the agentic TLM bundle (source / compiled `.tlmz` / decompiled) |
 | `docs/` | [goal](docs/GOAL-intentmesh.md) · [roadmap](docs/ROADMAP.md) · [tasklist](docs/TASKLIST.md) · [architecture](docs/ARCHITECTURE.md) · [security model](docs/SECURITY_MODEL.md) · [seed mapping](docs/SEED-MAPPING.md) |
 
+## Where this is going
+
+IntentMesh's next phase positions it as the **Verified Intent Runtime for AI Agents** — the safety
+kernel every agent runs through before it touches a real tool. *ToolMesh / MCP gateways govern tool
+calls; IntentMesh governs intent before it becomes a tool call.* The product is a trinity: a
+**Runtime**, a **Control Room** (visual debugger), and **IntentBench** (a safety benchmark).
+
+- [docs/GOAL-verified-intent-runtime.md](docs/GOAL-verified-intent-runtime.md) — the north-star
+- [docs/ROADMAP-90DAY.md](docs/ROADMAP-90DAY.md) — the 90-day execution plan
+- [docs/TASKLIST-NEXT.md](docs/TASKLIST-NEXT.md) — the work breakdown (by expert owner)
+
 ## Core principles
 
 - Language proposes. Symbols constrain. Policies authorize. Tools execute. Validators verify. Audits explain.
