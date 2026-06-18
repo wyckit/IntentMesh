@@ -72,6 +72,26 @@ The prototype runs entirely on fake, sandboxed, in-memory data. It does **not** 
 IntentMesh demonstrates an *architecture*. It does not claim to solve all agent safety; it makes
 the authority boundary explicit, inspectable, and verifiable for the threats above.
 
+## Production hardening (post-v1.4)
+
+A hardening pass closed the gap between the claims above and what the code enforces, and added an
+adversarial suite (`IntentBench-Red`, in `tests/IntentMesh.Tests/IntentBenchRedTests.cs`) that
+attacks the kernel itself — every case below is covered by a red test.
+
+| Claim previously overstated | What now backs it |
+|---|---|
+| "Tamper-evident audit" | The HMAC key is sourced from the environment via an injectable `IAuditKeyProvider` (`INTENTMESH_AUDIT_KEY`, ≥128-bit), not hardcoded; the signed audit records the `KeyId`, the demo fallback is labelled `demo-v1-INSECURE`, and a demo-key forgery does **not** verify under a production key. |
+| "Defense in depth over the FS sandbox" | The path-safety check resolves symlinks/junctions **including a symlinked parent directory**, denies UNC/device-namespace prefixes, and inspects **every** path-bearing argument (incl. the `read_multiple_files` `paths` array), not a fixed key set. |
+| "Fail-closed" | The OpenAPI importer **rejects** remote/unresolvable `$ref` (no silent under-scoping); `MiniYaml` enforces depth/size/line/tab guards that throw catchable errors (no `StackOverflow`); a mutating operation with no recognized keywords rounds **up** to confirmation, never silently to `none`. |
+| Untrusted-input robustness | The HTTP/SSE transport has an SSRF guard (scheme allow-list; **resolves** the host and blocks loopback/RFC1918/CGNAT/link-local/ULA/cloud-metadata; https for non-loopback), plus a read deadline and byte/event caps so a hostile server can't hang or OOM the host. |
+| Provable consent | The operator's approval set is folded into the signed audit chain (a `consent` event), so who-approved-what is provable from the artifact and replaying with a different approval set changes the signature. A blanket-approval cap (`DefaultMaxApprovalsPerRun`) rejects "approve everything" fail-closed. |
+
+**Known limitations (honest):** the path check is a time-of-check gate — the authoritative
+enforcement remains the MCP server's own sandbox (TOCTOU between gate and `open()` is possible);
+Windows 8.3 short-name aliases are not long-name-expanded; and the SSRF guard resolves DNS once at
+connect time (a rebind after resolution is not re-checked). The runtime is stateless across runs but
+a single `Workspace` must not be shared across concurrent runs — one workspace per run.
+
 ## Security goals upheld
 
 - **Make intent visible** before any action — the Intent Mesh is inspectable.

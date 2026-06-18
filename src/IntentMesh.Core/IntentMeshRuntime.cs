@@ -8,9 +8,19 @@ namespace IntentMesh.Core;
 ///
 /// Authority moves downstream, away from language. Nodes a tool proposes from untrusted content
 /// are ingested as ZERO-TRUST and re-run through the SAME gate — which blocks them.
+///
+/// <para><b>Threading contract:</b> the runtime itself is stateless across runs (the gate, verifier,
+/// and tool host hold no per-run state; <see cref="AuditSigner"/> is stateless). All per-run state
+/// lives in the <see cref="Workspace"/> and the local graph/audit. A single <see cref="Workspace"/>
+/// must NOT be shared across concurrent <see cref="Run(string, Workspace)"/> calls — give each run
+/// its own workspace (e.g. one per web request). Distinct workspaces run concurrently safely.</para>
 /// </summary>
 public sealed class IntentMeshRuntime
 {
+    /// <summary>Default per-run blanket-approval cap. More approvals than this in a single run is
+    /// treated as a blanket "approve everything" and rejected fail-closed.</summary>
+    public const int DefaultMaxApprovalsPerRun = 32;
+
     private readonly SymbolicBundle _bundle;
     private readonly IIntentProposer _proposer;
     private readonly PolicyGate _gate;
@@ -18,26 +28,43 @@ public sealed class IntentMeshRuntime
     private readonly PostconditionVerifier _verifier = new();
     private readonly SkillProposer _skills;
     private readonly IReadOnlySet<string> _granted;
+    private readonly int _maxApprovalsPerRun;
 
     public SymbolicBundle Bundle => _bundle;
+
+    /// <summary>The capabilities this runtime is granted (capability scoping). Exposed so a caller
+    /// that swaps the proposer can preserve the same grants rather than silently widening them.</summary>
+    public IReadOnlySet<string> GrantedCapabilities => _granted;
 
     /// <param name="proposer">The proposal layer (default: the rule-based IntentResolver). Swap in
     /// an LLM proposer here — nothing downstream changes.</param>
     /// <param name="grantedCapabilities">Capabilities the runtime is granted (default: all in the
     /// bundle). A node whose tool requires an ungranted capability is blocked (capability scoping).</param>
-    public IntentMeshRuntime(SymbolicBundle bundle, IIntentProposer? proposer = null, IReadOnlySet<string>? grantedCapabilities = null)
+    /// <param name="maxApprovalsPerRun">Blanket-approval guard: if a single run is handed more
+    /// approvals than this, they are all rejected (fail-closed) and recorded in the audit, so an
+    /// "approve all pending" UI cannot rubber-stamp an unbounded batch of side effects.</param>
+    public IntentMeshRuntime(SymbolicBundle bundle, IIntentProposer? proposer = null, IReadOnlySet<string>? grantedCapabilities = null,
+        int maxApprovalsPerRun = DefaultMaxApprovalsPerRun)
     {
         _bundle = bundle;
         _proposer = proposer ?? new IntentResolver(bundle);
         _gate = new PolicyGate(bundle);
         _skills = new SkillProposer(bundle.Skills);
         _granted = grantedCapabilities ?? bundle.AllCapabilities;
+        _maxApprovalsPerRun = maxApprovalsPerRun;
     }
 
     public static IntentMeshRuntime Load(string? compiledDir = null)
         => new(SymbolicBundle.Load(compiledDir ?? DatasetLocator.FindCompiledDir()));
 
     public RunResult Run(string prompt, Workspace ws) => Run(prompt, ws, new HashSet<string>());
+
+    /// <summary>Run an externally-supplied one-shot proposer through this runtime's pipeline while
+    /// PRESERVING this runtime's capability grants and approval cap. Used by the McpProxy so a proxy
+    /// built on a capability-restricted runtime gates MCP calls under those same restrictions instead
+    /// of defaulting back to all-capabilities-granted.</summary>
+    public RunResult RunWith(IIntentProposer proposer, string prompt, Workspace ws, IReadOnlySet<string> approvals)
+        => new IntentMeshRuntime(_bundle, proposer, _granted, _maxApprovalsPerRun).Run(prompt, ws, approvals);
 
     /// <param name="approvals">Node ids the user has explicitly approved. An approval only ever
     /// applies to a full-authority node whose decision is Confirm — it can NEVER turn a Block into
@@ -65,6 +92,23 @@ public sealed class IntentMeshRuntime
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var ctx = new PolicyContext(ws, userRecipients, _granted, _bundle.Capabilities);
 
+        // Consent is part of the signed record: fold the operator's approvals into the audit chain so
+        // who-approved-what is provable from the artifact alone and replaying with a different
+        // approval set produces a different signature. Blanket-approval guard: too many approvals in
+        // one run is rejected fail-closed.
+        var effectiveApprovals = approvals;
+        if (approvals.Count > _maxApprovalsPerRun)
+        {
+            audit.Add("-", "consent",
+                $"BLANKET APPROVAL REJECTED: {approvals.Count} approvals exceed the per-run cap of {_maxApprovalsPerRun}; run treated as unapproved (fail-closed).");
+            effectiveApprovals = new HashSet<string>();
+        }
+        else if (approvals.Count > 0)
+        {
+            audit.Add("-", "consent",
+                $"operator approved node(s): {string.Join(", ", approvals.OrderBy(a => a, StringComparer.Ordinal))}");
+        }
+
         // 2-4. Process the mesh; dynamically-proposed zero-trust nodes join the same pipeline.
         int counter = resolved.Nodes.Count;
         var queue = new Queue<IntentNode>(graph.Nodes);
@@ -90,7 +134,22 @@ public sealed class IntentMeshRuntime
             // confirmation. A Block never reaches here, so injected/zero-trust nodes can't be approved.
             bool approved = decision.Decision == Decision.Confirm
                             && node.Authority == Authority.Full
-                            && approvals.Contains(node.Id);
+                            && effectiveApprovals.Contains(node.Id);
+
+            // Transitive-allow guard: a node proposed dynamically by an adapter (ParentId set) must
+            // never auto-execute a side effect on a bare Allow — emergent side-effecting intent is
+            // always staged for human-in-loop, even if the gate would otherwise allow it. (Zero-trust
+            // children are already blocked upstream; this also covers any future trusted proposer.)
+            bool emergentSideEffect = node.ParentId is not null
+                && decision.Decision == Decision.Allow
+                && _bundle.Contracts.TryGetValue(node.Type, out var ec) && ec.SideEffect != "none";
+            if (emergentSideEffect)
+            {
+                node.Status = NodeStatus.NeedsConfirmation;
+                audit.Add(node.Id, "policy",
+                    "emergent side-effecting node staged for human approval (transitive-allow guard) — not auto-executed.");
+                continue;
+            }
 
             node.Status = decision.RequiresConfirmation && !approved ? NodeStatus.NeedsConfirmation : NodeStatus.Allowed;
 

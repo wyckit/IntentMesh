@@ -9,7 +9,7 @@ public sealed record IntentGraphArtifact(string SchemaVersion, string Prompt, IR
 public sealed record PolicyDecisionsArtifact(string SchemaVersion, IReadOnlyList<PolicyView> Decisions);
 public sealed record ExecutionTraceArtifact(string SchemaVersion, IReadOnlyList<ExecView> Executions);
 public sealed record VerificationReportArtifact(string SchemaVersion, bool AllPass, IReadOnlyList<VerifyView> Results);
-public sealed record SignedAuditArtifact(string SchemaVersion, IReadOnlyList<AuditView> Events, string ChainHash, string Signature);
+public sealed record SignedAuditArtifact(string SchemaVersion, IReadOnlyList<AuditView> Events, string ChainHash, string Signature, string KeyId = AuditSigner.DemoKeyId);
 
 /// <summary>
 /// A complete, signed trace bundle for one run: the prompt, the approvals that produced it, the
@@ -43,7 +43,7 @@ public static class TraceBundleBuilder
         var et = new ExecutionTraceArtifact(SchemaVersion, r.Execution);
         var vr = new VerificationReportArtifact(SchemaVersion, r.Verification.All(v => v.Pass), r.Verification);
         var signed = AuditSigner.Sign(r, key);
-        var sa = new SignedAuditArtifact(SchemaVersion, r.Audit, signed.ChainHash, signed.Signature);
+        var sa = new SignedAuditArtifact(SchemaVersion, r.Audit, signed.ChainHash, signed.Signature, signed.KeyId);
 
         // The bundle signature covers the canonical JSON of all five artifacts.
         var canonical = string.Join("\n",
