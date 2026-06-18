@@ -437,14 +437,15 @@ public sealed class IntegrationTests
     }
 
     /// <summary>
-    /// With approval, Execute() runs the stub — records the send in the sandboxed
-    /// workspace but explicitly does NOT make a real network call. The stub is a
-    /// genuine no-op from a network perspective.
+    /// With approval, Execute() calls the real IEmailTransport. With a NullEmailTransport (the safe
+    /// default) it records the send without network I/O — but the transport is genuinely invoked,
+    /// so a configured SmtpEmailTransport would transmit for real.
     /// </summary>
     [Fact]
-    public void GmailSendAdapter_stub_runs_noop_when_approved()
+    public void GmailSendAdapter_sends_via_the_transport_when_approved()
     {
-        var adapter = OAuthAdapterWiringExample.CreateAdapter();
+        var transport = new NullEmailTransport();
+        var adapter = OAuthAdapterWiringExample.CreateAdapter(transport);
         var ws = Workspace.CreateDemo();
 
         var node = new IntentNode
@@ -452,7 +453,7 @@ public sealed class IntegrationTests
             Id = "n1",
             Type = Kinds.SendEmail,
             Label = "Send email (test)",
-            Action = new SendEmailAction("mcp-draft", "sarah@company.com", Array.Empty<string>()),
+            Action = new SendEmailAction("Meeting summary", "sarah@company.com", Array.Empty<string>()),
             TrustSource = TrustSource.User,
             Status = NodeStatus.Resolved,
         };
@@ -465,33 +466,48 @@ public sealed class IntegrationTests
             TrustSource: "User",
             Sensitive: false, ExternalSideEffect: true, Destructive: false);
 
-        // approved = true → stub runs (records in ws.SentEmails) but no real I/O.
         var exec = adapter.Execute(node, decision, ws, approved: true);
 
         Assert.False(exec.Halted, "Adapter should not halt when approved.");
-        Assert.False(exec.Ran == false, "Adapter should report that it ran.");
-
-        // The stub records in the sandboxed workspace (same pattern as EmailAdapter).
+        Assert.True(exec.Ran);
         Assert.Contains("sarah@company.com", ws.SentEmails);
-
-        // The result message must clearly indicate this is a stub / prototype.
-        Assert.Contains("stub", exec.Summary, StringComparison.OrdinalIgnoreCase);
-
-        // The effects explicitly state "0 real messages transmitted".
-        Assert.Contains("0 real messages transmitted",
-            string.Join(" ", exec.Effects), StringComparison.OrdinalIgnoreCase);
+        // The transport was actually invoked — a real SMTP transport would have transmitted here.
+        Assert.Contains(transport.Sent, s => s.To == "sarah@company.com");
     }
 
     /// <summary>
-    /// AcquireTokenAsync throws NotImplementedException — the OAuth token flow
-    /// stub is correctly marked and does not attempt any real network I/O.
+    /// The SMTP transport falls back to a no-network NullEmailTransport when SMTP_HOST is unset,
+    /// and constructs a real SMTP transport when configured.
     /// </summary>
     [Fact]
-    public void GmailSendAdapter_AcquireTokenAsync_is_stubbed()
+    public void SmtpEmailTransport_falls_back_to_null_when_unconfigured()
     {
-        var ex = Assert.Throws<NotImplementedException>(() =>
-            GmailSendAdapter.AcquireTokenAsync().GetAwaiter().GetResult());
-        Assert.Contains("not implemented", ex.Message, StringComparison.OrdinalIgnoreCase);
+        var prev = Environment.GetEnvironmentVariable("SMTP_HOST");
+        Environment.SetEnvironmentVariable("SMTP_HOST", null);
+        try { Assert.IsType<NullEmailTransport>(SmtpEmailTransport.FromEnvironment()); }
+        finally { Environment.SetEnvironmentVariable("SMTP_HOST", prev); }
+
+        var real = new SmtpEmailTransport("smtp.example.com", 587, "from@example.com");
+        Assert.Contains("smtp.example.com", real.Describe());
+    }
+
+    /// <summary>
+    /// The Gmail *API* OAuth path requires configuration: without GMAIL_ACCESS_TOKEN it reports a
+    /// clear config error (SMTP needs no OAuth and works today; the interactive OAuth flow needs the
+    /// user's Google credentials).
+    /// </summary>
+    [Fact]
+    public void GmailSendAdapter_AcquireTokenAsync_requires_configuration()
+    {
+        var prev = Environment.GetEnvironmentVariable("GMAIL_ACCESS_TOKEN");
+        Environment.SetEnvironmentVariable("GMAIL_ACCESS_TOKEN", null);
+        try
+        {
+            var ex = Assert.Throws<InvalidOperationException>(() =>
+                GmailSendAdapter.AcquireTokenAsync().GetAwaiter().GetResult());
+            Assert.Contains("OAuth", ex.Message, StringComparison.OrdinalIgnoreCase);
+        }
+        finally { Environment.SetEnvironmentVariable("GMAIL_ACCESS_TOKEN", prev); }
     }
 
     /// <summary>

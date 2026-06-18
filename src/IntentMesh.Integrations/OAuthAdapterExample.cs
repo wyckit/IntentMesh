@@ -1,226 +1,153 @@
+using System.Net;
+using System.Net.Mail;
 using IntentMesh.Core;
 
 namespace IntentMesh.Integrations;
 
 // ──────────────────────────────────────────────────────────────────────────────
-// OAuthAdapterExample — a CLEAN EXAMPLE of how a real OAuth-backed adapter
-//                       plugs into the IntentMesh IToolAdapter seam.
+// Real email adapter — a working adapter behind the IntentMesh IToolAdapter seam.
 //
-// WHAT IS REAL:
-//   • GmailSendAdapter implements IToolAdapter — the same interface every
-//     built-in adapter (EmailAdapter, CalendarAdapter, etc.) uses.
-//   • Handles() declares exactly the action kinds this adapter covers.
-//   • RequiredCapability declares the bundle capability the PolicyGate checks
-//     before reaching Execute() (pol-capability-not-granted blocks if "email"
-//     is not in the granted set).
-//   • The adapter honours the `approved` parameter: if the node was not
-//     explicitly approved it halts without transmitting.
-//   • The structural seam (OAuth token acquisition → API call → result) is
-//     fully present and documented; only the network call is stubbed.
+// NOW REAL (converted from the Phase 5 prototype stub):
+//   • IEmailTransport + SmtpEmailTransport: a real SMTP sender (System.Net.Mail,
+//     no third-party dependency). When SMTP_* env vars are configured it transmits
+//     for real — including Gmail's SMTP with an app password. Unconfigured, it
+//     falls back to a NullEmailTransport that records but sends nothing.
+//   • GmailSendAdapter takes an IEmailTransport and, on approval, calls it for real.
 //
-// WHAT IS STUBBED (clearly marked below):
-//   • Real OAuth token flow — AcquireTokenAsync throws NotImplementedException.
-//   • Real Gmail API call — the send method is a no-op with a clear comment.
-//   • Both stubs are inlined next to the code that would use them so the reader
-//     sees exactly where the real implementation goes.
+// STILL NEEDS YOUR CREDENTIALS (cannot be done without them):
+//   • The Gmail *API + OAuth* path (AcquireTokenAsync) needs a Google Cloud client
+//     registration and consent. SMTP (incl. Gmail SMTP + app password) needs no
+//     OAuth and works today. AcquireTokenAsync reads a provided GMAIL_ACCESS_TOKEN;
+//     the full browser/device OAuth flow is the only part that requires your setup.
 //
-// HOW THIS BECOMES PRODUCTION:
-//   1. Implement AcquireTokenAsync using MSAL or Google.Apis.Auth:
-//      - Register the app in Google Cloud Console.
-//      - Exchange an authorization code for access + refresh tokens.
-//      - Cache tokens securely; refresh on expiry.
-//   2. Replace the no-op send stub with a real Gmail API call:
-//      - Build a GmailService with the acquired credential.
-//      - Create a MimeMessage, base64-encode it, and call
-//        service.Users.Messages.Send(msg, "me").ExecuteAsync().
-//   3. Register GmailSendAdapter in IntentMeshRuntime by passing it via a
-//      custom ToolHost (or extending ToolHost to accept additional adapters).
+// The IntentMesh pipeline still governs everything: the PolicyGate blocks this
+// adapter unless the 'email' capability is granted (pol-capability-not-granted),
+// and the adapter transmits nothing unless the node was explicitly approved.
 // ──────────────────────────────────────────────────────────────────────────────
 
+/// <summary>A pluggable email transport. The adapter calls this only after IntentMesh approves.</summary>
+public interface IEmailTransport
+{
+    /// <summary>Returns true if a message was actually transmitted over the network.</summary>
+    Task<bool> SendAsync(string to, string subject, string body);
+    string Describe();
+}
+
+/// <summary>Records sends in-process; performs no network I/O. The default and the test/sandbox transport.</summary>
+public sealed class NullEmailTransport : IEmailTransport
+{
+    public List<(string To, string Subject, string Body)> Sent { get; } = new();
+    public Task<bool> SendAsync(string to, string subject, string body) { Sent.Add((to, subject, body)); return Task.FromResult(false); }
+    public string Describe() => "null transport (records only; no network)";
+}
+
 /// <summary>
-/// The result of the OAuth token acquisition step.
-///
-/// <para>
-/// In production this record is populated by <see cref="GmailSendAdapter.AcquireTokenAsync"/>.
-/// In this prototype it is never constructed because the token flow is stubbed.
-/// </para>
+/// A REAL SMTP transport using the built-in System.Net.Mail client (no dependency). It transmits
+/// for real when constructed with a host — including Gmail's SMTP (smtp.gmail.com:587) using an
+/// app password, which needs no OAuth. Build one from env with <see cref="FromEnvironment"/>.
 /// </summary>
+public sealed class SmtpEmailTransport : IEmailTransport
+{
+    private readonly string _host, _from;
+    private readonly int _port;
+    private readonly string? _user, _pass;
+    private readonly bool _ssl;
+
+    public SmtpEmailTransport(string host, int port, string from, string? user = null, string? pass = null, bool ssl = true)
+    { _host = host; _port = port; _from = from; _user = user; _pass = pass; _ssl = ssl; }
+
+    public async Task<bool> SendAsync(string to, string subject, string body)
+    {
+        using var client = new SmtpClient(_host, _port) { EnableSsl = _ssl };
+        if (_user is not null) client.Credentials = new NetworkCredential(_user, _pass);
+        using var msg = new MailMessage(_from, to, subject, body);
+        await client.SendMailAsync(msg);
+        return true;
+    }
+
+    public string Describe() => $"SMTP {_host}:{_port}";
+
+    /// <summary>Build a real SMTP transport from env (SMTP_HOST, SMTP_PORT, SMTP_FROM, SMTP_USER,
+    /// SMTP_PASS, SMTP_SSL). Returns a <see cref="NullEmailTransport"/> when SMTP_HOST is unset.</summary>
+    public static IEmailTransport FromEnvironment()
+    {
+        var host = Environment.GetEnvironmentVariable("SMTP_HOST");
+        if (string.IsNullOrWhiteSpace(host)) return new NullEmailTransport();
+        int port = int.TryParse(Environment.GetEnvironmentVariable("SMTP_PORT"), out var p) ? p : 587;
+        var user = Environment.GetEnvironmentVariable("SMTP_USER");
+        var from = Environment.GetEnvironmentVariable("SMTP_FROM") ?? user ?? "noreply@intentmesh.local";
+        var pass = Environment.GetEnvironmentVariable("SMTP_PASS");
+        bool ssl = !string.Equals(Environment.GetEnvironmentVariable("SMTP_SSL"), "false", StringComparison.OrdinalIgnoreCase);
+        return new SmtpEmailTransport(host, port, from, user, pass, ssl);
+    }
+}
+
+/// <summary>The token returned by the (configured) Gmail OAuth path.</summary>
 public sealed record OAuthToken(string AccessToken, DateTimeOffset ExpiresAt);
 
 /// <summary>
-/// A clean example of how a real OAuth-backed adapter plugs into the IntentMesh
-/// <see cref="IToolAdapter"/> seam.
-///
-/// <para>
-/// This adapter handles <see cref="Kinds.SendEmail"/> actions by (a) checking
-/// the <c>email</c> capability grant, (b) requiring explicit user approval, and
-/// (c) — in production — acquiring an OAuth token and calling the Gmail API.
-/// </para>
-///
-/// <para>
-/// <strong>Security invariant preserved by the IntentMesh pipeline:</strong>
-/// <list type="bullet">
-///   <item>The PolicyGate blocks this adapter's actions when the <c>email</c>
-///         capability is not granted (<c>pol-capability-not-granted</c>).</item>
-///   <item>The adapter itself also checks <paramref name="approved"/> and
-///         transmits nothing unless the user explicitly approved the node.</item>
-///   <item>The stub send is a genuine no-op — no bytes leave the process.</item>
-/// </list>
-/// </para>
-///
-/// <para>
-/// <strong>What is stubbed:</strong> <see cref="AcquireTokenAsync"/> (OAuth
-/// token flow) and the Gmail API call inside <see cref="Execute"/> are both
-/// stubs. The stubs throw or no-op with clear comments; no real network I/O
-/// occurs.
-/// </para>
+/// A real email adapter on the IntentMesh <see cref="IToolAdapter"/> seam. It declares the
+/// <c>email</c> capability (the PolicyGate blocks it unless granted), requires explicit approval,
+/// and on approval transmits via its <see cref="IEmailTransport"/> — really sending when SMTP is
+/// configured. Named GmailSendAdapter because Gmail SMTP (app password) is the common real target.
 /// </summary>
 public sealed class GmailSendAdapter : IToolAdapter
 {
-    /// <summary>
-    /// The IntentMesh capability this adapter requires. The PolicyGate checks
-    /// this against the runtime's granted capability set before reaching
-    /// <see cref="Execute"/>. If <c>email</c> is not granted, the node is
-    /// blocked with <c>pol-capability-not-granted</c> — the adapter is never
-    /// invoked.
-    /// </summary>
+    /// <summary>The capability the PolicyGate checks before this adapter is reached.</summary>
     public const string RequiredCapability = "email";
 
-    /// <summary>
-    /// Declares that this adapter handles <see cref="Kinds.SendEmail"/> actions.
-    /// The ToolHost calls this to route a typed node to the right adapter.
-    /// </summary>
+    private readonly IEmailTransport _transport;
+    public GmailSendAdapter(IEmailTransport? transport = null) => _transport = transport ?? new NullEmailTransport();
+
     public bool Handles(string kind) => kind == Kinds.SendEmail;
 
-    /// <summary>
-    /// Executes a <see cref="SendEmailAction"/>, honoring the IntentMesh
-    /// approval model.
-    ///
-    /// <para>
-    /// <strong>Approval gate (real logic):</strong> if <paramref name="approved"/>
-    /// is <c>false</c> the adapter halts immediately — zero bytes are transmitted.
-    /// This mirrors the built-in <c>EmailAdapter.Send()</c> pattern.
-    /// </para>
-    ///
-    /// <para>
-    /// <strong>OAuth + Gmail send (STUBBED):</strong> the block that would
-    /// acquire a token and call the Gmail API is clearly marked as a stub.
-    /// </para>
-    /// </summary>
     public ExecutionResult Execute(IntentNode node, PolicyDecision decision, Workspace ws, bool approved)
     {
         if (node.Action is not SendEmailAction send)
             return ToolHost.Ok(node.Id, "GmailSendAdapter: no-op (unexpected action type)");
 
-        // ── Approval gate (REAL — do not remove) ─────────────────────────────
-        // A send_email node requires both (a) the 'email' capability in the
-        // granted set and (b) explicit user approval. The capability check is
-        // enforced upstream by the PolicyGate; the approval check is here.
+        // Approval gate (capability 'email' is enforced upstream by the PolicyGate).
         if (!approved)
-        {
-            return ToolHost.Halt(
-                node.Id,
-                $"GmailSendAdapter: send to {send.Recipient} requires explicit user approval — " +
-                "NOT transmitted. Approve the node to proceed.",
+            return ToolHost.Halt(node.Id,
+                $"send to {send.Recipient} requires explicit user approval — NOT transmitted.",
                 "0 messages transmitted");
-        }
 
-        // ── OAuth token acquisition (STUBBED) ─────────────────────────────────
-        // In production: call AcquireTokenAsync() here and pass the token to
-        // the Gmail API call below.
-        //
-        // OAuthToken token = await AcquireTokenAsync();   ← STUBBED (see below)
-        //
-        // We skip it in the prototype; no network call is made.
+        // REAL send via the configured transport.
+        bool transmitted;
+        try { transmitted = _transport.SendAsync(send.Recipient, send.DraftRef, string.Join(",", send.BodySourceRefs)).GetAwaiter().GetResult(); }
+        catch (Exception ex)
+        { return ToolHost.Halt(node.Id, $"transport error sending to {send.Recipient}: {ex.Message}", "0 messages transmitted"); }
 
-        // ── Gmail API send (STUBBED — genuine no-op) ──────────────────────────
-        // real OAuth-authenticated Gmail send goes here;
-        // gated by the 'email' capability grant + user approval.
-        //
-        // Production code (not executed in this prototype):
-        //
-        //   var credential = GoogleCredential.FromAccessToken(token.AccessToken);
-        //   var service = new GmailService(new BaseClientService.Initializer
-        //       { HttpClientInitializer = credential });
-        //   var mime = BuildMimeMessage(send.Recipient, send.DraftRef, send.BodySourceRefs);
-        //   await service.Users.Messages.Send(mime, "me").ExecuteAsync();
-        //
-        // This stub records the send in the sandboxed workspace (matching the
-        // built-in EmailAdapter pattern) so tests can assert the side-effect.
         ws.SentEmails.Add(send.Recipient);
-
-        return ToolHost.Ok(
-            node.Id,
-            $"GmailSendAdapter: [STUB] would send to {send.Recipient} via Gmail API " +
-            "(no-op in prototype; real OAuth-authenticated send is not implemented).",
-            "0 real messages transmitted — prototype stub only",
+        return ToolHost.Ok(node.Id,
+            transmitted
+                ? $"Sent to {send.Recipient} via {_transport.Describe()}."
+                : $"Recorded send to {send.Recipient} ({_transport.Describe()}). Set SMTP_* env to transmit for real.",
+            transmitted ? "1 message transmitted" : "0 messages transmitted (no SMTP configured)",
             $"recipient = {send.Recipient}");
     }
 
-    // ── STUB — OAuth token flow (NOT IMPLEMENTED) ─────────────────────────────
     /// <summary>
-    /// [STUB — NOT IMPLEMENTED] Acquires a valid OAuth 2.0 access token for the
-    /// Gmail API scope (<c>https://mail.google.com/</c>).
-    ///
-    /// <para>
-    /// <strong>Why this is stubbed:</strong> real OAuth requires a Google Cloud
-    /// Console app registration, a client ID/secret, a browser redirect (or
-    /// device-flow), and a token store — all out of scope for this in-process
-    /// prototype.
-    /// </para>
-    ///
-    /// <para>
-    /// <strong>Production path (Google / MSAL):</strong>
-    /// <list type="number">
-    ///   <item>Register the app in Google Cloud Console; download
-    ///         <c>client_secrets.json</c>.</item>
-    ///   <item>Use <c>Google.Apis.Auth</c>:
-    ///         <c>GoogleWebAuthorizationBroker.AuthorizeAsync(...)</c> for the
-    ///         first login (stores refresh token in a <c>FileDataStore</c>).</item>
-    ///   <item>On subsequent calls, the library silently refreshes the token from
-    ///         the store — no user interaction needed.</item>
-    ///   <item>Return an <see cref="OAuthToken"/> wrapping the access token and
-    ///         its expiry so the caller can pass it to the Gmail API.</item>
-    /// </list>
-    /// </para>
+    /// The Gmail *API* OAuth path. It returns a token from <c>GMAIL_ACCESS_TOKEN</c> when present;
+    /// the full browser/device OAuth flow (acquiring that token interactively) requires your Google
+    /// Cloud client credentials and is the only piece that needs your setup. For most uses, SMTP
+    /// (incl. Gmail SMTP + app password) needs no OAuth at all.
     /// </summary>
-    /// <exception cref="NotImplementedException">
-    /// Always — real OAuth token flow is not implemented in this prototype.
-    /// </exception>
     public static Task<OAuthToken> AcquireTokenAsync()
     {
-        // TODO (Phase 5 → production): implement with Google.Apis.Auth or MSAL.
-        // Store the refresh token securely (user secrets / key vault).
-        // See docs/INTEGRATIONS.md §OAuthAdapterExample.
-        throw new NotImplementedException(
-            "Real OAuth 2.0 token acquisition is not implemented in this prototype. " +
-            "Implement with Google.Apis.Auth (or MSAL) and a secure token store. " +
-            "See docs/INTEGRATIONS.md §OAuthAdapterExample.");
+        var token = Environment.GetEnvironmentVariable("GMAIL_ACCESS_TOKEN");
+        if (string.IsNullOrWhiteSpace(token))
+            throw new InvalidOperationException(
+                "No Gmail OAuth token configured. Set GMAIL_ACCESS_TOKEN, or use SMTP (SMTP_HOST/... — " +
+                "Gmail SMTP works with an app password and needs no OAuth). The interactive OAuth flow " +
+                "requires your Google Cloud client credentials. See docs/INTEGRATIONS.md.");
+        return Task.FromResult(new OAuthToken(token, DateTimeOffset.UtcNow.AddHours(1)));
     }
 }
 
-/// <summary>
-/// A custom <see cref="ToolHost"/>-style registry that demonstrates how to
-/// inject a real OAuth adapter alongside the built-in adapters.
-///
-/// <para>
-/// In production the IntentMeshRuntime would be extended (or ToolHost made
-/// injectable) to accept a list of <see cref="IToolAdapter"/> instances. This
-/// shows the intended wiring without modifying Core.
-/// </para>
-/// </summary>
+/// <summary>Wiring helpers: create the adapter with the default (Null) transport or a real one.</summary>
 public static class OAuthAdapterWiringExample
 {
-    /// <summary>
-    /// Illustrates the intended production wiring: create a runtime that uses
-    /// the <see cref="GmailSendAdapter"/> for <c>act-send-email</c> nodes.
-    ///
-    /// <para>
-    /// <strong>Current limitation:</strong> <c>ToolHost</c> in Core uses a
-    /// hard-coded adapter list. In a production SDK the list would be
-    /// injectable. This method documents the intent and is used by tests to
-    /// verify the adapter's <c>Handles</c> contract.
-    /// </para>
-    /// </summary>
     public static GmailSendAdapter CreateAdapter() => new();
+    public static GmailSendAdapter CreateAdapter(IEmailTransport transport) => new(transport);
 }

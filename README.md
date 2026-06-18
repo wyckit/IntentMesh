@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/wyckit/IntentMesh/actions/workflows/ci.yml/badge.svg)](https://github.com/wyckit/IntentMesh/actions/workflows/ci.yml)
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4.svg)](https://dotnet.microsoft.com/)
-[![tests](https://img.shields.io/badge/tests-60%2F60-34d399.svg)](#status)
+[![tests](https://img.shields.io/badge/tests-79%2F79-34d399.svg)](#status)
 [![IntentBench](https://img.shields.io/badge/IntentBench-25%2F25-34d399.svg)](docs/WHITEPAPER.md)
 
 Before an AI agent sends an email, edits code, queries data, books a meeting, deletes a file, or

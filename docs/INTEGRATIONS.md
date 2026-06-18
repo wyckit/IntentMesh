@@ -1,8 +1,19 @@
-# IntentMesh Phase 5 — Integration Prototypes
+# IntentMesh — Integrations
 
-This document describes the three integration prototypes in `src/IntentMesh.Integrations`.
-Each prototype defines a real architectural seam and explicitly lists what is stubbed and how
-it becomes production.
+This document describes the three integrations in `src/IntentMesh.Integrations`.
+
+> **Status update — the prototype stubs have been converted to real implementations.** The MCP
+> transport, OpenAPI parsing + bundle registration, and the email transport are now genuinely
+> functional (dependency-free). What remains "needs your setup" is narrow and listed below.
+
+| Integration | What's now REAL | What still needs your setup |
+|---|---|---|
+| **McpProxy** | Real MCP **stdio** transport (JSON-RPC 2.0: initialize / tools/list / tools/call) via `McpStdioClient`, against a real server (`mcp-echo-server.js`). `GateAndForward` forwards only after IntentMesh approves. | SSE/HTTP transport (a sibling client); per-server tool-mapping coverage. |
+| **OpenApiImporter** | Real OpenAPI 3.x JSON parsing (`ParseFromOpenApi`) and real registration (`RegisterToCompiledDir` compiles an `im-imported.tlmz` the runtime loads → the kind becomes enforced). | YAML + `$ref` resolution; semantic capability inference. |
+| **Email adapter** | Real **SMTP** transport (`SmtpEmailTransport`, `System.Net.Mail`) — transmits when `SMTP_*` env is set (incl. Gmail SMTP + app password). Gated by the `email` capability + approval. | Gmail **API + OAuth** browser/device flow (`AcquireTokenAsync`) needs your Google Cloud client credentials; SMTP needs none. |
+
+The rest of this document is the original prototype write-up; the seam descriptions still hold, but
+the "stubbed" notes are superseded by the table above.
 
 ---
 
