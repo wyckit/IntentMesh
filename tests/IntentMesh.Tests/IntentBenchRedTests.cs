@@ -220,6 +220,54 @@ public sealed class IntentBenchRedTests
         Assert.NotEqual("Verified", gated.Status);
     }
 
+    // ═══ ATTACK 7 — PR-review regressions ════════════════════════════════════════
+    // Capability scoping must survive the proxy's proposer swap (it previously reset to all-granted).
+    [Fact]
+    public void Red_proxy_preserves_runtime_capability_restrictions()
+    {
+        var bundle = SymbolicBundle.Load(DatasetLocator.FindCompiledDir());
+        var withoutEmail = bundle.AllCapabilities
+            .Where(c => !c.Equals("email", StringComparison.OrdinalIgnoreCase)).ToHashSet();
+        var restricted = new IntentMeshRuntime(bundle, grantedCapabilities: withoutEmail);
+        var proxy = new McpProxy(restricted, Workspace.CreateDemo());
+
+        var res = proxy.Gate(new McpToolCall("send_email",
+            new Dictionary<string, string> { ["to"] = "sarah@company.com", ["subject"] = "hi" }));
+
+        Assert.False(res.Allowed);
+        var pol = res.RunResult.Policy.FirstOrDefault(p => p.NodeId == "n1");
+        Assert.NotNull(pol);
+        Assert.Equal("Block", pol!.Decision);                                   // not merely Confirm
+        Assert.Contains("pol-capability-not-granted", pol.TriggeredRules);      // restriction honored
+    }
+
+    // The audit chain must not be forgeable by shifting characters across field boundaries.
+    [Fact]
+    public void Red_audit_chain_encoding_has_no_field_boundary_collision()
+    {
+        var baseRun = Runtime().Run(Prompt, Workspace.CreateDemo());
+        // Under a plain {Seq}{Phase}{NodeId}{Message} concat these two collide ("1abc"); the
+        // length-prefixed encoding must give them different signatures. (AuditView is Seq,NodeId,Phase,Message.)
+        var a1 = baseRun with { Audit = new[] { new AuditView(1, "c", "ab", "") } };
+        var a2 = baseRun with { Audit = new[] { new AuditView(1, "bc", "a", "") } };
+        Assert.NotEqual(AuditSigner.Sign(a1).Signature, AuditSigner.Sign(a2).Signature);
+    }
+
+    // allOf/schema nesting past the depth bound must fail closed, not silently drop fields.
+    [Fact]
+    public void Red_allof_depth_overflow_fails_closed()
+    {
+        const string spec = """
+        {
+          "openapi": "3.0.0",
+          "paths": { "/x": { "post": { "operationId": "do_x",
+            "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/S" } } } } } } },
+          "components": { "schemas": { "S": { "allOf": [ { "$ref": "#/components/schemas/S" } ] } } }
+        }
+        """;
+        Assert.Throws<InvalidDataException>(() => OpenApiImporter.ParseFromOpenApi(spec));
+    }
+
     // ═══ ATTACK 6 — SSRF via the HTTP transport endpoint ═════════════════════════
     [Fact]
     public void Red_http_transport_blocks_cloud_metadata_and_insecure_nonloopback()

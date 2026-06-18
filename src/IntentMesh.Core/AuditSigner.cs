@@ -115,13 +115,26 @@ public static class AuditSigner
 
     private static string ChainHash(RunResult result)
     {
-        byte[] h = SHA256.HashData(Encoding.UTF8.GetBytes("intentmesh-audit-v1"));
+        byte[] h = SHA256.HashData(Encoding.UTF8.GetBytes("intentmesh-audit-v2"));
         foreach (var e in result.Audit)
         {
-            var record = $"{e.Seq}{e.Phase}{e.NodeId}{e.Message}";
-            h = SHA256.HashData(Concat(h, Encoding.UTF8.GetBytes(record)));
+            // Length-prefixed, unambiguous encoding: each field is written as <utf8-byte-length>:<bytes>
+            // so no two distinct (Seq, Phase, NodeId, Message) tuples can collide by shifting
+            // characters across field boundaries (a plain concatenation could).
+            var sb = new StringBuilder();
+            AppendField(sb, e.Seq.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            AppendField(sb, e.Phase);
+            AppendField(sb, e.NodeId);
+            AppendField(sb, e.Message);
+            h = SHA256.HashData(Concat(h, Encoding.UTF8.GetBytes(sb.ToString())));
         }
         return Convert.ToHexString(h).ToLowerInvariant();
+    }
+
+    private static void AppendField(StringBuilder sb, string? value)
+    {
+        var s = value ?? "";
+        sb.Append(Encoding.UTF8.GetByteCount(s)).Append(':').Append(s).Append('|');
     }
 
     private static byte[] Concat(byte[] a, byte[] b)

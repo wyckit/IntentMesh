@@ -175,9 +175,10 @@ public sealed class McpProxy
         };
 
         // 2. Run through the full IntentMesh pipeline using a one-node proposer (with any approvals).
+        //    RunWith preserves the caller's capability grants + approval cap — a proxy built on a
+        //    capability-restricted runtime must gate under those same restrictions, not widen them.
         var proposer = new McpOneNodeProposer(node);
-        var scopedRuntime = new IntentMeshRuntime(_runtime.Bundle, proposer);
-        var result = scopedRuntime.Run($"mcp:{call.Tool}", _workspace, approvals ?? new HashSet<string>());
+        var result = _runtime.RunWith(proposer, $"mcp:{call.Tool}", _workspace, approvals ?? new HashSet<string>());
 
         // 3. Decide from the node's final status: it forwards only if the node actually proceeded
         //    (Allowed/Executed/Verified). Blocked → never; NeedsConfirmation → not until approved.

@@ -360,7 +360,8 @@ public static class OpenApiImporter
 
     private static void CollectSchemaProps(JsonElement root, JsonElement schema, List<string> fields, int depth = 0)
     {
-        if (depth > 16) return;
+        if (depth > 16)
+            throw new InvalidDataException("OpenAPI schema allOf/nesting exceeds 16 levels — rejected (fail-closed, would otherwise drop fields and under-scope the contract).");
         schema = Resolve(root, schema, depth);
         if (schema.TryGetProperty("properties", out var props) && props.ValueKind == JsonValueKind.Object)
             foreach (var prop in props.EnumerateObject())

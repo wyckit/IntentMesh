@@ -32,6 +32,10 @@ public sealed class IntentMeshRuntime
 
     public SymbolicBundle Bundle => _bundle;
 
+    /// <summary>The capabilities this runtime is granted (capability scoping). Exposed so a caller
+    /// that swaps the proposer can preserve the same grants rather than silently widening them.</summary>
+    public IReadOnlySet<string> GrantedCapabilities => _granted;
+
     /// <param name="proposer">The proposal layer (default: the rule-based IntentResolver). Swap in
     /// an LLM proposer here — nothing downstream changes.</param>
     /// <param name="grantedCapabilities">Capabilities the runtime is granted (default: all in the
@@ -54,6 +58,13 @@ public sealed class IntentMeshRuntime
         => new(SymbolicBundle.Load(compiledDir ?? DatasetLocator.FindCompiledDir()));
 
     public RunResult Run(string prompt, Workspace ws) => Run(prompt, ws, new HashSet<string>());
+
+    /// <summary>Run an externally-supplied one-shot proposer through this runtime's pipeline while
+    /// PRESERVING this runtime's capability grants and approval cap. Used by the McpProxy so a proxy
+    /// built on a capability-restricted runtime gates MCP calls under those same restrictions instead
+    /// of defaulting back to all-capabilities-granted.</summary>
+    public RunResult RunWith(IIntentProposer proposer, string prompt, Workspace ws, IReadOnlySet<string> approvals)
+        => new IntentMeshRuntime(_bundle, proposer, _granted, _maxApprovalsPerRun).Run(prompt, ws, approvals);
 
     /// <param name="approvals">Node ids the user has explicitly approved. An approval only ever
     /// applies to a full-authority node whose decision is Confirm — it can NEVER turn a Block into

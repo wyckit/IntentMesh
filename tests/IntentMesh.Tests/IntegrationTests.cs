@@ -708,6 +708,24 @@ public sealed class IntegrationTests
     }
 
     /// <summary>
+    /// A hostile endpoint that streams a large error body cannot bloat/leak through the exception:
+    /// the error body is read through the SAME bounded reader and truncated. (Regression for the
+    /// uncapped error-body read flagged in PR review.)
+    /// </summary>
+    [Fact]
+    public void McpHttpClient_caps_and_truncates_a_hostile_error_body()
+    {
+        using var server = McpHttpTestServer.Start(useSse: false, errorOnCall: true);
+        if (server is null) return;
+        using var client = McpHttpClient.Connect(server.Url);
+
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => client.CallTool("read_calendar", new Dictionary<string, string>()));
+        Assert.Contains("MCP HTTP error 400", ex.Message);
+        Assert.True(ex.Message.Length < 600, $"error body should be truncated; was {ex.Message.Length} chars");
+    }
+
+    /// <summary>
     /// Transport-agnostic gating: a blocked send_email is NEVER forwarded over HTTP either — the gate
     /// stops it before any bytes reach the server (ServerResponse null), exactly as over stdio.
     /// </summary>
@@ -959,17 +977,19 @@ public sealed class IntegrationTests
     {
         private readonly HttpListener _listener;
         private readonly bool _useSse;
+        private readonly bool _errorOnCall;
         public string Url { get; }
 
-        private McpHttpTestServer(HttpListener listener, string url, bool useSse)
+        private McpHttpTestServer(HttpListener listener, string url, bool useSse, bool errorOnCall)
         {
             _listener = listener;
             Url = url;
             _useSse = useSse;
+            _errorOnCall = errorOnCall;
             _ = Task.Run(Loop);
         }
 
-        public static McpHttpTestServer? Start(bool useSse)
+        public static McpHttpTestServer? Start(bool useSse, bool errorOnCall = false)
         {
             int port = FreePort();
             var url = $"http://localhost:{port}/mcp/";
@@ -977,7 +997,7 @@ public sealed class IntegrationTests
             listener.Prefixes.Add(url);
             try { listener.Start(); }
             catch { return null; }   // environment forbids HttpListener — skip the test
-            return new McpHttpTestServer(listener, url, useSse);
+            return new McpHttpTestServer(listener, url, useSse, errorOnCall);
         }
 
         private static int FreePort()
@@ -1017,6 +1037,19 @@ public sealed class IntegrationTests
             }
 
             int id = idEl.GetInt32();
+
+            // Simulate a hostile endpoint that streams a large error body on tools/call.
+            if (_errorOnCall && method == "tools/call")
+            {
+                ctx.Response.StatusCode = 400;
+                ctx.Response.ContentType = "application/json";
+                var big = Encoding.UTF8.GetBytes(new string('x', 5000));
+                ctx.Response.ContentLength64 = big.Length;
+                ctx.Response.OutputStream.Write(big, 0, big.Length);
+                ctx.Response.OutputStream.Close();
+                return;
+            }
+
             object result = method switch
             {
                 "initialize" => new { protocolVersion = McpHttpClient.ProtocolVersion, serverInfo = new { name = "test", version = "1.0" }, capabilities = new { } },

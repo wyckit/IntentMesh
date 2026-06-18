@@ -173,10 +173,11 @@ public sealed class McpHttpClient : IMcpClient
         if (!resp.IsSuccessStatusCode)
         {
             int status = (int)resp.StatusCode;                 // capture BEFORE dispose
+            // Read the error body through the SAME bounded reader (size cap + deadline) so a hostile
+            // endpoint can't stream a huge / never-ending error body to bypass the success-path caps.
             string body = "";
-            try { body = resp.Content.ReadAsStringAsync().GetAwaiter().GetResult(); } catch { /* body optional */ }
+            try { body = ReadCapped(resp); } catch { body = "(error body unavailable or exceeded cap)"; }
             resp.Dispose();
-            // Truncate the server-controlled body so a hostile error page can't bloat / leak via logs.
             throw new InvalidOperationException($"MCP HTTP error {status}: {Truncate(body, 500)}");
         }
         return resp;
