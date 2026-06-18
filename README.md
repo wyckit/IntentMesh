@@ -174,9 +174,10 @@ calls; IntentMesh governs intent before it becomes a tool call.* The product is 
   [SDK.md](docs/SDK.md) · [ADAPTER-GUIDE.md](docs/ADAPTER-GUIDE.md) · [compare.html](docs/compare.html) ·
   [landing](docs/index.html) · IntentBench scoreboard: `bench/scoreboard.html`
 
-**Progress against the plan:** Phase 1 (clarity) ✓ · Phase 2 (signed artifacts, replay,
-contract-boundary) ✓ · Phase 3 (Control Room v1) ✓ · Phase 4 (IntentBench 25/25) ✓ · Phase 5
-(SDK + integration prototypes) · Phase 6 (manifesto, whitepaper, landing).
+**Progress against the plan — all six phases complete (v1.3.0):** Phase 1 (clarity) ✓ · Phase 2
+(signed artifacts, replay, contract-boundary) ✓ · Phase 3 (Control Room v1) ✓ · Phase 4 (IntentBench
+25/25) ✓ · Phase 5 (SDK + MCP proxy / OpenAPI import / real-adapter example) ✓ · Phase 6 (manifesto,
+whitepaper, landing) ✓. **77/77 tests · IntentBench 25/25 · TLM 7/7.**
 
 ## Core principles
 
