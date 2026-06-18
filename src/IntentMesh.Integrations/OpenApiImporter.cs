@@ -1,4 +1,6 @@
+using System.Text.Json;
 using IntentMesh.Core;
+using IntentMesh.Tlm;
 
 namespace IntentMesh.Integrations;
 
@@ -16,24 +18,19 @@ namespace IntentMesh.Integrations;
 //   • The static SampleInvoiceSchema demonstrates a real "create_invoice" POST
 //     operation flowing through the importer.
 //
-// WHAT IS STUBBED (clearly marked below):
-//   • Real OpenAPI parsing — ToolSchema is a hand-authored record, not parsed
-//     from a real OpenAPI spec YAML/JSON file. A TODO comment marks where the
-//     real parser goes.
-//   • Registration into im-action-contracts — ImportedContract is a plain
-//     descriptor; it is NOT injected into a live SymbolicBundle or compiled
-//     into a .tlmz. A TODO comment marks the registration step.
-//   • Runtime enforcement of the imported contract — the contract descriptor
-//     is produced but not yet wired into PolicyGate / IntentResolver as a
-//     recognized action kind.
+// NOW REAL (converted from the Phase 5 prototype stubs):
+//   • ParseFromOpenApi() parses a real OpenAPI 3.x JSON document with the built-in
+//     System.Text.Json reader (no Microsoft.OpenApi dependency) — paths × methods →
+//     ToolSchema, fields from parameters + request-body properties.
+//   • RegisterToCompiledDir() compiles the imported contracts into a real
+//     im-imported.tlmz using the TLM compiler; SymbolicBundle.Load() then recognizes
+//     each Kind and the PolicyGate / Translation-Drift guard enforce it. Import →
+//     usable typed contract, end-to-end.
 //
-// HOW THIS BECOMES PRODUCTION:
-//   1. Replace ToolSchema construction with a real OpenAPI/JSON-schema parser
-//      (e.g., Microsoft.OpenApi).
-//   2. Translate ImportedContract → a TLM ActionContract concept and append it
-//      to the appropriate im-*.tlm source file.
-//   3. Re-compile the bundle (tlm compile all) so the new kind is registered
-//      and enforced by the pipeline.
+// STILL FOR PRODUCTION (out of scope here):
+//   • YAML specs (this reads JSON; convert YAML→JSON first) and $ref resolution.
+//   • Auto-deriving SideEffect/capability from semantic hints rather than a method
+//     heuristic; richer field types/required flags.
 // ──────────────────────────────────────────────────────────────────────────────
 
 /// <summary>
@@ -215,78 +212,118 @@ public static class OpenApiImporter
             _ => "low",
         };
 
-    // ── STUB — real OpenAPI parsing (NOT IMPLEMENTED) ─────────────────────────
+    // ── REAL — OpenAPI 3.x parsing (System.Text.Json, no extra deps) ──────────
     /// <summary>
-    /// [STUB — NOT IMPLEMENTED] Parses a real OpenAPI spec document and returns
-    /// a list of <see cref="ToolSchema"/> records ready for <see cref="ToContract"/>.
-    ///
-    /// <para>
-    /// <strong>Why this is stubbed:</strong> real OpenAPI parsing requires the
-    /// <c>Microsoft.OpenApi</c> package (or equivalent) and a live YAML/JSON
-    /// spec file — both out of scope for this in-process prototype.
-    /// </para>
-    ///
-    /// <para>
-    /// <strong>Production path:</strong>
-    /// <list type="number">
-    ///   <item>Add <c>Microsoft.OpenApi</c> NuGet package.</item>
-    ///   <item>Parse the spec: <c>OpenApiDocument doc = new OpenApiStreamReader()
-    ///         .Read(stream, out var diag);</c></item>
-    ///   <item>Iterate <c>doc.Paths</c>, map each <c>OpenApiOperation</c> to a
-    ///         <c>ToolSchema</c>, and call <see cref="ToContract"/> on each.</item>
-    ///   <item>Feed the resulting contracts to <see cref="RegisterInBundle"/>.</item>
-    /// </list>
-    /// </para>
+    /// Parses a real OpenAPI 3.x JSON document into <see cref="ToolSchema"/> records — one per
+    /// path × HTTP method. Operation name = <c>operationId</c> (or method+path); fields = the
+    /// operation's parameters plus the request-body schema properties; risk is inferred from the
+    /// method (overridable). Handles the common subset with the built-in JSON reader, no
+    /// Microsoft.OpenApi dependency. Feed the results to <see cref="ToContract"/> then
+    /// <see cref="RegisterToCompiledDir"/>.
     /// </summary>
-    /// <exception cref="NotImplementedException">
-    /// Always — real OpenAPI parsing is not implemented in this prototype.
-    /// </exception>
     public static IReadOnlyList<ToolSchema> ParseFromOpenApi(string openApiJson)
     {
-        // TODO (Phase 5 → production): parse with Microsoft.OpenApi.
-        // Map OpenApiOperation → ToolSchema for each path × method.
-        throw new NotImplementedException(
-            "Real OpenAPI YAML/JSON parsing is not implemented in this prototype. " +
-            "Add Microsoft.OpenApi and implement the parser here. " +
-            "See docs/INTEGRATIONS.md §OpenApiImporter.");
+        var schemas = new List<ToolSchema>();
+        using var doc = JsonDocument.Parse(openApiJson);
+        if (!doc.RootElement.TryGetProperty("paths", out var paths) || paths.ValueKind != JsonValueKind.Object)
+            return schemas;
+
+        foreach (var path in paths.EnumerateObject())
+        {
+            if (path.Value.ValueKind != JsonValueKind.Object) continue;
+            foreach (var op in path.Value.EnumerateObject())
+            {
+                var method = op.Name.ToUpperInvariant();
+                if (method is not ("GET" or "POST" or "PUT" or "PATCH" or "DELETE" or "HEAD")) continue;
+                var operation = op.Value;
+
+                string name = operation.TryGetProperty("operationId", out var oid) && oid.ValueKind == JsonValueKind.String
+                    ? oid.GetString()!
+                    : (op.Name + "_" + path.Name.Trim('/').Replace('/', '_').Replace("{", "").Replace("}", "")).Trim('_');
+
+                string summary = Str(operation, "summary") ?? Str(operation, "description") ?? "";
+
+                var fields = new List<string>();
+                if (operation.TryGetProperty("parameters", out var ps) && ps.ValueKind == JsonValueKind.Array)
+                    foreach (var p in ps.EnumerateArray())
+                        if (p.TryGetProperty("name", out var pn) && pn.ValueKind == JsonValueKind.String)
+                            fields.Add(pn.GetString()!);
+
+                if (operation.TryGetProperty("requestBody", out var rb) &&
+                    rb.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.Object)
+                    foreach (var media in content.EnumerateObject())
+                        if (media.Value.TryGetProperty("schema", out var sch) &&
+                            sch.TryGetProperty("properties", out var props) && props.ValueKind == JsonValueKind.Object)
+                            foreach (var prop in props.EnumerateObject())
+                                fields.Add(prop.Name);
+
+                schemas.Add(new ToolSchema(name, method, summary, fields));
+            }
+        }
+        return schemas;
     }
 
-    // ── STUB — bundle registration (NOT IMPLEMENTED) ─────────────────────────
+    private static string? Str(JsonElement e, string key) =>
+        e.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+
+    // ── REAL — register imported contracts into a loadable bundle ─────────────
     /// <summary>
-    /// [STUB — NOT IMPLEMENTED] Registers an <see cref="ImportedContract"/> into
-    /// a live <see cref="SymbolicBundle"/> so it becomes a recognized action kind
-    /// that the IntentResolver and PolicyGate can enforce.
-    ///
-    /// <para>
-    /// <strong>Why this is stubbed:</strong> <c>SymbolicBundle</c> is currently
-    /// immutable (loaded from compiled <c>.tlmz</c> files). Registration would
-    /// require either (a) a mutable bundle API, or (b) emitting a new
-    /// <c>im-*.tlm</c> source and recompiling.
-    /// </para>
-    ///
-    /// <para>
-    /// <strong>Production path:</strong>
-    /// <list type="number">
-    ///   <item>Emit the contract as a TLM <c>ActionContract</c> concept into the
-    ///         appropriate <c>im-*.tlm</c> source file.</item>
-    ///   <item>Run <c>tlm compile all</c> to produce an updated <c>.tlmz</c>.</item>
-    ///   <item>Reload the bundle: <c>SymbolicBundle.Load(compiledDir)</c>.</item>
-    ///   <item>The new kind is now recognized by the Translation-Drift guard,
-    ///         PolicyGate, and IntentResolver.</item>
-    /// </list>
-    /// Alternatively, expose a <c>SymbolicBundle.Register(ContractInfo)</c>
-    /// method for hot-registration without recompilation.
-    /// </para>
+    /// Compiles the imported contracts into a real <c>im-imported.tlmz</c> in <paramref name="compiledDir"/>
+    /// using the same TLM format/compiler the rest of the bundle uses. After this,
+    /// <c>SymbolicBundle.Load(compiledDir)</c> recognizes each <c>Kind</c> (IsRegistered = true) and
+    /// the PolicyGate / Translation-Drift guard enforce it — import → usable typed contract,
+    /// end-to-end. Returns the path written. (Write to a fresh dir or a copy of the bundle; writing
+    /// into the canonical dataset would change the shipped contract set.)
     /// </summary>
-    /// <exception cref="NotImplementedException">
-    /// Always — bundle registration is not implemented in this prototype.
-    /// </exception>
-    public static void RegisterInBundle(SymbolicBundle bundle, ImportedContract contract)
+    public static string RegisterToCompiledDir(string compiledDir, params ImportedContract[] contracts)
     {
-        // TODO (Phase 5 → production): emit to TLM source + recompile, or add a
-        // SymbolicBundle.Register(ContractInfo) hot-registration method.
-        throw new NotImplementedException(
-            "Registering an ImportedContract into a live SymbolicBundle is not " +
-            "implemented in this prototype. See docs/INTEGRATIONS.md §OpenApiImporter.");
+        Directory.CreateDirectory(compiledDir);
+        var concepts = new List<SymbolicConcept>
+        {
+            new() { Id = "imported-root", Label = "imported contracts", Category = "Registry",
+                Description = "Action contracts imported from external tool / OpenAPI schemas." }
+        };
+        var relations = new List<SymbolicRelation>();
+        foreach (var c in contracts)
+        {
+            concepts.Add(new SymbolicConcept
+            {
+                Id = c.Kind,
+                Label = Pascal(c.Kind) + "Intent",
+                Category = "ActionContract",
+                Description = $"Imported typed contract for {c.Kind}.",
+                Properties = new()
+                {
+                    ["Risk"] = c.Risk, ["SideEffect"] = c.SideEffect,
+                    ["RequiresConfirmation"] = c.RequiresConfirmation ? "true" : "false",
+                    ["Fields"] = string.Join(",", c.Fields), ["Postconditions"] = ""
+                }
+            });
+            relations.Add(new SymbolicRelation { SourceId = "imported-root", TargetId = c.Kind, Type = "Registers" });
+        }
+
+        var pkg = new TlmPackage
+        {
+            Manifest = new TlmManifest
+            {
+                Metadata = new TlmMetadata { TlmId = "im-imported", IsMutable = false, Role = TlmRole.Logic,
+                    Priority = 125, Version = "1.0.0", Checksum = "", HotSwapPolicy = HotSwapPolicy.Safe, StabilityScore = 0.5 },
+                Imports = new(), Derives = new(),
+                CreatedUtc = new DateTime(2026, 6, 18, 0, 0, 0, DateTimeKind.Utc), SchemaVersion = "1.0"
+            },
+            Concepts = concepts, Relations = relations
+        };
+
+        var compiler = new TlmCompiler();
+        var bytes = compiler.Serialize(compiler.Compile(pkg));
+        var outPath = Path.Combine(compiledDir, "im-imported.tlmz");
+        File.WriteAllBytes(outPath, bytes);
+        return outPath;
+    }
+
+    private static string Pascal(string kind)
+    {
+        var parts = kind.Replace("act-", "").Split('-', StringSplitOptions.RemoveEmptyEntries);
+        return string.Concat(parts.Select(p => char.ToUpperInvariant(p[0]) + p[1..]));
     }
 }

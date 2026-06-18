@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\IntentMesh.Core\IntentMesh.Core.csproj" />
+    <ProjectReference Include="..\IntentMesh.Tlm\IntentMesh.Tlm.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

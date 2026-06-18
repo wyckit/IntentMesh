@@ -251,29 +251,79 @@ public sealed class IntegrationTests
     }
 
     /// <summary>
-    /// ParseFromOpenApi throws NotImplementedException — the real OpenAPI parser
-    /// stub is correctly marked as not implemented.
+    /// ParseFromOpenApi parses a real OpenAPI 3.x JSON document: a POST /invoices operation
+    /// (operationId create_invoice) with request-body properties becomes a ToolSchema whose fields
+    /// include those properties, and a GET becomes a separate read-only schema.
     /// </summary>
     [Fact]
-    public void OpenApiImporter_ParseFromOpenApi_is_stubbed()
+    public void OpenApiImporter_parses_a_real_openapi_spec()
     {
-        var ex = Assert.Throws<NotImplementedException>(() =>
-            OpenApiImporter.ParseFromOpenApi("{}"));
-        Assert.Contains("not implemented", ex.Message, StringComparison.OrdinalIgnoreCase);
+        const string spec = """
+        {
+          "openapi": "3.0.0",
+          "info": { "title": "Billing", "version": "1.0" },
+          "paths": {
+            "/invoices": {
+              "post": {
+                "operationId": "create_invoice",
+                "summary": "Create an invoice",
+                "requestBody": { "content": { "application/json": { "schema": {
+                  "type": "object",
+                  "properties": { "customer_id": {"type":"string"}, "amount_cents": {"type":"integer"} } } } } }
+              }
+            },
+            "/invoices/{id}": {
+              "get": {
+                "operationId": "get_invoice",
+                "summary": "Read an invoice",
+                "parameters": [ { "name": "id", "in": "path" } ]
+              }
+            }
+          }
+        }
+        """;
+
+        var schemas = OpenApiImporter.ParseFromOpenApi(spec);
+        Assert.Equal(2, schemas.Count);
+
+        var post = Assert.Single(schemas, s => s.Name == "create_invoice");
+        Assert.Equal("POST", post.Method);
+        Assert.Contains("customer_id", post.Parameters);
+        Assert.Contains("amount_cents", post.Parameters);
+
+        var get = Assert.Single(schemas, s => s.Name == "get_invoice");
+        Assert.Equal("GET", get.Method);
+        Assert.Contains("id", get.Parameters);
     }
 
     /// <summary>
-    /// RegisterInBundle throws NotImplementedException — the bundle registration
-    /// stub is correctly marked as not implemented.
+    /// RegisterToCompiledDir compiles an imported contract into a real im-imported.tlmz that
+    /// SymbolicBundle.Load picks up — the new kind becomes registered (enforced end-to-end).
+    /// Uses an isolated temp dir so the canonical dataset is untouched.
     /// </summary>
     [Fact]
-    public void OpenApiImporter_RegisterInBundle_is_stubbed()
+    public void OpenApiImporter_registers_imported_contracts_into_a_loadable_bundle()
     {
-        var bundle = SymbolicBundle.Load(DatasetLocator.FindCompiledDir());
-        var contract = OpenApiImporter.ToContract(OpenApiImporter.SampleInvoiceSchema);
-        var ex = Assert.Throws<NotImplementedException>(() =>
-            OpenApiImporter.RegisterInBundle(bundle, contract));
-        Assert.Contains("not implemented", ex.Message, StringComparison.OrdinalIgnoreCase);
+        var src = DatasetLocator.FindCompiledDir();
+        var tmp = Path.Combine(Path.GetTempPath(), "im-import-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tmp);
+        try
+        {
+            foreach (var f in Directory.GetFiles(src, "im-*.tlmz"))
+                File.Copy(f, Path.Combine(tmp, Path.GetFileName(f)));
+
+            var before = SymbolicBundle.Load(tmp);
+            Assert.False(before.IsRegistered("act-create-invoice"));
+
+            var contract = OpenApiImporter.ToContract(OpenApiImporter.SampleInvoiceSchema);
+            OpenApiImporter.RegisterToCompiledDir(tmp, contract);
+
+            var after = SymbolicBundle.Load(tmp);
+            Assert.True(after.IsRegistered("act-create-invoice"));   // import is now a usable typed contract
+            Assert.Equal(before.Contracts.Count + 1, after.Contracts.Count);
+            Assert.Equal("medium", after.Contracts["act-create-invoice"].Risk);
+        }
+        finally { Directory.Delete(tmp, recursive: true); }
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
