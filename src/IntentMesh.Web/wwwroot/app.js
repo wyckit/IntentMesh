@@ -78,6 +78,36 @@ function render(r) {
   renderExecution(r);
   renderVerification(r);
   renderAudit(r);
+  renderSkills(r);
+}
+
+function renderSkills(r) {
+  const box = $('#skills'); box.innerHTML = '';
+  const s = r.skills;
+  if (!s || !s.items.length) { box.innerHTML = '<p class="empty">No skills registered.</p>'; return; }
+  s.items.forEach(it => {
+    const card = el('div', 'skill-card' + (it.matchedThisRun ? ' matched' : ''));
+    const head = el('div', 'skill-head');
+    head.innerHTML = `<span class="name">${esc(it.label)}</span>` +
+      `<span class="badge st-NeedsConfirmation">${esc(it.status)}</span>` +
+      `<span class="tag risk-${esc(it.risk)}">risk: ${esc(it.risk)}</span>` +
+      (it.matchedThisRun ? '<span class="badge st-Verified">matched this run</span>' : '');
+    card.appendChild(head);
+    const note = el('div', 'skill-note' + (it.matchedThisRun ? ' matched' : '')); note.textContent = it.note; card.appendChild(note);
+    const comp = el('div', 'skill-comp'); comp.textContent = 'composition: ' + it.composition.join(' → '); card.appendChild(comp);
+    // lifecycle pipeline with the current state highlighted
+    const lc = el('div', 'lifecycle');
+    s.lifecycle.forEach((st, i) => {
+      if (i) { const sep = el('span', 'sep'); sep.textContent = '›'; lc.appendChild(sep); }
+      const cls = i === it.statusOrder ? ' cur' : (i < it.statusOrder ? ' past' : '');
+      const stg = el('span', 'stg' + cls); stg.textContent = st; lc.appendChild(stg);
+    });
+    card.appendChild(lc);
+    const gov = el('div', 'gov-note');
+    gov.textContent = 'Emergence may propose; governance grants authority. This skill is a proposal — it never executes on its own and advances only when a human moves it through the lifecycle.';
+    card.appendChild(gov);
+    box.appendChild(card);
+  });
 }
 
 function renderPolicy(r) {

@@ -306,12 +306,21 @@ public static class BundleAuthor
             ("state-deprecated", "deprecated", "Superseded; scheduled for removal."),
             ("state-removed", "removed", "Withdrawn from the registry."),
         };
-        foreach (var (id, label, desc) in states) c.Add(Con(id, label, "LifecycleState", desc));
-        for (int i = 0; i < states.Length - 1; i++) r.Add(Rel(states[i].Item1, states[i + 1].Item1, "Precedes"));
+        for (int i = 0; i < states.Length; i++)
+        {
+            var (id, label, desc) = states[i];
+            c.Add(Con(id, label, "LifecycleState", desc, props: new[] { ("Order", i.ToString()) }));
+            if (i < states.Length - 1) r.Add(Rel(id, states[i + 1].Item1, "Precedes"));
+        }
 
         c.Add(Con("skill-daily-planning-followup", "DailyPlanningAndFollowup", "Skill",
             "Example proposed skill: plan a day and draft follow-ups. Composes ReadCalendar + ClassifyEvents + CreateCalendarBlock + FindNotes + DraftEmail. Status: proposed (not active).",
-            props: new[] { ("Status", "proposed"), ("AllowedTools", "tool-calendar,tool-notes,tool-email"), ("Risk", "medium") }));
+            props: new[]
+            {
+                ("Status", "proposed"), ("Risk", "medium"),
+                ("AllowedTools", "tool-calendar,tool-notes,tool-email"),
+                ("Composition", "act-read-calendar,act-classify-events,act-create-calendar-block,act-find-notes,act-draft-email"),
+            }));
         r.Add(Rel("skills-root", "skill-daily-planning-followup", "Contains"));
         r.Add(Rel("skill-daily-planning-followup", "state-proposed", "HasStatus"));
 

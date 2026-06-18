@@ -16,6 +16,7 @@ public sealed class IntentMeshRuntime
     private readonly PolicyGate _gate;
     private readonly ToolHost _tools = new();
     private readonly PostconditionVerifier _verifier = new();
+    private readonly SkillProposer _skills;
 
     public SymbolicBundle Bundle => _bundle;
 
@@ -24,6 +25,7 @@ public sealed class IntentMeshRuntime
         _bundle = bundle;
         _resolver = new IntentResolver(bundle);
         _gate = new PolicyGate(bundle);
+        _skills = new SkillProposer(bundle.Skills);
     }
 
     public static IntentMeshRuntime Load(string? compiledDir = null)
@@ -128,11 +130,12 @@ public sealed class IntentMeshRuntime
             foreach (var node in graph.Nodes.Where(n => n.Status == NodeStatus.Executed))
                 node.Status = NodeStatus.Verified;
 
-        return Project(prompt, resolved, graph, verification, audit);
+        return Project(prompt, resolved, graph, verification, audit, _skills.Observe(resolved.Nodes), _bundle.Lifecycle);
     }
 
     private static RunResult Project(string prompt, IntentResolver.Result resolved, IntentGraph graph,
-        IReadOnlyList<VerificationResult> verification, AuditTrail audit)
+        IReadOnlyList<VerificationResult> verification, AuditTrail audit,
+        IReadOnlyList<SkillObservation> skillObs, IReadOnlyList<LifecycleStateInfo> lifecycle)
     {
         var nodes = graph.Nodes.Select(n => new NodeView(
             n.Id, n.Type, n.Label, n.Status.ToString(), n.TrustSource.ToString(), n.Authority.ToString(),
@@ -163,6 +166,12 @@ public sealed class IntentMeshRuntime
             graph.Nodes.Count(n => n.Status == NodeStatus.Executed),
             graph.Nodes.Count(n => n.Status == NodeStatus.Verified));
 
-        return new RunResult(prompt, resolved.Fired, resolved.Unsupported, nodes, policy, exec, verify, auditViews, summary);
+        int OrderOf(string status) => lifecycle.FirstOrDefault(s => s.Label.Equals(status, StringComparison.OrdinalIgnoreCase))?.Order ?? 0;
+        var skillItems = skillObs.Select(o => new SkillView(
+            o.Skill.Id, o.Skill.Label, o.Skill.Status, o.Skill.Risk, OrderOf(o.Skill.Status),
+            o.MatchedThisRun, o.Note, o.Skill.Composition, o.Skill.AllowedTools)).ToList();
+        var skills = new SkillsView(lifecycle.Select(s => s.Label).ToList(), skillItems);
+
+        return new RunResult(prompt, resolved.Fired, resolved.Unsupported, nodes, policy, exec, verify, auditViews, summary, skills);
     }
 }

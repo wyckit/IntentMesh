@@ -6,7 +6,7 @@
       "Role": 6,
       "Priority": 900,
       "Version": "1.0.0",
-      "Checksum": "A6B18A2BC62C040408106777EB3AF475B5B73CB08F6CC7D35C44548B722FDA6F",
+      "Checksum": "1FF0B422D61E3FB176E73E0CF8AD3316735ABA42B10E4660FBFDCD264C3BA991",
       "HotSwapPolicy": 1,
       "StabilityScore": 0.6
     },
@@ -33,7 +33,9 @@
       "Category": "LifecycleState",
       "Description": "A repeated intent pattern was noticed.",
       "Aliases": [],
-      "Properties": {}
+      "Properties": {
+        "Order": "0"
+      }
     },
     {
       "Id": "state-proposed",
@@ -41,7 +43,9 @@
       "Category": "LifecycleState",
       "Description": "A candidate reusable skill was drafted.",
       "Aliases": [],
-      "Properties": {}
+      "Properties": {
+        "Order": "1"
+      }
     },
     {
       "Id": "state-simulated",
@@ -49,7 +53,9 @@
       "Category": "LifecycleState",
       "Description": "The skill was dry-run against fake data.",
       "Aliases": [],
-      "Properties": {}
+      "Properties": {
+        "Order": "2"
+      }
     },
     {
       "Id": "state-reviewed",
@@ -57,7 +63,9 @@
       "Category": "LifecycleState",
       "Description": "A human reviewed and signed off.",
       "Aliases": [],
-      "Properties": {}
+      "Properties": {
+        "Order": "3"
+      }
     },
     {
       "Id": "state-active",
@@ -65,7 +73,9 @@
       "Category": "LifecycleState",
       "Description": "Available for use (within policy).",
       "Aliases": [],
-      "Properties": {}
+      "Properties": {
+        "Order": "4"
+      }
     },
     {
       "Id": "state-deprecated",
@@ -73,7 +83,9 @@
       "Category": "LifecycleState",
       "Description": "Superseded; scheduled for removal.",
       "Aliases": [],
-      "Properties": {}
+      "Properties": {
+        "Order": "5"
+      }
     },
     {
       "Id": "state-removed",
@@ -81,7 +93,9 @@
       "Category": "LifecycleState",
       "Description": "Withdrawn from the registry.",
       "Aliases": [],
-      "Properties": {}
+      "Properties": {
+        "Order": "6"
+      }
     },
     {
       "Id": "skill-daily-planning-followup",
@@ -91,8 +105,9 @@
       "Aliases": [],
       "Properties": {
         "Status": "proposed",
+        "Risk": "medium",
         "AllowedTools": "tool-calendar,tool-notes,tool-email",
-        "Risk": "medium"
+        "Composition": "act-read-calendar,act-classify-events,act-create-calendar-block,act-find-notes,act-draft-email"
       }
     }
   ],
@@ -199,5 +214,5 @@
   "Cues": [],
   "FitSignals": [],
   "Generators": [],
-  "ParameterCount": 11
+  "ParameterCount": 19
 }

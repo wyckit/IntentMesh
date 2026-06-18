@@ -42,10 +42,13 @@ the audit trail; TLMs verify 7/7; CLI `--trace` shows all panels including a fai
   approving a Confirm node commits its side effect (calendar block, deletion, send) in the sandbox.
   Security invariant proven: a blocked zero-trust node can never be approved into execution
   (`ConfirmationTests.A_blocked_injected_node_can_NEVER_be_approved`).
-- **[done] Export an audit trace** — `AuditExporter.ToJson` / `ToMarkdown`: a deterministic,
-  replayable audit artifact (signing comes in v1.0).
-- Emergent **skill lifecycle** wired through `im-skills`: observe repeated intent patterns ->
-  propose a reusable symbolic skill -> simulate -> review -> activate (governed, never auto-promoted).
+- **[done] Export an audit trace** — `AuditExporter.ToJson` / `ToMarkdown` + a Control Room
+  "Download JSON / Markdown" button (`POST /api/export`): a deterministic, replayable audit
+  artifact (signing comes in v1.0).
+- **[done] Emergent skill lifecycle** — `SkillProposer` observes when a run exercises a skill's
+  composition (loaded from `im-skills`), surfaced in a Skills panel with the
+  observed→proposed→…→removed lifecycle. Inspection-only: observation injects no executable node
+  and never promotes the skill (`SkillTests`). Governance grants authority, not emergence.
 - Better Intent Mesh visualization (collapsible subgoals, trust-boundary overlays).
 - Reusable skill example: `DailyPlanningAndFollowup` with input/output schema, allowed tools, risk
   class, tests, version, status.

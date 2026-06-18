@@ -52,15 +52,33 @@ html, body { margin: 0; background: var(--bg); color: var(--ink);
   grid-template-areas:
     "request mesh policy"
     "verify  mesh policy"
-    "exec    exec audit"; }
+    "exec    exec audit"
+    "skills  skills skills"; }
 #requestPanel { grid-area: request; }
 #meshPanel { grid-area: mesh; }
 #policyPanel { grid-area: policy; }
 #verifyPanel { grid-area: verify; }
 #execPanel { grid-area: exec; }
 #auditPanel { grid-area: audit; }
+#skillsPanel { grid-area: skills; }
 @media (max-width: 1100px) { .grid { grid-template-columns: 1fr;
-  grid-template-areas: "request" "mesh" "policy" "exec" "verify" "audit"; } }
+  grid-template-areas: "request" "mesh" "policy" "exec" "verify" "audit" "skills"; } }
+
+/* ── Skills (emergent) ───────────────────────────────────── */
+.skill-card { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; background: var(--panel-2); }
+.skill-card.matched { border-color: #14543a; }
+.skill-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.skill-head .name { font-weight: 700; }
+.skill-note { color: var(--muted); font-size: 12px; margin: 8px 0; }
+.skill-note.matched { color: var(--green); }
+.skill-comp { font-family: var(--mono); font-size: 11px; color: #9fb2c8; }
+.lifecycle { display: flex; align-items: center; gap: 0; flex-wrap: wrap; margin-top: 10px; }
+.lifecycle .stg { font-size: 10.5px; color: var(--muted); padding: 3px 9px; border: 1px solid var(--line);
+  border-radius: 999px; background: #0e151f; }
+.lifecycle .stg.cur { background: var(--amber); color: #2a1d02; border-color: var(--amber); font-weight: 700; }
+.lifecycle .stg.past { color: #5f7186; }
+.lifecycle .sep { color: #2a3647; padding: 0 5px; }
+.gov-note { margin-top: 10px; color: var(--muted); font-size: 11.5px; border-left: 2px solid var(--accent); padding-left: 10px; }
 
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
   display: flex; flex-direction: column; min-height: 90px; }

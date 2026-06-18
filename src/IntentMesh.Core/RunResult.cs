@@ -24,6 +24,13 @@ public sealed record AuditView(int Seq, string NodeId, string Phase, string Mess
 
 public sealed record SummaryView(int Total, int Allowed, int NeedsConfirmation, int Blocked, int Executed, int Verified);
 
+public sealed record SkillView(
+    string Id, string Label, string Status, string Risk, int StatusOrder,
+    bool MatchedThisRun, string Note,
+    IReadOnlyList<string> Composition, IReadOnlyList<string> AllowedTools);
+
+public sealed record SkillsView(IReadOnlyList<string> Lifecycle, IReadOnlyList<SkillView> Items);
+
 public sealed record RunResult(
     string Prompt,
     IReadOnlyList<string> ResolverFired,
@@ -33,4 +40,5 @@ public sealed record RunResult(
     IReadOnlyList<ExecView> Execution,
     IReadOnlyList<VerifyView> Verification,
     IReadOnlyList<AuditView> Audit,
-    SummaryView Summary);
+    SummaryView Summary,
+    SkillsView Skills);
