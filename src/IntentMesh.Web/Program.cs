@@ -55,7 +55,8 @@ app.MapPost("/api/export", (ExportRequest req) =>
     return (req.Format ?? "json").ToLowerInvariant() switch
     {
         "md" or "markdown" => Results.Text(AuditExporter.ToMarkdown(result), "text/markdown"),
-        "signed" => Results.Json(AuditSigner.Sign(result)),   // tamper-evident envelope
+        "signed" => Results.Json(AuditSigner.Sign(result)),   // tamper-evident audit envelope
+        "bundle" => Results.Json(TraceBundleBuilder.From(result, approvals.ToList())),  // all 5 signed artifacts
         _ => Results.Text(AuditExporter.ToJson(result), "application/json"),
     };
 });

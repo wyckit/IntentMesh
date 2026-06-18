@@ -8,6 +8,12 @@ public sealed record VerificationResult(string Id, string Expected, string Actua
 /// SpecValidator.CheckString. Validation-Paradox guard: every check is DETERMINISTIC (equality,
 /// counts, status), never a semantic judgment by the planner. Only the checks relevant to what
 /// actually happened are emitted, so each scenario's panel stays focused.
+///
+/// Proposer/Verifier separation (v1.0): this verifier does NOT receive the original user prompt. It
+/// sees only the intent graph (approved typed contracts) + the workspace (tool outputs), and asks a
+/// boolean question per postcondition: did the output match the contract boundary? So it catches a
+/// recipient substitution (contract says X, tool sent to Y) regardless of how persuasive the prompt
+/// was — see pc-recipient-contract-match.
 /// </summary>
 public sealed class PostconditionVerifier
 {
@@ -55,6 +61,18 @@ public sealed class PostconditionVerifier
             Add("pc-no-private-exfil", "no private note left in an outbound message",
                 noExfil ? "none" : "leaked", noExfil,
                 $"private notes referenced by drafts: {ws.Drafts.SelectMany(d => d.SourceNoteIds).Count(rid => ws.Notes.Any(nt => nt.Id == rid && nt.Private))}");
+
+            // Contract-boundary check (Proposer/Verifier separation): a draft's recipient must equal
+            // an APPROVED DraftEmail contract recipient. If a tool sent somewhere else, that's a
+            // contract-boundary violation — caught here from the contract + output alone, no prompt.
+            var contractRecipients = graph.Nodes
+                .Where(n => n.Type == Kinds.DraftEmail && n.Action is DraftEmailAction)
+                .Select(n => ((DraftEmailAction)n.Action).Recipient)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            bool boundaryOk = ws.Drafts.All(d => contractRecipients.Contains(d.Recipient));
+            Add("pc-recipient-contract-match", "every draft recipient equals an approved contract recipient",
+                boundaryOk ? "match" : "CONTRACT-BOUNDARY VIOLATION", boundaryOk,
+                $"drafts -> {string.Join(", ", ws.Drafts.Select(d => d.Recipient))}; approved contracts -> {string.Join(", ", contractRecipients)}");
         }
 
         // Calendar block: committed only with approval.

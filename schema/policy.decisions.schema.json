@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://intentmesh.local/schema/policy.decisions.schema.json",
+  "title": "PolicyDecisionsArtifact",
+  "description": "The policy gate decisions for every node evaluated in a run. All property names are camelCase.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "decisions"],
+  "$defs": {
+    "PolicyView": {
+      "title": "PolicyView",
+      "description": "Policy gate outcome for a single node.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nodeId", "label", "decision", "risk", "reason",
+        "triggeredRules", "requiresConfirmation",
+        "trustSource", "sensitive", "externalSideEffect", "destructive"
+      ],
+      "properties": {
+        "nodeId": {
+          "type": "string",
+          "description": "Id of the node this decision applies to."
+        },
+        "label": {
+          "type": "string",
+          "description": "Human-readable label for the node."
+        },
+        "decision": {
+          "type": "string",
+          "description": "Policy outcome (e.g. 'allow', 'block', 'needsConfirmation')."
+        },
+        "risk": {
+          "type": "string",
+          "description": "Risk tier assigned by the gate (e.g. 'low', 'medium', 'high')."
+        },
+        "reason": {
+          "type": "string",
+          "description": "Human-readable explanation of the decision."
+        },
+        "triggeredRules": {
+          "type": "array",
+          "description": "Names of policy rules that fired.",
+          "items": { "type": "string" }
+        },
+        "requiresConfirmation": {
+          "type": "boolean",
+          "description": "True when the node requires explicit user confirmation before execution."
+        },
+        "trustSource": {
+          "type": "string",
+          "description": "Trust tier inherited from the node."
+        },
+        "sensitive": {
+          "type": "boolean",
+          "description": "True when the node touches sensitive data or credentials."
+        },
+        "externalSideEffect": {
+          "type": "boolean",
+          "description": "True when the node has an observable external side effect."
+        },
+        "destructive": {
+          "type": "boolean",
+          "description": "True when the node performs a destructive or irreversible operation."
+        }
+      }
+    }
+  },
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "description": "Artifact schema version (e.g. '1.0')."
+    },
+    "decisions": {
+      "type": "array",
+      "description": "Policy decisions for every node, in evaluation order.",
+      "items": { "$ref": "#/$defs/PolicyView" }
+    }
+  }
+}

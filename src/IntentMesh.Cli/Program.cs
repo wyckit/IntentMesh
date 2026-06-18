@@ -56,6 +56,52 @@ if (rest[0] == "--demo" && rest.Count > 1 && int.TryParse(rest[1], out var d) &&
     return 0;
 }
 
+// export: run a prompt and write the signed trace bundle (all five artifacts).
+//   intentmesh export "<prompt>" [--out bundle.json] [--split <dir>]
+if (rest[0] == "export")
+{
+    string? outPath = null, splitDir = null;
+    var words = new List<string>();
+    for (int i = 1; i < rest.Count; i++)
+    {
+        if (rest[i] == "--out" && i + 1 < rest.Count) { outPath = rest[++i]; continue; }
+        if (rest[i] == "--split" && i + 1 < rest.Count) { splitDir = rest[++i]; continue; }
+        words.Add(rest[i]);
+    }
+    var prompt = string.Join(" ", words);
+    if (string.IsNullOrWhiteSpace(prompt)) { Console.Error.WriteLine("usage: intentmesh export \"<request>\" [--out file] [--split dir]"); return 1; }
+    var bundle = TraceBundleBuilder.From(runtime.Run(prompt, Workspace.CreateDemo()));
+    outPath ??= "intentmesh-bundle.json";
+    File.WriteAllText(outPath, TraceBundleBuilder.ToJson(bundle));
+    Console.WriteLine($"wrote {outPath}  (bundle signature {bundle.BundleSignature[..16]}…)");
+    if (splitDir is not null)
+    {
+        Directory.CreateDirectory(splitDir);
+        foreach (var (name, json) in TraceBundleBuilder.SplitFiles(bundle))
+            File.WriteAllText(Path.Combine(splitDir, name), json);
+        Console.WriteLine($"wrote 5 artifacts to {splitDir}/");
+    }
+    return 0;
+}
+
+// replay: reload a bundle, re-run its prompt, and assert the bundle is byte-identical (deterministic).
+//   intentmesh replay <bundle.json>
+if (rest[0] == "replay")
+{
+    if (rest.Count < 2) { Console.Error.WriteLine("usage: intentmesh replay <bundle.json>"); return 1; }
+    if (!File.Exists(rest[1])) { Console.Error.WriteLine($"no such file: {rest[1]}"); return 1; }
+    var original = TraceBundleBuilder.FromJson(File.ReadAllText(rest[1]));
+    bool sigOk = TraceBundleBuilder.VerifySignature(original);
+    var approvals = original.Approvals.ToHashSet(StringComparer.OrdinalIgnoreCase);
+    var rerun = TraceBundleBuilder.From(runtime.Run(original.Prompt, Workspace.CreateDemo(), approvals), original.Approvals);
+    bool identical = rerun.BundleSignature == original.BundleSignature;
+    Console.WriteLine($"prompt:    \"{original.Prompt}\"");
+    Console.WriteLine($"signature: {(sigOk ? "VALID (untampered)" : "INVALID (tampered!)")}");
+    Console.WriteLine($"replay:    {(identical ? "DETERMINISTIC — re-run is byte-identical" : "MISMATCH — re-run differs!")}");
+    Console.WriteLine($"  original {original.BundleSignature[..16]}…  rerun {rerun.BundleSignature[..16]}…");
+    return sigOk && identical ? 0 : 1;
+}
+
 // bare prompt
 Trace.Render(runtime.Run(string.Join(" ", rest), Workspace.CreateDemo()), "trace");
 return 0;

@@ -53,7 +53,7 @@ function exportTrace(format) {
     body: JSON.stringify({ prompt, approvals: [...APPROVALS], format })
   }).then(r => r.text()).then(text => {
     const md = format === 'md';
-    const ext = md ? 'md' : (format === 'signed' ? 'signed.json' : 'json');
+    const ext = md ? 'md' : (format === 'signed' ? 'signed.json' : (format === 'bundle' ? 'bundle.json' : 'json'));
     const blob = new Blob([text], { type: md ? 'text/markdown' : 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -65,6 +65,7 @@ function exportTrace(format) {
 $('#exportJson').onclick = () => exportTrace('json');
 $('#exportMd').onclick = () => exportTrace('md');
 $('#exportSigned').onclick = () => exportTrace('signed');
+$('#exportBundle').onclick = () => exportTrace('bundle');
 
 // ── Render ─────────────────────────────────────────────────────────
 function render(r) {

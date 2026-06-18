@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://intentmesh.local/schema/verification.report.schema.json",
+  "title": "VerificationReportArtifact",
+  "description": "Postcondition verification results for a run. All property names are camelCase.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "allPass", "results"],
+  "$defs": {
+    "VerifyView": {
+      "title": "VerifyView",
+      "description": "Result of a single postcondition check.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "expected", "actual", "pass", "evidence"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Identifier for this verification check."
+        },
+        "expected": {
+          "type": "string",
+          "description": "Description of the expected postcondition."
+        },
+        "actual": {
+          "type": "string",
+          "description": "Description of the actual observed state."
+        },
+        "pass": {
+          "type": "boolean",
+          "description": "True when the actual state satisfies the expected postcondition."
+        },
+        "evidence": {
+          "type": "string",
+          "description": "Supporting evidence or diagnostic detail for this result."
+        }
+      }
+    }
+  },
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "description": "Artifact schema version (e.g. '1.0')."
+    },
+    "allPass": {
+      "type": "boolean",
+      "description": "True when every result in this report has pass=true."
+    },
+    "results": {
+      "type": "array",
+      "description": "Individual postcondition verification results.",
+      "items": { "$ref": "#/$defs/VerifyView" }
+    }
+  }
+}

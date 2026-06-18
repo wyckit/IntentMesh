@@ -23,9 +23,13 @@ public static class AuditSigner
     public static SignedAudit Sign(RunResult result, byte[]? key = null)
     {
         var chain = ChainHash(result);
-        var sig = Convert.ToHexString(new HMACSHA256(key ?? DemoKey).ComputeHash(Encoding.UTF8.GetBytes(chain))).ToLowerInvariant();
-        return new SignedAudit(AuditExporter.ToJson(result), chain, sig);
+        return new SignedAudit(AuditExporter.ToJson(result), chain, SignString(chain, key));
     }
+
+    /// <summary>Deterministic HMAC-SHA256 (hex) over arbitrary canonical text — used to sign a
+    /// trace bundle over its five artifacts' canonical JSON.</summary>
+    public static string SignString(string canonical, byte[]? key = null)
+        => Convert.ToHexString(new HMACSHA256(key ?? DemoKey).ComputeHash(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
 
     /// <summary>True iff the signature matches a fresh chain hash of the result (no tampering).</summary>
     public static bool Verify(RunResult result, string signature, byte[]? key = null)

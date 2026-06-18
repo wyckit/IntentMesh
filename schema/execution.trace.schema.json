@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://intentmesh.local/schema/execution.trace.schema.json",
+  "title": "ExecutionTraceArtifact",
+  "description": "Execution outcomes for every node that was dispatched during a run. All property names are camelCase.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "executions"],
+  "$defs": {
+    "ExecView": {
+      "title": "ExecView",
+      "description": "Execution outcome for a single node.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodeId", "label", "ran", "halted", "summary", "effects"],
+      "properties": {
+        "nodeId": {
+          "type": "string",
+          "description": "Id of the node that was executed."
+        },
+        "label": {
+          "type": "string",
+          "description": "Human-readable label for the node."
+        },
+        "ran": {
+          "type": "boolean",
+          "description": "True when the node actually ran (was not skipped or blocked)."
+        },
+        "halted": {
+          "type": "boolean",
+          "description": "True when execution was halted at or after this node."
+        },
+        "summary": {
+          "type": "string",
+          "description": "Short prose summary of what the execution did."
+        },
+        "effects": {
+          "type": "array",
+          "description": "List of observable effects produced by this execution.",
+          "items": { "type": "string" }
+        }
+      }
+    }
+  },
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "description": "Artifact schema version (e.g. '1.0')."
+    },
+    "executions": {
+      "type": "array",
+      "description": "Execution records for every dispatched node, in run order.",
+      "items": { "$ref": "#/$defs/ExecView" }
+    }
+  }
+}

@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://intentmesh.local/schema/intent.graph.schema.json",
+  "title": "IntentGraphArtifact",
+  "description": "The intent graph produced for a single run: the resolved prompt and the full node tree emitted by IntentResolver. All property names are camelCase.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "prompt", "nodes"],
+  "$defs": {
+    "FieldView": {
+      "title": "FieldView",
+      "description": "A single structured field attached to a node.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field", "value"],
+      "properties": {
+        "field": {
+          "type": "string",
+          "description": "Field name."
+        },
+        "value": {
+          "type": "string",
+          "description": "Field value (always serialised as a string)."
+        }
+      }
+    },
+    "NodeView": {
+      "title": "NodeView",
+      "description": "A single node in the intent graph.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "type", "label", "status",
+        "trustSource", "authority", "sourceText",
+        "parentId", "children", "fields", "blockedReason"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Stable node identifier (kebab-case slug)."
+        },
+        "type": {
+          "type": "string",
+          "description": "Node type tag (e.g. 'action', 'condition', 'goal')."
+        },
+        "label": {
+          "type": "string",
+          "description": "Human-readable label for display."
+        },
+        "status": {
+          "type": "string",
+          "description": "Lifecycle status after policy evaluation (e.g. 'allowed', 'blocked', 'needsConfirmation')."
+        },
+        "trustSource": {
+          "type": "string",
+          "description": "Trust tier that sourced this node (e.g. 'user', 'skill', 'system')."
+        },
+        "authority": {
+          "type": "string",
+          "description": "Authority claim carried by the node."
+        },
+        "sourceText": {
+          "type": "string",
+          "description": "Raw text fragment from the prompt that produced this node."
+        },
+        "parentId": {
+          "type": ["string", "null"],
+          "description": "Id of the parent node, or null for root nodes."
+        },
+        "children": {
+          "type": "array",
+          "description": "Ordered list of child node ids.",
+          "items": { "type": "string" }
+        },
+        "fields": {
+          "type": "array",
+          "description": "Structured fields extracted for this node.",
+          "items": { "$ref": "#/$defs/FieldView" }
+        },
+        "blockedReason": {
+          "type": ["string", "null"],
+          "description": "Policy reason the node was blocked, or null if not blocked."
+        }
+      }
+    }
+  },
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "description": "Artifact schema version (e.g. '1.0')."
+    },
+    "prompt": {
+      "type": "string",
+      "description": "The original user prompt that was resolved."
+    },
+    "nodes": {
+      "type": "array",
+      "description": "All nodes in the intent graph, in evaluation order.",
+      "items": { "$ref": "#/$defs/NodeView" }
+    }
+  }
+}

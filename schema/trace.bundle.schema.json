@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://intentmesh.local/schema/trace.bundle.schema.json",
+  "title": "TraceBundle",
+  "description": "A complete, signed trace bundle for one IntentMesh run. Contains the prompt, the approvals that produced it, a summary, the five run artifacts, and an HMAC bundle signature covering all five artifacts. Bundles are deterministic: identical prompt + approvals yield a byte-identical bundle and signature. All property names are camelCase.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "prompt", "approvals", "summary",
+    "intentGraph", "policyDecisions", "executionTrace",
+    "verificationReport", "signedAudit", "bundleSignature"
+  ],
+  "$defs": {
+    "SummaryView": {
+      "title": "SummaryView",
+      "description": "Aggregate counts for a run.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "allowed", "needsConfirmation", "blocked", "executed", "verified"],
+      "properties": {
+        "total": {
+          "type": "integer",
+          "description": "Total number of nodes in the intent graph.",
+          "minimum": 0
+        },
+        "allowed": {
+          "type": "integer",
+          "description": "Number of nodes with an 'allow' policy decision.",
+          "minimum": 0
+        },
+        "needsConfirmation": {
+          "type": "integer",
+          "description": "Number of nodes that required explicit user confirmation.",
+          "minimum": 0
+        },
+        "blocked": {
+          "type": "integer",
+          "description": "Number of nodes that were blocked by policy.",
+          "minimum": 0
+        },
+        "executed": {
+          "type": "integer",
+          "description": "Number of nodes that were actually executed (ran=true).",
+          "minimum": 0
+        },
+        "verified": {
+          "type": "integer",
+          "description": "Number of postcondition checks that passed.",
+          "minimum": 0
+        }
+      }
+    }
+  },
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "description": "Bundle schema version (e.g. '1.0')."
+    },
+    "prompt": {
+      "type": "string",
+      "description": "The original user prompt."
+    },
+    "approvals": {
+      "type": "array",
+      "description": "Sorted list of approval tokens that were granted before this run.",
+      "items": { "type": "string" }
+    },
+    "summary": {
+      "$ref": "#/$defs/SummaryView"
+    },
+    "intentGraph": {
+      "$ref": "intent.graph.schema.json",
+      "description": "The intent graph artifact for this run."
+    },
+    "policyDecisions": {
+      "$ref": "policy.decisions.schema.json",
+      "description": "The policy decisions artifact for this run."
+    },
+    "executionTrace": {
+      "$ref": "execution.trace.schema.json",
+      "description": "The execution trace artifact for this run."
+    },
+    "verificationReport": {
+      "$ref": "verification.report.schema.json",
+      "description": "The verification report artifact for this run."
+    },
+    "signedAudit": {
+      "$ref": "audit.signed.schema.json",
+      "description": "The signed audit artifact for this run."
+    },
+    "bundleSignature": {
+      "type": "string",
+      "description": "HMAC-SHA256 over the canonical (minified, camelCase) JSON concatenation of the five artifacts. Hex-encoded."
+    }
+  }
+}

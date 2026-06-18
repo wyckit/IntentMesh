@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/wyckit/IntentMesh/actions/workflows/ci.yml/badge.svg)](https://github.com/wyckit/IntentMesh/actions/workflows/ci.yml)
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4.svg)](https://dotnet.microsoft.com/)
-[![tests](https://img.shields.io/badge/tests-38%2F38-34d399.svg)](#status)
+[![tests](https://img.shields.io/badge/tests-57%2F57-34d399.svg)](#status)
 
 Before an AI agent sends an email, edits code, queries data, books a meeting, deletes a file, or
 calls an API, **IntentMesh forces that action through intent structure, authority checks, policy,

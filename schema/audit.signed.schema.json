@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://intentmesh.local/schema/audit.signed.schema.json",
+  "title": "SignedAuditArtifact",
+  "description": "The ordered audit event log for a run, together with a chained hash and HMAC signature for tamper detection. All property names are camelCase.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "events", "chainHash", "signature"],
+  "$defs": {
+    "AuditView": {
+      "title": "AuditView",
+      "description": "A single audit event emitted during the run.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seq", "nodeId", "phase", "message"],
+      "properties": {
+        "seq": {
+          "type": "integer",
+          "description": "Monotonically increasing sequence number (0-based).",
+          "minimum": 0
+        },
+        "nodeId": {
+          "type": "string",
+          "description": "Id of the node this event relates to."
+        },
+        "phase": {
+          "type": "string",
+          "description": "Pipeline phase in which the event was emitted (e.g. 'resolve', 'policy', 'exec', 'verify')."
+        },
+        "message": {
+          "type": "string",
+          "description": "Human-readable audit message."
+        }
+      }
+    }
+  },
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "description": "Artifact schema version (e.g. '1.0')."
+    },
+    "events": {
+      "type": "array",
+      "description": "All audit events in ascending sequence order.",
+      "items": { "$ref": "#/$defs/AuditView" }
+    },
+    "chainHash": {
+      "type": "string",
+      "description": "SHA-256 hash chain over all events (hex-encoded). Each event's hash includes the previous hash, making the log tamper-evident."
+    },
+    "signature": {
+      "type": "string",
+      "description": "HMAC-SHA256 signature over the canonical JSON of this artifact (hex-encoded)."
+    }
+  }
+}

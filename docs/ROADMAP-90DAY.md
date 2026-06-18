@@ -21,15 +21,18 @@ control room that blocks indirect prompt injection while still completing the us
 - A dedicated "Normal agent vs IntentMesh" page.
 - Make `--demo 3` (the injection defense) the canonical front door.
 
-## Days 16–30 — Runtime hardening
+## Days 16–30 — Runtime hardening  *(done)*
 *Goal: make the core feel real.*
 
-- Stable, versioned schemas: `intent.graph.json`, `policy.decisions.json`,
-  `verification.report.json`, `audit.signed.json` (+ JSON Schema files).
-- Signed trace bundle export (all five artifacts) from CLI and Control Room.
-- **Deterministic replay**: load a bundle, re-run, assert identical decisions.
-- Failure-mode tests; grow to **50+ unit tests**.
-- Enforce the Proposer/Verifier separation in code (Verifier cannot see the original prompt).
+- **[done]** Versioned schemas for all five artifacts under `schema/` (`intent.graph`,
+  `policy.decisions`, `execution.trace`, `verification.report`, `audit.signed`, + `trace.bundle`).
+- **[done]** Signed trace bundle (`TraceBundle`) export from CLI (`intentmesh export … --split`)
+  and the Control Room (`⬇ Bundle`); HMAC over all five artifacts.
+- **[done]** Deterministic replay: `intentmesh replay <bundle>` reloads, re-runs, and asserts the
+  bundle is byte-identical + signature valid.
+- **[done]** Proposer/Verifier separation enforced: the verifier never receives the prompt; new
+  `pc-recipient-contract-match` catches recipient substitution from contract + output alone.
+- **[done]** Test suite grown to **57** (was 38).
 
 ## Days 31–45 — Control Room v1
 *Goal: make the visual product.*
