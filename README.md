@@ -80,6 +80,11 @@ $ intentmesh --demo 3
 
 ![Comparison mode: a normal agent goes prompt -> LLM -> tool call -> side effect; IntentMesh inserts intent mesh -> policy gate -> typed tool -> verification -> audit](docs/img/compare.png)
 
+▶ **Interactive walkthrough:** open [`docs/compare.html`](docs/compare.html) (self-contained, no
+server) — watch the same indirect-injection attack run down both pipelines: the normal agent leaks
+private notes; IntentMesh quarantines the injected node, blocks the side effect, completes the real
+task, and verifies nothing leaked.
+
 ## Quick start
 
 ```bash

@@ -50,6 +50,10 @@ first (email/files — universal), then **Developer Agent** (curl|sh, secrets �
 **Data Agent** (typed query plan, DROP blocked — wins enterprise). Adoption: CLI, Control Room,
 Runtime SDK, MCP adapter.
 
+## 90-day arc
+clarity → runtime hardening → Control Room v1 → IntentBench v1 → integration → launch. Full dated
+plan in `ROADMAP-90DAY.md`; tasks in `TASKLIST-NEXT.md`.
+
 ## Manifesto — "The Case for Verified Intent"
 Language is not authority · tool calls are too late · prompt injection is an authority failure ·
 policies need structured intent · verification must be postcondition-based · audits must be
