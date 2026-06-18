@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="260" viewBox="0 0 920 260" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#4a5a70"/>
+    </marker>
+    <style>
+      .stage { fill:#121823; stroke:#28384c; stroke-width:1.5; rx:11; }
+      .title { fill:#e6edf3; font-size:14px; font-weight:700; }
+      .role  { fill:#8b9bb0; font-size:10.5px; font-family:ui-monospace,Menlo,Consolas,monospace; }
+      .lane  { stroke:#2a3647; stroke-width:1.6; fill:none; marker-end:url(#arrow); }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="920" height="260" rx="16" fill="#0b0f14"/>
+
+  <text x="460" y="34" text-anchor="middle" fill="#4cc2ff" font-size="16" font-weight="800"
+        font-family="ui-monospace,Menlo,Consolas,monospace">Don't execute language. Execute verified intent.</text>
+
+  <!-- stages -->
+  <g>
+    <rect class="stage" x="24"  y="86" width="116" height="64"/>
+    <text class="title" x="82"  y="116" text-anchor="middle">Prompt</text>
+    <text class="role"  x="82"  y="134" text-anchor="middle">language</text>
+
+    <rect class="stage" x="168" y="86" width="116" height="64"/>
+    <text class="title" x="226" y="112" text-anchor="middle">Proposer</text>
+    <text class="role"  x="226" y="130" text-anchor="middle">untrusted</text>
+    <text class="role"  x="226" y="144" text-anchor="middle">proposes</text>
+
+    <rect class="stage" x="312" y="86" width="120" height="64"/>
+    <text class="title" x="372" y="112" text-anchor="middle">Intent Mesh</text>
+    <text class="role"  x="372" y="130" text-anchor="middle">typed nodes</text>
+    <text class="role"  x="372" y="144" text-anchor="middle">trust-tagged</text>
+
+    <rect class="stage" x="460" y="86" width="116" height="64"/>
+    <text class="title" x="518" y="112" text-anchor="middle">Policy Gate</text>
+    <text class="role"  x="518" y="130" text-anchor="middle">authority</text>
+    <text class="role"  x="518" y="144" text-anchor="middle">fail-closed</text>
+
+    <rect class="stage" x="604" y="86" width="116" height="64"/>
+    <text class="title" x="662" y="112" text-anchor="middle">Tool</text>
+    <text class="role"  x="662" y="130" text-anchor="middle">deterministic</text>
+    <text class="role"  x="662" y="144" text-anchor="middle">typed-only</text>
+
+    <rect class="stage" x="748" y="86" width="116" height="64"/>
+    <text class="title" x="806" y="112" text-anchor="middle">Verifier</text>
+    <text class="role"  x="806" y="130" text-anchor="middle">postcondition</text>
+    <text class="role"  x="806" y="144" text-anchor="middle">+ audit</text>
+  </g>
+
+  <!-- lanes -->
+  <line class="lane" x1="140" y1="118" x2="166" y2="118"/>
+  <line class="lane" x1="284" y1="118" x2="310" y2="118"/>
+  <line class="lane" x1="432" y1="118" x2="458" y2="118"/>
+  <line class="lane" x1="576" y1="118" x2="602" y2="118"/>
+  <line class="lane" x1="720" y1="118" x2="746" y2="118"/>
+
+  <!-- bottom note: the boundary -->
+  <text x="460" y="196" text-anchor="middle" fill="#8b9bb0" font-size="12.5">
+    Raw language never reaches a tool. It must become typed, validated intent first.
+  </text>
+  <text x="460" y="220" text-anchor="middle" fill="#34d399" font-size="12" font-weight="600">
+    Retrieved / untrusted content is data, not authority — so it is quarantined before anything runs.
+  </text>
+  <text x="460" y="244" text-anchor="middle" fill="#5a6b80" font-size="10.5"
+        font-family="ui-monospace,Menlo,Consolas,monospace">
+    Language proposes · Symbols constrain · Policies authorize · Tools execute · Validators verify · Audits explain
+  </text>
+</svg>
