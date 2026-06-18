@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IntentMesh — Control Room</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">◇</span>
+      <div>
+        <h1>IntentMesh <span class="sub">Control Room</span></h1>
+        <p class="slogan">Don't execute language. Execute verified intent.</p>
+      </div>
+    </div>
+    <nav class="modes">
+      <button class="mode-btn active" data-mode="control">Control Room</button>
+      <button class="mode-btn" data-mode="compare">Compare</button>
+    </nav>
+  </header>
+
+  <section class="request-bar">
+    <textarea id="prompt" rows="1" placeholder="Describe a request…"></textarea>
+    <div class="demo-row" id="demoRow"></div>
+    <button id="runBtn" class="run">Run pipeline ▸</button>
+  </section>
+
+  <!-- ── Control Room ─────────────────────────────────────────────── -->
+  <main id="controlView" class="grid">
+    <section class="panel" id="requestPanel">
+      <h2><span class="n">1</span> User Request</h2>
+      <div class="panel-body">
+        <p class="prompt-echo" id="promptEcho">—</p>
+        <div class="resolver" id="resolver"></div>
+      </div>
+    </section>
+
+    <section class="panel hero" id="meshPanel">
+      <h2><span class="n">2</span> Intent Mesh <span class="hint">typed nodes · trust-tagged</span></h2>
+      <div class="panel-body mesh-body">
+        <svg id="mesh" preserveAspectRatio="xMidYMin meet"></svg>
+        <div class="legend">
+          <span><i class="dot user"></i> user authority</span>
+          <span><i class="dot zt"></i> zero-trust (data, no authority)</span>
+          <span class="legend-status">
+            <i class="badge st-Verified">verified</i>
+            <i class="badge st-Executed">executed</i>
+            <i class="badge st-NeedsConfirmation">needs-confirm</i>
+            <i class="badge st-Blocked">blocked</i>
+          </span>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="policyPanel">
+      <h2><span class="n">3</span> Policy Gate</h2>
+      <div class="panel-body" id="policy"></div>
+    </section>
+
+    <section class="panel wide" id="execPanel">
+      <h2><span class="n">4</span> Execution</h2>
+      <div class="panel-body" id="execution"></div>
+    </section>
+
+    <section class="panel" id="verifyPanel">
+      <h2><span class="n">5</span> Verification</h2>
+      <div class="panel-body" id="verification"></div>
+    </section>
+
+    <section class="panel wide" id="auditPanel">
+      <h2><span class="n">6</span> Audit Trail</h2>
+      <div class="panel-body audit" id="audit"></div>
+    </section>
+  </main>
+
+  <!-- ── Comparison mode ──────────────────────────────────────────── -->
+  <main id="compareView" class="compare hidden">
+    <div class="compare-col bad">
+      <h2>Normal agent</h2>
+      <div class="flow">
+        <div class="step">Prompt</div><div class="arr">▼</div>
+        <div class="step">LLM</div><div class="arr">▼</div>
+        <div class="step">Tool call</div><div class="arr">▼</div>
+        <div class="step danger">Side effect</div>
+      </div>
+      <p class="takeaway">Language and retrieved content can become execution authority. A convincing
+        sentence in a file can trigger the tool. "Hope the guardrails hold."</p>
+    </div>
+    <div class="compare-col good">
+      <h2>IntentMesh</h2>
+      <div class="flow">
+        <div class="step">Prompt</div><div class="arr">▼</div>
+        <div class="step">Intent mesh <small>typed, inspectable</small></div><div class="arr">▼</div>
+        <div class="step">Policy gate <small>authority</small></div><div class="arr">▼</div>
+        <div class="step">Typed tool <small>deterministic</small></div><div class="arr">▼</div>
+        <div class="step">Verification</div><div class="arr">▼</div>
+        <div class="step safe">Audit</div>
+      </div>
+      <p class="takeaway">Raw language never reaches the tool. It must become typed, validated intent
+        first. Untrusted content is data, not authority — so it is blocked before anything runs.</p>
+    </div>
+  </main>
+
+  <footer class="foot">
+    <span>Symbolic layer: <b id="bundleInfo">im-* TLM bundle</b> · byte-compatible with RSRM / sage-rsrm</span>
+    <span>Language proposes · Symbols constrain · Policies authorize · Tools execute · Validators verify · Audits explain</span>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

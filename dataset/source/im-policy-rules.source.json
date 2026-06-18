@@ -1,0 +1,541 @@
+{
+  "Manifest": {
+    "Metadata": {
+      "TlmId": "im-policy-rules",
+      "IsMutable": false,
+      "Role": 5,
+      "Priority": 110,
+      "Version": "1.0.0",
+      "Checksum": "",
+      "HotSwapPolicy": 1,
+      "StabilityScore": 0.85
+    },
+    "Imports": [
+      "im-action-contracts",
+      "im-trust-model"
+    ],
+    "Derives": [],
+    "CreatedUtc": "2026-06-17T00:00:00Z",
+    "SchemaVersion": "1.0"
+  },
+  "Concepts": [
+    {
+      "Id": "policy-root",
+      "Label": "policy gate",
+      "Category": "PolicyEngine",
+      "Description": "Decides allow / warn / confirm / review / block for each intent node before execution. Authority lives here, not in language. Fail-closed: an unrecognized or zero-trust side-effecting node is blocked.",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "risk-low",
+      "Label": "low risk",
+      "Category": "RiskClass",
+      "Description": "Reads and pure analysis.",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "risk-medium",
+      "Label": "medium risk",
+      "Category": "RiskClass",
+      "Description": "Local writes / drafts (reversible, no external effect).",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "risk-high",
+      "Label": "high risk",
+      "Category": "RiskClass",
+      "Description": "External communication or destructive deletion.",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "risk-critical",
+      "Label": "critical risk",
+      "Category": "RiskClass",
+      "Description": "Irreversible system / financial / legal operations (out of scope for v0.1).",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "dec-allow",
+      "Label": "allow",
+      "Category": "Decision",
+      "Description": "Permit immediately.",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "dec-warn",
+      "Label": "allow with warning",
+      "Category": "Decision",
+      "Description": "Permit but surface a caution.",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "dec-confirm",
+      "Label": "require confirmation",
+      "Category": "Decision",
+      "Description": "Stage; execute only after explicit user confirmation.",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "dec-review",
+      "Label": "require review",
+      "Category": "Decision",
+      "Description": "Hold for human review.",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "dec-block",
+      "Label": "block",
+      "Category": "Decision",
+      "Description": "Refuse. The action never executes.",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "pol-zero-trust-side-effect",
+      "Label": "pol-zero-trust-side-effect",
+      "Category": "PolicyRule",
+      "Description": "a node\u0027s TrustSource is retrieved-content or tool-output (Authority=none) AND it requests any side effect -\u003E block \u2014 retrieved content is data, not authority; it may not command tools",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "pol-recipient-substitution",
+      "Label": "pol-recipient-substitution",
+      "Category": "PolicyRule",
+      "Description": "an email recipient differs from the user-named recipient and was introduced by document content -\u003E block \u2014 recipient substitution from untrusted content",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "pol-private-exfiltration",
+      "Label": "pol-private-exfiltration",
+      "Category": "PolicyRule",
+      "Description": "private/sensitive content would be sent to an external or unknown recipient -\u003E block \u2014 would exfiltrate private data",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "pol-delete-files",
+      "Label": "pol-delete-files",
+      "Category": "PolicyRule",
+      "Description": "the action deletes files -\u003E require explicit per-file approval; never delete automatically",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "pol-send-email",
+      "Label": "pol-send-email",
+      "Category": "PolicyRule",
+      "Description": "the action transmits an email (external communication) -\u003E require confirmation before sending",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "pol-local-write",
+      "Label": "pol-local-write",
+      "Category": "PolicyRule",
+      "Description": "the action stages a local write (e.g. a tentative calendar block) -\u003E require confirmation before committing",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "pol-draft-allowed",
+      "Label": "pol-draft-allowed",
+      "Category": "PolicyRule",
+      "Description": "the action drafts an email to a recipient the user named -\u003E allow as a draft (send remains gated)",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "pol-read-allowed",
+      "Label": "pol-read-allowed",
+      "Category": "PolicyRule",
+      "Description": "the action is a low-risk read or pure analysis with no side effect -\u003E allow",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "pol-unregistered",
+      "Label": "pol-unregistered",
+      "Category": "PolicyRule",
+      "Description": "the action kind is not present in im-action-contracts -\u003E block \u2014 no typed contract exists for this action (fail-closed)",
+      "Aliases": [],
+      "Properties": {}
+    }
+  ],
+  "Relations": [
+    {
+      "SourceId": "policy-root",
+      "TargetId": "risk-low",
+      "Type": "Ranks",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "policy-root",
+      "TargetId": "risk-medium",
+      "Type": "Ranks",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "policy-root",
+      "TargetId": "risk-high",
+      "Type": "Ranks",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "policy-root",
+      "TargetId": "risk-critical",
+      "Type": "Ranks",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "policy-root",
+      "TargetId": "dec-allow",
+      "Type": "Emits",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "policy-root",
+      "TargetId": "dec-warn",
+      "Type": "Emits",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "policy-root",
+      "TargetId": "dec-confirm",
+      "Type": "Emits",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "policy-root",
+      "TargetId": "dec-review",
+      "Type": "Emits",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "policy-root",
+      "TargetId": "dec-block",
+      "Type": "Emits",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "policy-root",
+      "TargetId": "pol-zero-trust-side-effect",
+      "Type": "Applies",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "policy-root",
+      "TargetId": "pol-recipient-substitution",
+      "Type": "Applies",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "policy-root",
+      "TargetId": "pol-private-exfiltration",
+      "Type": "Applies",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "policy-root",
+      "TargetId": "pol-delete-files",
+      "Type": "Applies",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "policy-root",
+      "TargetId": "pol-send-email",
+      "Type": "Applies",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "policy-root",
+      "TargetId": "pol-local-write",
+      "Type": "Applies",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "policy-root",
+      "TargetId": "pol-draft-allowed",
+      "Type": "Applies",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "policy-root",
+      "TargetId": "pol-read-allowed",
+      "Type": "Applies",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "policy-root",
+      "TargetId": "pol-unregistered",
+      "Type": "Applies",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "pol-zero-trust-side-effect",
+      "TargetId": "pol-recipient-substitution",
+      "Type": "Precedes",
+      "Description": "evaluated before",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "pol-recipient-substitution",
+      "TargetId": "pol-private-exfiltration",
+      "Type": "Precedes",
+      "Description": "evaluated before",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "pol-private-exfiltration",
+      "TargetId": "pol-delete-files",
+      "Type": "Precedes",
+      "Description": "evaluated before",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "pol-delete-files",
+      "TargetId": "pol-send-email",
+      "Type": "Precedes",
+      "Description": "evaluated before",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "pol-send-email",
+      "TargetId": "pol-local-write",
+      "Type": "Precedes",
+      "Description": "evaluated before",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "pol-local-write",
+      "TargetId": "pol-draft-allowed",
+      "Type": "Precedes",
+      "Description": "evaluated before",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "pol-draft-allowed",
+      "TargetId": "pol-read-allowed",
+      "Type": "Precedes",
+      "Description": "evaluated before",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "pol-read-allowed",
+      "TargetId": "pol-unregistered",
+      "Type": "Precedes",
+      "Description": "evaluated before",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    }
+  ],
+  "Dimensions": [],
+  "Policies": [
+    {
+      "Id": "pol-zero-trust-side-effect",
+      "Rule": "a node\u0027s TrustSource is retrieved-content or tool-output (Authority=none) AND it requests any side effect",
+      "Action": "block \u2014 retrieved content is data, not authority; it may not command tools"
+    },
+    {
+      "Id": "pol-recipient-substitution",
+      "Rule": "an email recipient differs from the user-named recipient and was introduced by document content",
+      "Action": "block \u2014 recipient substitution from untrusted content"
+    },
+    {
+      "Id": "pol-private-exfiltration",
+      "Rule": "private/sensitive content would be sent to an external or unknown recipient",
+      "Action": "block \u2014 would exfiltrate private data"
+    },
+    {
+      "Id": "pol-delete-files",
+      "Rule": "the action deletes files",
+      "Action": "require explicit per-file approval; never delete automatically"
+    },
+    {
+      "Id": "pol-send-email",
+      "Rule": "the action transmits an email (external communication)",
+      "Action": "require confirmation before sending"
+    },
+    {
+      "Id": "pol-local-write",
+      "Rule": "the action stages a local write (e.g. a tentative calendar block)",
+      "Action": "require confirmation before committing"
+    },
+    {
+      "Id": "pol-draft-allowed",
+      "Rule": "the action drafts an email to a recipient the user named",
+      "Action": "allow as a draft (send remains gated)"
+    },
+    {
+      "Id": "pol-read-allowed",
+      "Rule": "the action is a low-risk read or pure analysis with no side effect",
+      "Action": "allow"
+    },
+    {
+      "Id": "pol-unregistered",
+      "Rule": "the action kind is not present in im-action-contracts",
+      "Action": "block \u2014 no typed contract exists for this action (fail-closed)"
+    }
+  ],
+  "Cues": [],
+  "FitSignals": [],
+  "Generators": [],
+  "ParameterCount": 35
+}

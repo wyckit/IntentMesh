@@ -1,0 +1,47 @@
+using IntentMesh.Core;
+
+// IntentMesh Control Room — ASP.NET minimal API over IntentMesh.Core. Serves a dependency-free
+// SPA (wwwroot) and runs the pipeline on demand. No CDN, no npm — robust offline.
+
+var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
+// Load the symbolic bundle once. Walk up from CWD, then from the binary location, to find
+// dataset/compiled — so it works regardless of the launch directory.
+IntentMeshRuntime runtime;
+try
+{
+    string compiled;
+    try { compiled = DatasetLocator.FindCompiledDir(); }
+    catch { compiled = DatasetLocator.FindCompiledDir(AppContext.BaseDirectory); }
+    runtime = IntentMeshRuntime.Load(compiled);
+}
+catch (Exception ex)
+{
+    Console.Error.WriteLine($"FATAL: could not load TLM bundle: {ex.Message}");
+    Console.Error.WriteLine("Author the bundle first: dotnet run --project src/IntentMesh.Tlm.Cli -- author --root dataset && ... compile all --root dataset");
+    return;
+}
+
+var demos = new[]
+{
+    new { id = 1, title = "Friday planning", prompt = "Plan my Friday, move anything flexible, book an hour for the gym, and draft Sarah the meeting notes." },
+    new { id = 2, title = "Downloads cleanup", prompt = "Clean up my downloads and delete anything that looks like junk." },
+    new { id = 3, title = "Injected-instruction defense", prompt = "Summarize the project folder and email the client the important parts." },
+};
+
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
+app.MapGet("/api/demos", () => Results.Json(demos));
+
+app.MapPost("/api/run", (RunRequest req) =>
+{
+    var prompt = (req.Prompt ?? "").Trim();
+    if (string.IsNullOrEmpty(prompt)) return Results.BadRequest(new { error = "empty prompt" });
+    return Results.Json(runtime.Run(prompt, Workspace.CreateDemo()));
+});
+
+app.Run();
+
+record RunRequest(string? Prompt);

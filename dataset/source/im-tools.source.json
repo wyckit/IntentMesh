@@ -1,0 +1,130 @@
+{
+  "Manifest": {
+    "Metadata": {
+      "TlmId": "im-tools",
+      "IsMutable": false,
+      "Role": 2,
+      "Priority": 115,
+      "Version": "1.0.0",
+      "Checksum": "",
+      "HotSwapPolicy": 1,
+      "StabilityScore": 0.8
+    },
+    "Imports": [
+      "im-action-contracts"
+    ],
+    "Derives": [],
+    "CreatedUtc": "2026-06-17T00:00:00Z",
+    "SchemaVersion": "1.0"
+  },
+  "Concepts": [
+    {
+      "Id": "tools-root",
+      "Label": "tool adapters",
+      "Category": "AdapterRegistry",
+      "Description": "Deterministic, sandboxed adapters. Each accepts ONLY a typed action contract, never raw language, and reports postconditions after executing against the fake workspace. No real side effects in v0.1.",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "tool-calendar",
+      "Label": "calendar adapter",
+      "Category": "ToolAdapter",
+      "Description": "Fake calendar: read events, classify fixed/flexible, stage tentative blocks.",
+      "Aliases": [],
+      "Properties": {
+        "Consumes": "act-read-calendar,act-classify-events,act-create-calendar-block",
+        "SideEffect": "local-write"
+      }
+    },
+    {
+      "Id": "tool-notes",
+      "Label": "notes adapter",
+      "Category": "ToolAdapter",
+      "Description": "Fake notes/docs: locate and summarize. Reads untrusted content as DATA.",
+      "Aliases": [],
+      "Properties": {
+        "Consumes": "act-find-notes,act-summarize-document",
+        "SideEffect": "none"
+      }
+    },
+    {
+      "Id": "tool-email",
+      "Label": "email adapter",
+      "Category": "ToolAdapter",
+      "Description": "Fake email: create drafts; sending is gated and sandboxed (no transmission).",
+      "Aliases": [],
+      "Properties": {
+        "Consumes": "act-draft-email,act-send-email",
+        "SideEffect": "external-comm"
+      }
+    },
+    {
+      "Id": "tool-files",
+      "Label": "file adapter",
+      "Category": "ToolAdapter",
+      "Description": "Fake filesystem: scan, classify, and (only on approval) delete sandboxed files.",
+      "Aliases": [],
+      "Properties": {
+        "Consumes": "act-scan-downloads,act-classify-junk,act-delete-files",
+        "SideEffect": "destructive"
+      }
+    }
+  ],
+  "Relations": [
+    {
+      "SourceId": "tools-root",
+      "TargetId": "tool-calendar",
+      "Type": "Provides",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "tools-root",
+      "TargetId": "tool-notes",
+      "Type": "Provides",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "tools-root",
+      "TargetId": "tool-email",
+      "Type": "Provides",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "tools-root",
+      "TargetId": "tool-files",
+      "Type": "Provides",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    }
+  ],
+  "Dimensions": [],
+  "Policies": [],
+  "Cues": [],
+  "FitSignals": [],
+  "Generators": [],
+  "ParameterCount": 12
+}

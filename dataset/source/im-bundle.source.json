@@ -1,0 +1,259 @@
+{
+  "Manifest": {
+    "Metadata": {
+      "TlmId": "im-bundle",
+      "IsMutable": false,
+      "Role": 6,
+      "Priority": 1000,
+      "Version": "1.0.0",
+      "Checksum": "",
+      "HotSwapPolicy": 1,
+      "StabilityScore": 1
+    },
+    "Imports": [
+      "im-trust-model",
+      "im-action-contracts",
+      "im-policy-rules",
+      "im-nl-vocabulary",
+      "im-tools",
+      "im-skills"
+    ],
+    "Derives": [],
+    "CreatedUtc": "2026-06-17T00:00:00Z",
+    "SchemaVersion": "1.0"
+  },
+  "Concepts": [
+    {
+      "Id": "domain-root",
+      "Label": "agentic intent runtime",
+      "Category": "Domain",
+      "Description": "IntentMesh: a symbolic control layer between agent language and tools. This bundle indexes the full domain knowledge graph that backs the resolve -\u003E validate -\u003E execute -\u003E verify -\u003E audit pipeline.",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "mod-trust-model",
+      "Label": "trust model",
+      "Category": "Module",
+      "Description": "Trust sources, authority levels, the Zero-Trust rule.",
+      "Aliases": [],
+      "Properties": {
+        "Tlm": "im-trust-model"
+      }
+    },
+    {
+      "Id": "mod-action-contracts",
+      "Label": "action contracts",
+      "Category": "Module",
+      "Description": "The bounded registry of typed actions \u002B postconditions.",
+      "Aliases": [],
+      "Properties": {
+        "Tlm": "im-action-contracts"
+      }
+    },
+    {
+      "Id": "mod-policy-rules",
+      "Label": "policy rules",
+      "Category": "Module",
+      "Description": "Risk classes, decisions, and the policy gate\u0027s ordered rules.",
+      "Aliases": [],
+      "Properties": {
+        "Tlm": "im-policy-rules"
+      }
+    },
+    {
+      "Id": "mod-nl-vocabulary",
+      "Label": "NL vocabulary",
+      "Category": "Module",
+      "Description": "English phrasing -\u003E action signals (cues).",
+      "Aliases": [],
+      "Properties": {
+        "Tlm": "im-nl-vocabulary"
+      }
+    },
+    {
+      "Id": "mod-tools",
+      "Label": "tool adapters",
+      "Category": "Module",
+      "Description": "Adapter registry: contract -\u003E sandboxed tool.",
+      "Aliases": [],
+      "Properties": {
+        "Tlm": "im-tools"
+      }
+    },
+    {
+      "Id": "mod-skills",
+      "Label": "emergent skills",
+      "Category": "Module",
+      "Description": "Skill lifecycle scaffolding.",
+      "Aliases": [],
+      "Properties": {
+        "Tlm": "im-skills"
+      }
+    }
+  ],
+  "Relations": [
+    {
+      "SourceId": "domain-root",
+      "TargetId": "mod-trust-model",
+      "Type": "ComposedOf",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "domain-root",
+      "TargetId": "mod-action-contracts",
+      "Type": "ComposedOf",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "domain-root",
+      "TargetId": "mod-policy-rules",
+      "Type": "ComposedOf",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "domain-root",
+      "TargetId": "mod-nl-vocabulary",
+      "Type": "ComposedOf",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "domain-root",
+      "TargetId": "mod-tools",
+      "Type": "ComposedOf",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "domain-root",
+      "TargetId": "mod-skills",
+      "Type": "ComposedOf",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "mod-action-contracts",
+      "TargetId": "mod-trust-model",
+      "Type": "DependsOn",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "mod-policy-rules",
+      "TargetId": "mod-action-contracts",
+      "Type": "DependsOn",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "mod-policy-rules",
+      "TargetId": "mod-trust-model",
+      "Type": "DependsOn",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "mod-nl-vocabulary",
+      "TargetId": "mod-action-contracts",
+      "Type": "DependsOn",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "mod-tools",
+      "TargetId": "mod-action-contracts",
+      "Type": "DependsOn",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "mod-skills",
+      "TargetId": "mod-action-contracts",
+      "Type": "DependsOn",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "mod-skills",
+      "TargetId": "mod-nl-vocabulary",
+      "Type": "DependsOn",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    }
+  ],
+  "Dimensions": [],
+  "Policies": [],
+  "Cues": [],
+  "FitSignals": [],
+  "Generators": [],
+  "ParameterCount": 19
+}

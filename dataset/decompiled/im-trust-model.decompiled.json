@@ -1,0 +1,200 @@
+{
+  "Manifest": {
+    "Metadata": {
+      "TlmId": "im-trust-model",
+      "IsMutable": false,
+      "Role": 0,
+      "Priority": 100,
+      "Version": "1.0.0",
+      "Checksum": "EAABA6158CE5D3514FB560C4B01E0DAB527B2CE429210096250D8B5AF10BA940",
+      "HotSwapPolicy": 1,
+      "StabilityScore": 1
+    },
+    "Imports": [],
+    "Derives": [],
+    "CreatedUtc": "2026-06-17T00:00:00Z",
+    "SchemaVersion": "1.0"
+  },
+  "Concepts": [
+    {
+      "Id": "trust-root",
+      "Label": "trust model",
+      "Category": "TrustModel",
+      "Description": "Separates the authority to ACT from the ability to supply content. Every intent node carries a TrustSource; only User and System sources hold command authority. Retrieved content and tool output may inform, never command.",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "auth-full",
+      "Label": "full authority",
+      "Category": "AuthorityLevel",
+      "Description": "May originate intent and authorize action (subject to policy \u002B confirmation).",
+      "Aliases": [],
+      "Properties": {
+        "CanCommand": "true"
+      }
+    },
+    {
+      "Id": "auth-none",
+      "Label": "no authority",
+      "Category": "AuthorityLevel",
+      "Description": "May supply content only. Can never originate intent or grant itself permission. The Zero-Trust level.",
+      "Aliases": [],
+      "Properties": {
+        "CanCommand": "false"
+      }
+    },
+    {
+      "Id": "src-user",
+      "Label": "user",
+      "Category": "TrustSource",
+      "Description": "The human operator\u0027s own request. The only first-class source of intent.",
+      "Aliases": [],
+      "Properties": {
+        "Authority": "auth-full"
+      }
+    },
+    {
+      "Id": "src-system",
+      "Label": "system",
+      "Category": "TrustSource",
+      "Description": "Trusted runtime configuration and policy. Not user-overridable at runtime.",
+      "Aliases": [],
+      "Properties": {
+        "Authority": "auth-full"
+      }
+    },
+    {
+      "Id": "src-retrieved-content",
+      "Label": "retrieved content",
+      "Category": "TrustSource",
+      "Description": "Text read from files, notes, documents, web pages. DATA, never instructions. Zero-Trust.",
+      "Aliases": [],
+      "Properties": {
+        "Authority": "auth-none"
+      }
+    },
+    {
+      "Id": "src-tool-output",
+      "Label": "tool output",
+      "Category": "TrustSource",
+      "Description": "Output produced by a tool adapter. Informational; cannot escalate into new authorized intent.",
+      "Aliases": [],
+      "Properties": {
+        "Authority": "auth-none"
+      }
+    },
+    {
+      "Id": "rule-zero-trust",
+      "Label": "zero-trust inheritance",
+      "Category": "TrustRule",
+      "Description": "Any intent node created or modified by analyzing untrusted data inputs inherits TrustSource=retrieved-content and Authority=none. Data can supply content; it can never spoof user intent or grant authority. Enforced by the Policy Gate, which blocks zero-trust nodes that request any side effect.",
+      "Aliases": [],
+      "Properties": {}
+    }
+  ],
+  "Relations": [
+    {
+      "SourceId": "src-user",
+      "TargetId": "auth-full",
+      "Type": "HasAuthority",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "src-system",
+      "TargetId": "auth-full",
+      "Type": "HasAuthority",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "src-retrieved-content",
+      "TargetId": "auth-none",
+      "Type": "HasAuthority",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "src-tool-output",
+      "TargetId": "auth-none",
+      "Type": "HasAuthority",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "rule-zero-trust",
+      "TargetId": "src-retrieved-content",
+      "Type": "AppliesTo",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "rule-zero-trust",
+      "TargetId": "src-tool-output",
+      "Type": "AppliesTo",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "rule-zero-trust",
+      "TargetId": "auth-none",
+      "Type": "Assigns",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "trust-root",
+      "TargetId": "rule-zero-trust",
+      "Type": "Enforces",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    }
+  ],
+  "Dimensions": [],
+  "Policies": [],
+  "Cues": [],
+  "FitSignals": [],
+  "Generators": [],
+  "ParameterCount": 14
+}

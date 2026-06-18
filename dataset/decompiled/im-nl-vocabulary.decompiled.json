@@ -1,0 +1,623 @@
+{
+  "Manifest": {
+    "Metadata": {
+      "TlmId": "im-nl-vocabulary",
+      "IsMutable": false,
+      "Role": 2,
+      "Priority": 105,
+      "Version": "1.0.0",
+      "Checksum": "13FB01DD7BD7281310B37AFE3EBED2ACDDC1815A5C7388903F6795962581B401",
+      "HotSwapPolicy": 1,
+      "StabilityScore": 0.7
+    },
+    "Imports": [
+      "im-action-contracts"
+    ],
+    "Derives": [],
+    "CreatedUtc": "2026-06-17T00:00:00Z",
+    "SchemaVersion": "1.0"
+  },
+  "Concepts": [
+    {
+      "Id": "nl-root",
+      "Label": "natural-language vocabulary",
+      "Category": "Lexicon",
+      "Description": "Maps free-form English requests to action signals the deterministic resolver executes. Each Cue carries Trigger synonyms and a Signal naming an action contract or a modifier. Entities (people, the gym, downloads, the project folder) are bound from the workspace by the resolver, never invented.",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "intent-plan-day",
+      "Label": "plan the day",
+      "Category": "Intent",
+      "Description": "Read \u002B organize a day\u0027s calendar.",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "intent-move-flexible",
+      "Label": "move flexible events",
+      "Category": "Intent",
+      "Description": "Reschedule events marked flexible.",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "intent-book-block",
+      "Label": "book a time block",
+      "Category": "Intent",
+      "Description": "Stage a tentative calendar block.",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "intent-find-notes",
+      "Label": "find notes",
+      "Category": "Intent",
+      "Description": "Locate notes by topic.",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "intent-draft-email",
+      "Label": "draft an email",
+      "Category": "Intent",
+      "Description": "Compose an email draft.",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "intent-send",
+      "Label": "send",
+      "Category": "Intent",
+      "Description": "Transmit (gated).",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "intent-clean-downloads",
+      "Label": "clean downloads",
+      "Category": "Intent",
+      "Description": "Scan a downloads folder.",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "intent-delete-junk",
+      "Label": "delete junk",
+      "Category": "Intent",
+      "Description": "Classify \u002B delete junk files (gated).",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "intent-summarize",
+      "Label": "summarize",
+      "Category": "Intent",
+      "Description": "Summarize documents.",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "cue-plan-day",
+      "Label": "plan my",
+      "Category": "Phrase",
+      "Description": "Cue (signal act.read_calendar); triggers: plan my / plan the / organize my / organise my / sort out my / look at my calendar / check my schedule / review my schedule / my friday / my monday / my tuesday / my wednesday / my thursday / my week.",
+      "Aliases": [
+        "plan my",
+        "plan the",
+        "organize my",
+        "organise my",
+        "sort out my",
+        "look at my calendar",
+        "check my schedule",
+        "review my schedule",
+        "my friday",
+        "my monday",
+        "my tuesday",
+        "my wednesday",
+        "my thursday",
+        "my week"
+      ],
+      "Properties": {
+        "Triggers": "plan my / plan the / organize my / organise my / sort out my / look at my calendar / check my schedule / review my schedule / my friday / my monday / my tuesday / my wednesday / my thursday / my week",
+        "Signal": "act.read_calendar"
+      }
+    },
+    {
+      "Id": "cue-move-flexible",
+      "Label": "move anything flexible",
+      "Category": "Phrase",
+      "Description": "Cue (signal act.classify_events); triggers: move anything flexible / move flexible / reschedule flexible / shuffle flexible / shift flexible / rearrange flexible / move what\u0027s flexible.",
+      "Aliases": [
+        "move anything flexible",
+        "move flexible",
+        "reschedule flexible",
+        "shuffle flexible",
+        "shift flexible",
+        "rearrange flexible",
+        "move what\u0027s flexible"
+      ],
+      "Properties": {
+        "Triggers": "move anything flexible / move flexible / reschedule flexible / shuffle flexible / shift flexible / rearrange flexible / move what\u0027s flexible",
+        "Signal": "act.classify_events"
+      }
+    },
+    {
+      "Id": "cue-book-block",
+      "Label": "book",
+      "Category": "Phrase",
+      "Description": "Cue (signal act.create_block); triggers: book / block off / block out / schedule / reserve / set aside / put in / add a / pencil in.",
+      "Aliases": [
+        "book",
+        "block off",
+        "block out",
+        "schedule",
+        "reserve",
+        "set aside",
+        "put in",
+        "add a",
+        "pencil in"
+      ],
+      "Properties": {
+        "Triggers": "book / block off / block out / schedule / reserve / set aside / put in / add a / pencil in",
+        "Signal": "act.create_block"
+      }
+    },
+    {
+      "Id": "cue-find-notes",
+      "Label": "meeting notes",
+      "Category": "Phrase",
+      "Description": "Cue (signal act.find_notes); triggers: meeting notes / the notes / my notes / notes for / notes from / the meeting notes.",
+      "Aliases": [
+        "meeting notes",
+        "the notes",
+        "my notes",
+        "notes for",
+        "notes from",
+        "the meeting notes"
+      ],
+      "Properties": {
+        "Triggers": "meeting notes / the notes / my notes / notes for / notes from / the meeting notes",
+        "Signal": "act.find_notes"
+      }
+    },
+    {
+      "Id": "cue-draft-email",
+      "Label": "draft",
+      "Category": "Phrase",
+      "Description": "Cue (signal act.draft_email); triggers: draft / write / compose / prepare / put together / send / email / message / shoot / drop.",
+      "Aliases": [
+        "draft",
+        "write",
+        "compose",
+        "prepare",
+        "put together",
+        "send",
+        "email",
+        "message",
+        "shoot",
+        "drop"
+      ],
+      "Properties": {
+        "Triggers": "draft / write / compose / prepare / put together / send / email / message / shoot / drop",
+        "Signal": "act.draft_email"
+      }
+    },
+    {
+      "Id": "cue-clean-downloads",
+      "Label": "clean up my downloads",
+      "Category": "Phrase",
+      "Description": "Cue (signal act.scan_downloads); triggers: clean up my downloads / clean my downloads / tidy my downloads / tidy up downloads / clear out downloads / sort my downloads / organize my downloads / declutter downloads / clean up downloads.",
+      "Aliases": [
+        "clean up my downloads",
+        "clean my downloads",
+        "tidy my downloads",
+        "tidy up downloads",
+        "clear out downloads",
+        "sort my downloads",
+        "organize my downloads",
+        "declutter downloads",
+        "clean up downloads"
+      ],
+      "Properties": {
+        "Triggers": "clean up my downloads / clean my downloads / tidy my downloads / tidy up downloads / clear out downloads / sort my downloads / organize my downloads / declutter downloads / clean up downloads",
+        "Signal": "act.scan_downloads"
+      }
+    },
+    {
+      "Id": "cue-delete-junk",
+      "Label": "delete anything that looks like junk",
+      "Category": "Phrase",
+      "Description": "Cue (signal act.classify_junk); triggers: delete anything that looks like junk / delete junk / remove junk / trash the junk / get rid of junk / delete the junk / remove clutter / delete anything junk.",
+      "Aliases": [
+        "delete anything that looks like junk",
+        "delete junk",
+        "remove junk",
+        "trash the junk",
+        "get rid of junk",
+        "delete the junk",
+        "remove clutter",
+        "delete anything junk"
+      ],
+      "Properties": {
+        "Triggers": "delete anything that looks like junk / delete junk / remove junk / trash the junk / get rid of junk / delete the junk / remove clutter / delete anything junk",
+        "Signal": "act.classify_junk"
+      }
+    },
+    {
+      "Id": "cue-summarize",
+      "Label": "summarize",
+      "Category": "Phrase",
+      "Description": "Cue (signal act.summarize_document); triggers: summarize / summarise / summary of / recap / give me the gist / sum up / digest / overview of.",
+      "Aliases": [
+        "summarize",
+        "summarise",
+        "summary of",
+        "recap",
+        "give me the gist",
+        "sum up",
+        "digest",
+        "overview of"
+      ],
+      "Properties": {
+        "Triggers": "summarize / summarise / summary of / recap / give me the gist / sum up / digest / overview of",
+        "Signal": "act.summarize_document"
+      }
+    },
+    {
+      "Id": "cue-entity-gym",
+      "Label": "gym",
+      "Category": "Phrase",
+      "Description": "Cue (signal entity.gym); triggers: gym / workout / work out / exercise / training / a run.",
+      "Aliases": [
+        "gym",
+        "workout",
+        "work out",
+        "exercise",
+        "training",
+        "a run"
+      ],
+      "Properties": {
+        "Triggers": "gym / workout / work out / exercise / training / a run",
+        "Signal": "entity.gym"
+      }
+    },
+    {
+      "Id": "cue-entity-project",
+      "Label": "project folder",
+      "Category": "Phrase",
+      "Description": "Cue (signal entity.project_folder); triggers: project folder / project docs / the project / project files / project directory.",
+      "Aliases": [
+        "project folder",
+        "project docs",
+        "the project",
+        "project files",
+        "project directory"
+      ],
+      "Properties": {
+        "Triggers": "project folder / project docs / the project / project files / project directory",
+        "Signal": "entity.project_folder"
+      }
+    },
+    {
+      "Id": "cue-entity-client",
+      "Label": "the client",
+      "Category": "Phrase",
+      "Description": "Cue (signal entity.client); triggers: the client / client / customer.",
+      "Aliases": [
+        "the client",
+        "client",
+        "customer"
+      ],
+      "Properties": {
+        "Triggers": "the client / client / customer",
+        "Signal": "entity.client"
+      }
+    }
+  ],
+  "Relations": [
+    {
+      "SourceId": "nl-root",
+      "TargetId": "intent-plan-day",
+      "Type": "Resolves",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "nl-root",
+      "TargetId": "intent-move-flexible",
+      "Type": "Resolves",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "nl-root",
+      "TargetId": "intent-book-block",
+      "Type": "Resolves",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "nl-root",
+      "TargetId": "intent-find-notes",
+      "Type": "Resolves",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "nl-root",
+      "TargetId": "intent-draft-email",
+      "Type": "Resolves",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "nl-root",
+      "TargetId": "intent-send",
+      "Type": "Resolves",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "nl-root",
+      "TargetId": "intent-clean-downloads",
+      "Type": "Resolves",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "nl-root",
+      "TargetId": "intent-delete-junk",
+      "Type": "Resolves",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "nl-root",
+      "TargetId": "intent-summarize",
+      "Type": "Resolves",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "cue-plan-day",
+      "TargetId": "intent-plan-day",
+      "Type": "MapsTo",
+      "Description": "signal act.read_calendar",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "cue-move-flexible",
+      "TargetId": "intent-move-flexible",
+      "Type": "MapsTo",
+      "Description": "signal act.classify_events",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "cue-book-block",
+      "TargetId": "intent-book-block",
+      "Type": "MapsTo",
+      "Description": "signal act.create_block",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "cue-find-notes",
+      "TargetId": "intent-find-notes",
+      "Type": "MapsTo",
+      "Description": "signal act.find_notes",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "cue-draft-email",
+      "TargetId": "intent-draft-email",
+      "Type": "MapsTo",
+      "Description": "signal act.draft_email",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "cue-clean-downloads",
+      "TargetId": "intent-clean-downloads",
+      "Type": "MapsTo",
+      "Description": "signal act.scan_downloads",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "cue-delete-junk",
+      "TargetId": "intent-delete-junk",
+      "Type": "MapsTo",
+      "Description": "signal act.classify_junk",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "cue-summarize",
+      "TargetId": "intent-summarize",
+      "Type": "MapsTo",
+      "Description": "signal act.summarize_document",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "cue-entity-gym",
+      "TargetId": "intent-book-block",
+      "Type": "MapsTo",
+      "Description": "signal entity.gym",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "cue-entity-project",
+      "TargetId": "intent-summarize",
+      "Type": "MapsTo",
+      "Description": "signal entity.project_folder",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "cue-entity-client",
+      "TargetId": "intent-draft-email",
+      "Type": "MapsTo",
+      "Description": "signal entity.client",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    }
+  ],
+  "Dimensions": [],
+  "Policies": [],
+  "Cues": [
+    {
+      "Id": "cue-plan-day",
+      "Trigger": "plan my / plan the / organize my / organise my / sort out my / look at my calendar / check my schedule / review my schedule / my friday / my monday / my tuesday / my wednesday / my thursday / my week",
+      "Signal": "act.read_calendar"
+    },
+    {
+      "Id": "cue-move-flexible",
+      "Trigger": "move anything flexible / move flexible / reschedule flexible / shuffle flexible / shift flexible / rearrange flexible / move what\u0027s flexible",
+      "Signal": "act.classify_events"
+    },
+    {
+      "Id": "cue-book-block",
+      "Trigger": "book / block off / block out / schedule / reserve / set aside / put in / add a / pencil in",
+      "Signal": "act.create_block"
+    },
+    {
+      "Id": "cue-find-notes",
+      "Trigger": "meeting notes / the notes / my notes / notes for / notes from / the meeting notes",
+      "Signal": "act.find_notes"
+    },
+    {
+      "Id": "cue-draft-email",
+      "Trigger": "draft / write / compose / prepare / put together / send / email / message / shoot / drop",
+      "Signal": "act.draft_email"
+    },
+    {
+      "Id": "cue-clean-downloads",
+      "Trigger": "clean up my downloads / clean my downloads / tidy my downloads / tidy up downloads / clear out downloads / sort my downloads / organize my downloads / declutter downloads / clean up downloads",
+      "Signal": "act.scan_downloads"
+    },
+    {
+      "Id": "cue-delete-junk",
+      "Trigger": "delete anything that looks like junk / delete junk / remove junk / trash the junk / get rid of junk / delete the junk / remove clutter / delete anything junk",
+      "Signal": "act.classify_junk"
+    },
+    {
+      "Id": "cue-summarize",
+      "Trigger": "summarize / summarise / summary of / recap / give me the gist / sum up / digest / overview of",
+      "Signal": "act.summarize_document"
+    },
+    {
+      "Id": "cue-entity-gym",
+      "Trigger": "gym / workout / work out / exercise / training / a run",
+      "Signal": "entity.gym"
+    },
+    {
+      "Id": "cue-entity-project",
+      "Trigger": "project folder / project docs / the project / project files / project directory",
+      "Signal": "entity.project_folder"
+    },
+    {
+      "Id": "cue-entity-client",
+      "Trigger": "the client / client / customer",
+      "Signal": "entity.client"
+    }
+  ],
+  "FitSignals": [],
+  "Generators": [],
+  "ParameterCount": 42
+}

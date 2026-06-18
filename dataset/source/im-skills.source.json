@@ -1,0 +1,203 @@
+{
+  "Manifest": {
+    "Metadata": {
+      "TlmId": "im-skills",
+      "IsMutable": false,
+      "Role": 6,
+      "Priority": 900,
+      "Version": "1.0.0",
+      "Checksum": "",
+      "HotSwapPolicy": 1,
+      "StabilityScore": 0.6
+    },
+    "Imports": [
+      "im-action-contracts",
+      "im-nl-vocabulary"
+    ],
+    "Derives": [],
+    "CreatedUtc": "2026-06-17T00:00:00Z",
+    "SchemaVersion": "1.0"
+  },
+  "Concepts": [
+    {
+      "Id": "skills-root",
+      "Label": "emergent skills",
+      "Category": "SkillRegistry",
+      "Description": "Reusable symbolic skills the runtime may PROPOSE from observed intent patterns. A skill carries an input/output schema, allowed tools, risk class, and tests, and moves through a governed lifecycle. It never silently becomes executable authority.",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "state-observed",
+      "Label": "observed",
+      "Category": "LifecycleState",
+      "Description": "A repeated intent pattern was noticed.",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "state-proposed",
+      "Label": "proposed",
+      "Category": "LifecycleState",
+      "Description": "A candidate reusable skill was drafted.",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "state-simulated",
+      "Label": "simulated",
+      "Category": "LifecycleState",
+      "Description": "The skill was dry-run against fake data.",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "state-reviewed",
+      "Label": "reviewed",
+      "Category": "LifecycleState",
+      "Description": "A human reviewed and signed off.",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "state-active",
+      "Label": "active",
+      "Category": "LifecycleState",
+      "Description": "Available for use (within policy).",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "state-deprecated",
+      "Label": "deprecated",
+      "Category": "LifecycleState",
+      "Description": "Superseded; scheduled for removal.",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "state-removed",
+      "Label": "removed",
+      "Category": "LifecycleState",
+      "Description": "Withdrawn from the registry.",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "skill-daily-planning-followup",
+      "Label": "DailyPlanningAndFollowup",
+      "Category": "Skill",
+      "Description": "Example proposed skill: plan a day and draft follow-ups. Composes ReadCalendar \u002B ClassifyEvents \u002B CreateCalendarBlock \u002B FindNotes \u002B DraftEmail. Status: proposed (not active).",
+      "Aliases": [],
+      "Properties": {
+        "Status": "proposed",
+        "AllowedTools": "tool-calendar,tool-notes,tool-email",
+        "Risk": "medium"
+      }
+    }
+  ],
+  "Relations": [
+    {
+      "SourceId": "state-observed",
+      "TargetId": "state-proposed",
+      "Type": "Precedes",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "state-proposed",
+      "TargetId": "state-simulated",
+      "Type": "Precedes",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "state-simulated",
+      "TargetId": "state-reviewed",
+      "Type": "Precedes",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "state-reviewed",
+      "TargetId": "state-active",
+      "Type": "Precedes",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "state-active",
+      "TargetId": "state-deprecated",
+      "Type": "Precedes",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "state-deprecated",
+      "TargetId": "state-removed",
+      "Type": "Precedes",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "skills-root",
+      "TargetId": "skill-daily-planning-followup",
+      "Type": "Contains",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "skill-daily-planning-followup",
+      "TargetId": "state-proposed",
+      "Type": "HasStatus",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    }
+  ],
+  "Dimensions": [],
+  "Policies": [],
+  "Cues": [],
+  "FitSignals": [],
+  "Generators": [],
+  "ParameterCount": 11
+}
