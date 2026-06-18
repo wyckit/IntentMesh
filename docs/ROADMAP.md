@@ -38,11 +38,15 @@ the audit trail; TLMs verify 7/7; CLI `--trace` shows all panels including a fai
 
 **Goal:** make intent reusable and the human-in-the-loop real.
 
+- **[done] Interactive confirmation flow** — Approve / Undo on gated nodes in the Control Room;
+  approving a Confirm node commits its side effect (calendar block, deletion, send) in the sandbox.
+  Security invariant proven: a blocked zero-trust node can never be approved into execution
+  (`ConfirmationTests.A_blocked_injected_node_can_NEVER_be_approved`).
+- **[done] Export an audit trace** — `AuditExporter.ToJson` / `ToMarkdown`: a deterministic,
+  replayable audit artifact (signing comes in v1.0).
 - Emergent **skill lifecycle** wired through `im-skills`: observe repeated intent patterns ->
   propose a reusable symbolic skill -> simulate -> review -> activate (governed, never auto-promoted).
-- Interactive confirmation flow in the UI (approve / reject / edit a node before execution).
 - Better Intent Mesh visualization (collapsible subgoals, trust-boundary overlays).
-- Export an audit trace (signed JSON) for replay/inspection.
 - Reusable skill example: `DailyPlanningAndFollowup` with input/output schema, allowed tools, risk
   class, tests, version, status.
 

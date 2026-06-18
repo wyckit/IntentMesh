@@ -29,7 +29,12 @@ public sealed class IntentMeshRuntime
     public static IntentMeshRuntime Load(string? compiledDir = null)
         => new(SymbolicBundle.Load(compiledDir ?? DatasetLocator.FindCompiledDir()));
 
-    public RunResult Run(string prompt, Workspace ws)
+    public RunResult Run(string prompt, Workspace ws) => Run(prompt, ws, new HashSet<string>());
+
+    /// <param name="approvals">Node ids the user has explicitly approved. An approval only ever
+    /// applies to a full-authority node whose decision is Confirm — it can NEVER turn a Block into
+    /// execution, so a zero-trust / injected node remains blocked regardless of what is passed.</param>
+    public RunResult Run(string prompt, Workspace ws, IReadOnlySet<string> approvals)
     {
         var graph = new IntentGraph();
         var audit = new AuditTrail();
@@ -73,7 +78,13 @@ public sealed class IntentMeshRuntime
                 continue;
             }
 
-            node.Status = decision.RequiresConfirmation ? NodeStatus.NeedsConfirmation : NodeStatus.Allowed;
+            // An approval applies ONLY to a full-authority node that the gate gated for
+            // confirmation. A Block never reaches here, so injected/zero-trust nodes can't be approved.
+            bool approved = decision.Decision == Decision.Confirm
+                            && node.Authority == Authority.Full
+                            && approvals.Contains(node.Id);
+
+            node.Status = decision.RequiresConfirmation && !approved ? NodeStatus.NeedsConfirmation : NodeStatus.Allowed;
 
             var adapter = _tools.For(node.Type);
             if (adapter is null)
@@ -84,10 +95,11 @@ public sealed class IntentMeshRuntime
                 continue;
             }
 
-            var exec = adapter.Execute(node, decision, ws);
+            var exec = adapter.Execute(node, decision, ws, approved);
             node.Execution = exec;
-            audit.Add(node.Id, "execute", exec.Halted ? $"HALTED — {exec.Summary}" : exec.Summary);
-            if (decision.Decision == Decision.Allow && exec.Ran && !exec.Halted)
+            audit.Add(node.Id, "execute",
+                (approved ? "[APPROVED] " : "") + (exec.Halted ? $"HALTED — {exec.Summary}" : exec.Summary));
+            if (exec.Ran && !exec.Halted && (decision.Decision == Decision.Allow || approved))
                 node.Status = NodeStatus.Executed;
 
             // Ingest proposed nodes as ZERO-TRUST (State-Poisoning guard) and re-queue them.
@@ -106,7 +118,7 @@ public sealed class IntentMeshRuntime
             }
         }
 
-        // 5. Verify postconditions deterministically.
+        // 5. Verify postconditions deterministically (approval state is reflected in node Status).
         var verification = _verifier.Verify(graph, ws, userRecipients);
         foreach (var v in verification)
             audit.Add("-", "verify", $"{(v.Pass ? "PASS" : "FAIL")} {v.Id}: expected {v.Expected}; actual {v.Actual}");

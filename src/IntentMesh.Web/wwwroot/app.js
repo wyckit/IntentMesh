@@ -6,6 +6,7 @@ const svg = (t, a) => { const e = document.createElementNS(SVGNS, t); for (const
 const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 let LAST = null, SELECTED = null;
+const APPROVALS = new Set();   // node ids the user has approved (client-side)
 
 // ── Demos ──────────────────────────────────────────────────────────
 fetch('/api/demos').then(r => r.json()).then(demos => {
@@ -28,14 +29,21 @@ document.querySelectorAll('.mode-btn').forEach(b => b.onclick = () => {
   $('#controlView').classList.toggle('hidden', compare);
 });
 
-function run() {
+function run(keepApprovals = false) {
   const prompt = $('#prompt').value.trim();
   if (!prompt) return;
+  if (!keepApprovals) APPROVALS.clear();   // a new prompt resets the approval set
   $('#runBtn').textContent = 'Running…';
-  fetch('/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt }) })
+  fetch('/api/run', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt, approvals: [...APPROVALS] })
+  })
     .then(r => r.json()).then(res => { LAST = res; SELECTED = null; render(res); })
     .finally(() => $('#runBtn').textContent = 'Run pipeline ▸');
 }
+
+function approve(id) { APPROVALS.add(id); run(true); }
+function undo(id) { APPROVALS.delete(id); run(true); }
 
 // ── Render ─────────────────────────────────────────────────────────
 function render(r) {
@@ -91,6 +99,20 @@ function renderExecution(r) {
     } else if (e) {
       const s = el('div', 'effect' + (e.halted ? ' halt' : '')); s.textContent = (e.halted ? '⏸ ' : '▸ ') + e.summary; row.appendChild(s);
       e.effects.forEach(x => { const f = el('div', 'effect'); f.textContent = '· ' + x; row.appendChild(f); });
+    }
+    // Confirmation controls — ONLY for full-authority nodes the gate gated for confirmation.
+    if (n.status === 'NeedsConfirmation' && n.trustSource === 'User') {
+      const act = el('div', 'confirm-actions');
+      const ok = el('button', 'approve'); ok.textContent = '✓ Approve';
+      ok.onclick = (ev) => { ev.stopPropagation(); approve(n.id); };
+      const note = el('span', 'confirm-note'); note.textContent = 'requires your confirmation';
+      act.append(ok, note); row.appendChild(act);
+    } else if (APPROVALS.has(n.id) && (n.status === 'Executed' || n.status === 'Verified')) {
+      const act = el('div', 'confirm-actions');
+      const undoBtn = el('button', 'undo'); undoBtn.textContent = '↩ Undo approval';
+      undoBtn.onclick = (ev) => { ev.stopPropagation(); undo(n.id); };
+      const note = el('span', 'confirm-note approved'); note.textContent = '✓ approved by you';
+      act.append(note, undoBtn); row.appendChild(act);
     }
     row.onclick = () => select(n.id);
     box.appendChild(row);

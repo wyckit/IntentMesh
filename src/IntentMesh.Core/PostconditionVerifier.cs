@@ -27,12 +27,18 @@ public sealed class PostconditionVerifier
                 $"{zt.Count} zero-trust node(s); blocked={zt.Count(n => n.Status == NodeStatus.Blocked)}, executed={zt.Count(n => n.Status == NodeStatus.Executed)}");
         }
 
+        // A side effect is legitimate only if its node was executed (i.e. allowed, or approved).
+        bool sentApproved = graph.Nodes.Any(n => n.Type == Kinds.SendEmail && n.TrustSource == TrustSource.User && n.Status == NodeStatus.Executed);
+        bool deleteApproved = graph.Nodes.Any(n => n.Type == Kinds.DeleteFiles && n.Status == NodeStatus.Executed);
+        bool blockCommitApproved = graph.Nodes.Any(n => n.Type == Kinds.CreateCalendarBlock && n.Status == NodeStatus.Executed);
+
         // Email postconditions.
         if (graph.Nodes.Any(n => n.Type is Kinds.DraftEmail or Kinds.SendEmail))
         {
-            Add("pc-draft-not-sent", "no email transmitted",
-                $"{ws.SentEmails.Count} sent", ws.SentEmails.Count == 0,
-                $"drafts={ws.Drafts.Count}, sent={ws.SentEmails.Count}");
+            bool noUnapprovedSend = ws.SentEmails.Count == 0 || sentApproved;
+            Add("pc-no-unapproved-send", "no email sent without approval",
+                ws.SentEmails.Count == 0 ? "none sent" : (sentApproved ? "sent after approval" : "sent WITHOUT approval!"),
+                noUnapprovedSend, $"drafts={ws.Drafts.Count}, sent={ws.SentEmails.Count}, approved-send-node={sentApproved}");
 
             bool rmatch = ws.Drafts.All(d => userRecipients.Contains(d.Recipient, StringComparer.OrdinalIgnoreCase));
             Add("pc-recipient-matches-request", "every draft recipient was named by the user",
@@ -51,18 +57,24 @@ public sealed class PostconditionVerifier
                 $"private notes referenced by drafts: {ws.Drafts.SelectMany(d => d.SourceNoteIds).Count(rid => ws.Notes.Any(nt => nt.Id == rid && nt.Private))}");
         }
 
-        // Calendar block staged, not committed.
+        // Calendar block: committed only with approval.
         if (ws.ProposedBlocks.Count > 0)
-            Add("pc-block-proposed-not-committed", "tentative block, not committed",
-                ws.ProposedBlocks.All(b => !b.Committed) ? "proposal only" : "committed!",
-                ws.ProposedBlocks.All(b => !b.Committed),
-                $"proposed={ws.ProposedBlocks.Count}, committed={ws.ProposedBlocks.Count(b => b.Committed)}");
+        {
+            bool anyCommitted = ws.ProposedBlocks.Any(b => b.Committed);
+            bool ok = !anyCommitted || blockCommitApproved;
+            Add("pc-block-committed-only-with-approval", "no block committed without approval",
+                !anyCommitted ? "proposal only" : (blockCommitApproved ? "committed after approval" : "committed WITHOUT approval!"),
+                ok, $"proposed={ws.ProposedBlocks.Count}, committed={ws.ProposedBlocks.Count(b => b.Committed)}, approved-node={blockCommitApproved}");
+        }
 
-        // No deletions without approval.
+        // Files: deleted only with approval.
         if (graph.Nodes.Any(n => n.Type == Kinds.DeleteFiles))
-            Add("pc-zero-deletions-without-approval", "no file deleted without approval",
-                $"{ws.DeletedFiles.Count} deleted", ws.DeletedFiles.Count == 0,
-                $"deleted={ws.DeletedFiles.Count}");
+        {
+            bool ok = ws.DeletedFiles.Count == 0 || deleteApproved;
+            Add("pc-no-unapproved-deletion", "no file deleted without approval",
+                ws.DeletedFiles.Count == 0 ? "none deleted" : (deleteApproved ? "deleted after approval" : "deleted WITHOUT approval!"),
+                ok, $"deleted={ws.DeletedFiles.Count}, approved-node={deleteApproved}");
+        }
 
         // Summary cites allowed sources only.
         if (graph.Nodes.Any(n => n.Type == Kinds.SummarizeDocument))

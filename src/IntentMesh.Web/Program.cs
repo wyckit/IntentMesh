@@ -39,9 +39,12 @@ app.MapPost("/api/run", (RunRequest req) =>
 {
     var prompt = (req.Prompt ?? "").Trim();
     if (string.IsNullOrEmpty(prompt)) return Results.BadRequest(new { error = "empty prompt" });
-    return Results.Json(runtime.Run(prompt, Workspace.CreateDemo()));
+    var approvals = (req.Approvals ?? Array.Empty<string>()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+    return Results.Json(runtime.Run(prompt, Workspace.CreateDemo(), approvals));
 });
 
 app.Run();
 
-record RunRequest(string? Prompt);
+// Approvals: node ids the user approved. The runtime only ever applies an approval to a
+// full-authority Confirm node — a blocked zero-trust node stays blocked regardless.
+record RunRequest(string? Prompt, string[]? Approvals);

@@ -11,11 +11,12 @@ public sealed record ExecutionResult(
     IReadOnlyList<string> Effects, IReadOnlyList<ProposedNode> Proposed);
 
 /// <summary>A deterministic, sandboxed tool. Accepts ONLY a typed action — never raw language —
-/// and honors the policy decision (a Confirm decision performs only the safe, non-committing path).</summary>
+/// and honors the policy decision: a Confirm decision performs only the safe, non-committing path
+/// UNLESS the node was explicitly approved by the user (<paramref name="approved"/>).</summary>
 public interface IToolAdapter
 {
     bool Handles(string kind);
-    ExecutionResult Execute(IntentNode node, PolicyDecision decision, Workspace ws);
+    ExecutionResult Execute(IntentNode node, PolicyDecision decision, Workspace ws, bool approved);
 }
 
 public sealed class ToolHost
@@ -37,7 +38,7 @@ public sealed class CalendarAdapter : IToolAdapter
 {
     public bool Handles(string kind) => kind is Kinds.ReadCalendar or Kinds.ClassifyEvents or Kinds.CreateCalendarBlock;
 
-    public ExecutionResult Execute(IntentNode node, PolicyDecision decision, Workspace ws) => node.Action switch
+    public ExecutionResult Execute(IntentNode node, PolicyDecision decision, Workspace ws, bool approved) => node.Action switch
     {
         ReadCalendarAction => ToolHost.Ok(node.Id,
             $"Read {ws.Calendar.Count} events for Friday (no mutation).",
@@ -48,18 +49,20 @@ public sealed class CalendarAdapter : IToolAdapter
             $"flexible: {string.Join(", ", ws.Calendar.Where(e => e.Flexible).Select(e => e.Title))}",
             $"fixed: {string.Join(", ", ws.Calendar.Where(e => !e.Flexible).Select(e => e.Title))}"),
 
-        CreateCalendarBlockAction b =>
-            // Confirm decision -> stage a tentative proposal; do NOT commit.
-            StageBlock(node.Id, b, ws),
+        CreateCalendarBlockAction b => StageBlock(node.Id, b, ws, approved),
 
         _ => ToolHost.Ok(node.Id, "no-op")
     };
 
-    private static ExecutionResult StageBlock(string id, CreateCalendarBlockAction b, Workspace ws)
+    // Not approved -> stage a tentative proposal (halted). Approved -> commit the block.
+    private static ExecutionResult StageBlock(string id, CreateCalendarBlockAction b, Workspace ws, bool approved)
     {
-        ws.ProposedBlocks.Add(new CalendarBlock(b.Title, b.Start, b.DurationMinutes.ToString(), Committed: false));
-        return ToolHost.Halt(id, $"Proposed '{b.Title}' at {b.Start} for {b.DurationMinutes}m (tentative).",
-            "block staged as a proposal — NOT committed (awaiting confirmation)");
+        ws.ProposedBlocks.Add(new CalendarBlock(b.Title, b.Start, b.DurationMinutes.ToString(), Committed: approved));
+        return approved
+            ? ToolHost.Ok(id, $"Committed '{b.Title}' at {b.Start} for {b.DurationMinutes}m (approved).",
+                "block committed after user approval")
+            : ToolHost.Halt(id, $"Proposed '{b.Title}' at {b.Start} for {b.DurationMinutes}m (tentative).",
+                "block staged as a proposal — NOT committed (awaiting confirmation)");
     }
 }
 
@@ -67,7 +70,7 @@ public sealed class NotesAdapter : IToolAdapter
 {
     public bool Handles(string kind) => kind is Kinds.FindNotes or Kinds.SummarizeDocument;
 
-    public ExecutionResult Execute(IntentNode node, PolicyDecision decision, Workspace ws) => node.Action switch
+    public ExecutionResult Execute(IntentNode node, PolicyDecision decision, Workspace ws, bool approved) => node.Action switch
     {
         FindNotesAction f => ToolHost.Ok(node.Id,
             $"Found {ws.Notes.Count(nt => nt.Topic == f.Topic)} note(s) for topic '{f.Topic}'.",
@@ -109,14 +112,23 @@ public sealed class EmailAdapter : IToolAdapter
 {
     public bool Handles(string kind) => kind is Kinds.DraftEmail or Kinds.SendEmail;
 
-    public ExecutionResult Execute(IntentNode node, PolicyDecision decision, Workspace ws) => node.Action switch
+    public ExecutionResult Execute(IntentNode node, PolicyDecision decision, Workspace ws, bool approved) => node.Action switch
     {
         DraftEmailAction d => Draft(node.Id, d, ws),
-        // Sending is gated. If we ever reach here for a user node it's a Confirm -> halt (not sent).
-        SendEmailAction se => ToolHost.Halt(node.Id,
-            $"Send to {se.Recipient} requires confirmation — NOT sent.", "0 messages transmitted"),
+        // Sending is gated. Only a user-authorized, explicitly approved send transmits.
+        SendEmailAction se => Send(node.Id, se, ws, approved),
         _ => ToolHost.Ok(node.Id, "no-op")
     };
+
+    private static ExecutionResult Send(string id, SendEmailAction se, Workspace ws, bool approved)
+    {
+        if (!approved)
+            return ToolHost.Halt(id, $"Send to {se.Recipient} requires confirmation — NOT sent.", "0 messages transmitted");
+        ws.SentEmails.Add(se.Recipient);
+        var d = ws.Drafts.FirstOrDefault(x => x.Recipient.Equals(se.Recipient, StringComparison.OrdinalIgnoreCase));
+        if (d is not null) { ws.Drafts.Remove(d); ws.Drafts.Add(d with { Sent = true }); }
+        return ToolHost.Ok(id, $"Sent to {se.Recipient} (approved).", "1 message transmitted after user approval");
+    }
 
     private static ExecutionResult Draft(string id, DraftEmailAction d, Workspace ws)
     {
@@ -133,7 +145,7 @@ public sealed class FileAdapter : IToolAdapter
 {
     public bool Handles(string kind) => kind is Kinds.ScanDownloads or Kinds.ClassifyJunk or Kinds.DeleteFiles;
 
-    public ExecutionResult Execute(IntentNode node, PolicyDecision decision, Workspace ws) => node.Action switch
+    public ExecutionResult Execute(IntentNode node, PolicyDecision decision, Workspace ws, bool approved) => node.Action switch
     {
         ScanDownloadsAction => ToolHost.Ok(node.Id,
             $"Scanned {ws.Downloads.Count} file(s) in Downloads.",
@@ -142,14 +154,25 @@ public sealed class FileAdapter : IToolAdapter
         ClassifyJunkAction => ToolHost.Ok(node.Id, "Classified downloads.",
             $"junk: {Names(ws, JunkClass.Junk)}", $"ambiguous: {Names(ws, JunkClass.Ambiguous)}", $"important (keep): {Names(ws, JunkClass.Important)}"),
 
-        DeleteFilesAction del =>
-            // Confirm decision -> require explicit per-file approval; delete nothing.
-            ToolHost.Halt(node.Id,
-                $"{del.FileRefs.Count} file(s) await explicit per-file approval — 0 deleted.",
-                "0 files deleted", $"pending approval: {string.Join(", ", del.FileRefs)}"),
+        DeleteFilesAction del => Delete(node.Id, del, ws, approved),
 
         _ => ToolHost.Ok(node.Id, "no-op")
     };
+
+    // Not approved -> require explicit per-file approval, delete nothing. Approved -> delete (sandboxed).
+    private static ExecutionResult Delete(string id, DeleteFilesAction del, Workspace ws, bool approved)
+    {
+        if (!approved)
+            return ToolHost.Halt(id, $"{del.FileRefs.Count} file(s) await explicit per-file approval — 0 deleted.",
+                "0 files deleted", $"pending approval: {string.Join(", ", del.FileRefs)}");
+        foreach (var name in del.FileRefs)
+        {
+            ws.DeletedFiles.Add(name);
+            ws.Downloads.RemoveAll(f => f.Name == name);
+        }
+        return ToolHost.Ok(id, $"Deleted {del.FileRefs.Count} file(s) after approval.",
+            $"deleted: {string.Join(", ", del.FileRefs)}");
+    }
 
     private static string Names(Workspace ws, JunkClass c) =>
         string.Join(", ", ws.Downloads.Where(f => f.Class == c).Select(f => f.Name));
