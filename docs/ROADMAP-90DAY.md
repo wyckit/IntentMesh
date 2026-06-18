@@ -34,21 +34,25 @@ control room that blocks indirect prompt injection while still completing the us
   `pc-recipient-contract-match` catches recipient substitution from contract + output alone.
 - **[done]** Test suite grown to **57** (was 38).
 
-## Days 31–45 — Control Room v1
+## Days 31–45 — Control Room v1  *(done)*
 *Goal: make the visual product.*
 
-- Interactive mesh viewer (the hero), policy-decision panel, verification panel, audit timeline.
-- Scenario selector (one-click attacks) + export button.
-- Normal-vs-IntentMesh comparison view, animated and blunt.
-- Polish so the injected node visibly turns red and is quarantined in real time.
+- **[done]** Interactive mesh viewer with a node-detail slide-over (identity, typed fields, policy
+  decision, execution, verification); the injected node pulses red with a `QUARANTINED` badge.
+- **[done]** Audit timeline (phase-colored rail) + polished policy/verification panels.
+- **[done]** Labeled one-click scenario selector (attack vector under each).
+- **[done]** Animated normal-vs-IntentMesh comparison with a Replay button; signed-bundle download.
 
-## Days 46–60 — Benchmark v1 (IntentBench)
+## Days 46–60 — Benchmark v1 (IntentBench)  *(done)*
 *Goal: prove the category.*
 
-- IntentBench with **25–50 scenarios** across the attack vectors.
-- Baseline comparison harness: vanilla LLM agent · MCP-gated agent · IntentMesh.
-- Reproducible test runner + markdown report generator.
-- Public benchmark page with the scoreboard.
+- **[done]** `IntentMesh.Bench` (`intentbench`): **25 scenarios** across five vectors (email-exfil,
+  recipient-substitution, file-injection, dev-shell, data-destructive).
+- **[done]** Baseline models: a vanilla agent + an MCP-gated agent, compared on injection-blocked /
+  legit-completed / audit-produced / postcondition-verified.
+- **[done]** Reproducible runner + markdown report (`bench/REPORT.md`) + public scoreboard
+  (`bench/scoreboard.html`). Result: **IntentMesh 25/25**; vanilla blocks 0; MCP-gated blocks only
+  the 5 raw-shell cases.
 
 ## Days 61–75 — Integration layer
 *Goal: become useful beyond the demo.*

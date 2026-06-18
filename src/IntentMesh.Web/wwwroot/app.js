@@ -8,14 +8,35 @@ const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt
 let LAST = null, SELECTED = null;
 const APPROVALS = new Set();   // node ids the user has approved (client-side)
 
+// ── Scenario vector labels ──────────────────────────────────────────
+const SCENARIO_VECTORS = {
+  0: { vector: 'indirect prompt injection', icon: '⚠' },
+  1: { vector: 'shell execution blocked by default', icon: '🔒' },
+  2: { vector: 'destructive SQL blocked', icon: '🛑' },
+  3: { vector: 'safe action after confirmation', icon: '✓' },
+  4: { vector: 'destructive action needs approval', icon: '⚠' }
+};
+
 // ── Demos ──────────────────────────────────────────────────────────
 fetch('/api/demos').then(r => r.json()).then(demos => {
   const row = $('#demoRow');
-  demos.forEach(d => {
-    const b = el('button', 'demo-btn' + (d.id === 3 ? ' attack' : ''));
-    b.textContent = (d.id === 3 ? '⚠ ' : '') + d.title;
-    b.onclick = () => { $('#prompt').value = d.prompt; run(); };
-    row.appendChild(b);
+  const heading = el('div', 'scenario-heading');
+  heading.textContent = 'Attack Scenarios';
+  row.appendChild(heading);
+  demos.forEach((d, idx) => {
+    const card = el('div', 'scenario-card' + (idx === 0 ? ' attack' : ''));
+    const titleRow = el('div', 'scenario-title-row');
+    const icon = el('span', 'scenario-icon');
+    const sv = SCENARIO_VECTORS[idx] || { vector: '', icon: '▸' };
+    icon.textContent = sv.icon;
+    const title = el('span', 'scenario-name');
+    title.textContent = d.title;
+    titleRow.append(icon, title);
+    const vector = el('div', 'scenario-vector');
+    vector.textContent = sv.vector;
+    card.append(titleRow, vector);
+    card.onclick = () => { $('#prompt').value = d.prompt; run(); };
+    row.appendChild(card);
   });
 });
 
@@ -27,9 +48,10 @@ document.querySelectorAll('.mode-btn').forEach(b => b.onclick = () => {
   const compare = b.dataset.mode === 'compare';
   $('#compareView').classList.toggle('hidden', !compare);
   $('#controlView').classList.toggle('hidden', compare);
+  if (compare) startCompareAnimation();
 });
 
-function run(keepApprovals = false) {
+function run(keepApprovals) {
   const prompt = $('#prompt').value.trim();
   if (!prompt) return;
   if (!keepApprovals) APPROVALS.clear();   // a new prompt resets the approval set
@@ -69,7 +91,7 @@ $('#exportBundle').onclick = () => exportTrace('bundle');
 
 // ── Render ─────────────────────────────────────────────────────────
 function render(r) {
-  $('#promptEcho').textContent = '“' + r.prompt + '”';
+  $('#promptEcho').textContent = '"' + r.prompt + '"';
   const res = $('#resolver'); res.innerHTML = '';
   (r.resolverFired || []).forEach(f => {
     const d = el('div', 'fire'); d.innerHTML = esc(f).replace(/^([\w.]+)/, '<b>$1</b>'); res.appendChild(d);
@@ -189,13 +211,50 @@ function renderVerification(r) {
   box.appendChild(verdict);
 }
 
+// ── Audit Timeline (v1) ────────────────────────────────────────────
+const PHASE_COLORS = {
+  resolve: '#4cc2ff',
+  policy:  '#fbbf24',
+  execute: '#67e8f9',
+  verify:  '#34d399'
+};
+
 function renderAudit(r) {
   const box = $('#audit'); box.innerHTML = '';
-  r.audit.forEach(a => {
-    const row = el('div', 'a');
-    row.innerHTML = `<span class="ph ${esc(a.phase)}">${esc(a.phase)}</span><span class="nid">${esc(a.nodeId)}</span><span>${esc(a.message)}</span>`;
-    box.appendChild(row);
+  if (!r.audit || !r.audit.length) {
+    box.innerHTML = '<p class="empty">No audit entries.</p>';
+    return;
+  }
+  const tl = el('div', 'timeline');
+  r.audit.forEach((a, idx) => {
+    const entry = el('div', 'tl-entry');
+    // left rail
+    const rail = el('div', 'tl-rail');
+    const dot = el('div', 'tl-dot');
+    const phaseColor = PHASE_COLORS[a.phase] || '#4cc2ff';
+    dot.style.background = phaseColor;
+    dot.style.boxShadow = '0 0 6px ' + phaseColor + '88';
+    rail.appendChild(dot);
+    if (idx < r.audit.length - 1) {
+      const line = el('div', 'tl-line');
+      rail.appendChild(line);
+    }
+    // content
+    const content = el('div', 'tl-content');
+    const meta = el('div', 'tl-meta');
+    const ph = el('span', 'tl-phase ph-' + esc(a.phase));
+    ph.textContent = a.phase;
+    ph.style.color = phaseColor;
+    const nid = el('span', 'tl-nid');
+    nid.textContent = a.nodeId;
+    meta.append(ph, nid);
+    const msg = el('div', 'tl-msg');
+    msg.textContent = a.message;
+    content.append(meta, msg);
+    entry.append(rail, content);
+    tl.appendChild(entry);
   });
+  box.appendChild(tl);
 }
 
 // ── The hero: SVG intent mesh ──────────────────────────────────────
@@ -221,15 +280,28 @@ function renderMesh(r) {
 
   r.nodes.forEach(n => {
     const p = pos[n.id]; if (!p) return;
-    const g = svg('g', { class: 'node ' + (n.trustSource === 'User' ? 'user' : 'zt') + (n.id === SELECTED ? ' sel' : '') });
+    const isBlocked = n.status === 'Blocked';
+    const isZt = n.trustSource !== 'User';
+    const g = svg('g', { class: 'node ' + (isZt ? 'zt' : 'user') + (n.id === SELECTED ? ' sel' : '') + (isBlocked ? ' quarantined' : '') });
     g.dataset.node = n.id;
     g.appendChild(svg('rect', { x: p.x, y: p.y, width: NW, height: NH, rx: 9 }));
     const t1 = svg('text', { x: p.x + 12, y: p.y + 22, class: 'nlabel' }); t1.textContent = clip(n.label, 30); g.appendChild(t1);
-    const t2 = svg('text', { x: p.x + 12, y: p.y + 40, class: 'ntype' }); t2.textContent = (n.trustSource === 'User' ? '' : '🔒 ') + n.type; g.appendChild(t2);
+    const t2 = svg('text', { x: p.x + 12, y: p.y + 40, class: 'ntype' }); t2.textContent = (isZt ? '🔒 ' : '') + n.type; g.appendChild(t2);
     // status pill
     const col = statusColor(n.status);
     g.appendChild(svg('rect', { x: p.x + NW - 92, y: p.y + 9, width: 82, height: 18, rx: 9, fill: col.bg, stroke: col.fg }));
     const st = svg('text', { x: p.x + NW - 51, y: p.y + 21, class: 'nstatus', 'text-anchor': 'middle', fill: col.fg }); st.textContent = pretty(n.status); g.appendChild(st);
+
+    // QUARANTINE badge for blocked zero-trust nodes
+    if (isBlocked && isZt) {
+      const foreignObj = svg('foreignObject', { x: p.x + 4, y: p.y - 20, width: NW - 8, height: 20 });
+      const qDiv = document.createElementNS('http://www.w3.org/1999/xhtml', 'div');
+      qDiv.className = 'quarantine-badge';
+      qDiv.textContent = 'QUARANTINED';
+      foreignObj.appendChild(qDiv);
+      g.appendChild(foreignObj);
+    }
+
     g.style.cursor = 'pointer';
     g.onclick = () => select(n.id);
     svgEl.appendChild(g);
@@ -243,16 +315,169 @@ function edge(svgEl, a, b, NW, NH, isZt) {
   svgEl.appendChild(svg('path', { class: 'edge' + (isZt ? ' zt' : ''), d }));
 }
 
-// ── Selection sync across panels ───────────────────────────────────
+// ── Selection sync + Node Detail panel (v1) ────────────────────────
 function select(id) {
   SELECTED = (SELECTED === id) ? null : id;
   document.querySelectorAll('.row').forEach(r => r.classList.toggle('sel', r.dataset.node === SELECTED));
   if (LAST) renderMesh(LAST);
-  if (SELECTED) {
+  if (SELECTED && LAST) {
     const t = document.querySelector(`.row[data-node="${SELECTED}"]`);
     if (t) t.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    openNodeDetail(SELECTED, LAST);
+  } else {
+    closeNodeDetail();
   }
 }
+
+function openNodeDetail(id, r) {
+  const node = r.nodes.find(n => n.id === id);
+  if (!node) return;
+  const policy = r.policy.find(p => p.nodeId === id);
+  const exec = r.execution ? r.execution.find(e => e.nodeId === id) : null;
+  const verif = r.verification ? r.verification.filter(v => v.nodeId === id) : [];
+
+  $('#ndTitle').textContent = node.label || id;
+  const body = $('#ndBody');
+  body.innerHTML = '';
+
+  // Identity section
+  const secId = el('div', 'nd-section');
+  secId.innerHTML = `<div class="nd-sec-title">Identity</div>
+    <div class="nd-row"><span class="nd-key">id</span><span class="nd-val mono">${esc(node.id)}</span></div>
+    <div class="nd-row"><span class="nd-key">type</span><span class="nd-val mono">${esc(node.type)}</span></div>
+    <div class="nd-row"><span class="nd-key">label</span><span class="nd-val">${esc(node.label)}</span></div>
+    <div class="nd-row"><span class="nd-key">trust source</span><span class="nd-val ${node.trustSource === 'User' ? 'nd-user' : 'nd-zt'}">${esc(node.trustSource)}</span></div>
+    ${node.authority ? `<div class="nd-row"><span class="nd-key">authority</span><span class="nd-val">${esc(node.authority)}</span></div>` : ''}
+    <div class="nd-row"><span class="nd-key">status</span><span class="nd-val"><span class="badge st-${esc(node.status)}">${esc(pretty(node.status))}</span></span></div>`;
+  body.appendChild(secId);
+
+  // Fields section
+  const fields = node.fields || {};
+  const fieldKeys = Object.keys(fields);
+  if (fieldKeys.length) {
+    const secF = el('div', 'nd-section');
+    let fhtml = '<div class="nd-sec-title">Typed Fields</div>';
+    fieldKeys.forEach(k => {
+      fhtml += `<div class="nd-row"><span class="nd-key">${esc(k)}</span><span class="nd-val mono">${esc(String(fields[k]))}</span></div>`;
+    });
+    secF.innerHTML = fhtml;
+    body.appendChild(secF);
+  }
+
+  // Policy section
+  if (policy) {
+    const secP = el('div', 'nd-section');
+    secP.innerHTML = `<div class="nd-sec-title">Policy Decision</div>
+      <div class="nd-row"><span class="nd-key">decision</span><span class="nd-val"><span class="badge ${statusClassFromDecision(policy.decision)}">${esc(policy.decision)}</span></span></div>
+      <div class="nd-row"><span class="nd-key">risk</span><span class="nd-val"><span class="tag risk-${esc(policy.risk)}">${esc(policy.risk)}</span></span></div>
+      <div class="nd-row"><span class="nd-key">reason</span><span class="nd-val">${esc(policy.reason)}</span></div>
+      ${policy.triggeredRules && policy.triggeredRules.length ? `<div class="nd-row"><span class="nd-key">rules</span><span class="nd-val mono">${esc(policy.triggeredRules.join(', '))}</span></div>` : ''}
+      <div class="nd-row nd-flags">
+        ${policy.sensitive ? '<span class="tag risk-high">sensitive</span>' : ''}
+        ${policy.externalSideEffect ? '<span class="tag risk-medium">external</span>' : ''}
+        ${policy.destructive ? '<span class="tag risk-high">destructive</span>' : ''}
+        ${policy.requiresConfirmation ? '<span class="tag">confirm required</span>' : ''}
+      </div>`;
+    body.appendChild(secP);
+  }
+
+  // Execution section
+  if (exec) {
+    const secE = el('div', 'nd-section');
+    let ehtml = `<div class="nd-sec-title">Execution</div>
+      <div class="nd-row"><span class="nd-key">summary</span><span class="nd-val">${esc(exec.summary)}</span></div>`;
+    if (exec.effects && exec.effects.length) {
+      ehtml += '<div class="nd-row"><span class="nd-key">effects</span><span class="nd-val"><ul class="nd-effects">' +
+        exec.effects.map(x => `<li>${esc(x)}</li>`).join('') + '</ul></span></div>';
+    }
+    if (exec.halted) ehtml += '<div class="nd-row"><span class="nd-key">halted</span><span class="nd-val nd-zt">yes — pipeline paused</span></div>';
+    secE.innerHTML = ehtml;
+    body.appendChild(secE);
+  } else if (node.status === 'Blocked') {
+    const secE = el('div', 'nd-section');
+    secE.innerHTML = `<div class="nd-sec-title">Execution</div>
+      <div class="nd-row"><span class="nd-key">blocked</span><span class="nd-val nd-zt">${esc(node.blockedReason || 'blocked by policy gate')}</span></div>`;
+    body.appendChild(secE);
+  }
+
+  // Verification section
+  if (verif.length) {
+    const secV = el('div', 'nd-section');
+    let vhtml = '<div class="nd-sec-title">Verification</div>';
+    verif.forEach(v => {
+      vhtml += `<div class="nd-row">
+        <span class="nd-key">${esc(v.id)}</span>
+        <span class="nd-val ${v.pass ? 'nd-pass' : 'nd-fail'}">${v.pass ? '✓' : '✕'} ${esc(v.actual)}</span>
+      </div>`;
+    });
+    secV.innerHTML = vhtml;
+    body.appendChild(secV);
+  }
+
+  const detail = $('#nodeDetail');
+  const backdrop = $('#ndBackdrop');
+  detail.classList.remove('hidden');
+  backdrop.classList.remove('hidden');
+  // trigger animation
+  requestAnimationFrame(() => detail.classList.add('open'));
+}
+
+function closeNodeDetail() {
+  const detail = $('#nodeDetail');
+  const backdrop = $('#ndBackdrop');
+  detail.classList.remove('open');
+  backdrop.classList.add('hidden');
+  setTimeout(() => detail.classList.add('hidden'), 220);
+  SELECTED = null;
+  document.querySelectorAll('.row').forEach(r => r.classList.remove('sel'));
+  if (LAST) renderMesh(LAST);
+}
+
+$('#ndClose').onclick = closeNodeDetail;
+$('#ndBackdrop').onclick = closeNodeDetail;
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeNodeDetail(); });
+
+// ── Compare mode animation (v1) ────────────────────────────────────
+let cmpTimer = null;
+
+function startCompareAnimation() {
+  stopCompareAnimation();
+  resetCompareSteps();
+  const badSteps = document.querySelectorAll('#cmpBadFlow .cmp-step');
+  const goodSteps = document.querySelectorAll('#cmpGoodFlow .cmp-step');
+  const totalBad = badSteps.length;
+  const totalGood = goodSteps.length;
+  const total = Math.max(totalBad, totalGood);
+  let step = 0;
+  function tick() {
+    if (step < totalBad) {
+      badSteps[step].classList.add('active');
+      if (step === totalBad - 1) badSteps[step].classList.add('leaked');
+    }
+    if (step < totalGood) {
+      goodSteps[step].classList.add('active');
+      if (step === 2) goodSteps[step].classList.add('quarantine-step');
+      if (step === totalGood - 1) goodSteps[step].classList.add('complete-step');
+    }
+    step++;
+    if (step <= total) {
+      cmpTimer = setTimeout(tick, 800);
+    }
+  }
+  cmpTimer = setTimeout(tick, 400);
+}
+
+function stopCompareAnimation() {
+  if (cmpTimer) { clearTimeout(cmpTimer); cmpTimer = null; }
+}
+
+function resetCompareSteps() {
+  document.querySelectorAll('.cmp-step').forEach(s => {
+    s.classList.remove('active', 'leaked', 'quarantine-step', 'complete-step');
+  });
+}
+
+$('#replayBtn').onclick = startCompareAnimation;
 
 // ── helpers ────────────────────────────────────────────────────────
 function pretty(s) { return ({ NeedsConfirmation: 'needs-confirm', Verified: 'verified', Executed: 'executed', Blocked: 'blocked', Allowed: 'allowed', Resolved: 'resolved', Pending: 'pending' })[s] || s; }

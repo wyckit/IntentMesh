@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/IntentMesh.Bench/IntentMesh.Bench.csproj" />
     <Project Path="src/IntentMesh.Cli/IntentMesh.Cli.csproj" />
     <Project Path="src/IntentMesh.Core/IntentMesh.Core.csproj" />
     <Project Path="src/IntentMesh.Tlm.Cli/IntentMesh.Tlm.Cli.csproj" />
