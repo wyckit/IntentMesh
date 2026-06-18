@@ -6,7 +6,8 @@
 
 [![CI](https://github.com/wyckit/IntentMesh/actions/workflows/ci.yml/badge.svg)](https://github.com/wyckit/IntentMesh/actions/workflows/ci.yml)
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4.svg)](https://dotnet.microsoft.com/)
-[![tests](https://img.shields.io/badge/tests-57%2F57-34d399.svg)](#status)
+[![tests](https://img.shields.io/badge/tests-60%2F60-34d399.svg)](#status)
+[![IntentBench](https://img.shields.io/badge/IntentBench-25%2F25-34d399.svg)](docs/WHITEPAPER.md)
 
 Before an AI agent sends an email, edits code, queries data, books a meeting, deletes a file, or
 calls an API, **IntentMesh forces that action through intent structure, authority checks, policy,
@@ -169,6 +170,13 @@ calls; IntentMesh governs intent before it becomes a tool call.* The product is 
 - [docs/GOAL-verified-intent-runtime.md](docs/GOAL-verified-intent-runtime.md) — the north-star
 - [docs/ROADMAP-90DAY.md](docs/ROADMAP-90DAY.md) — the 90-day execution plan
 - [docs/TASKLIST-NEXT.md](docs/TASKLIST-NEXT.md) — the work breakdown (by expert owner)
+- [docs/WHITEPAPER.md](docs/WHITEPAPER.md) · [launch/MANIFESTO.md](docs/launch/MANIFESTO.md) ·
+  [SDK.md](docs/SDK.md) · [ADAPTER-GUIDE.md](docs/ADAPTER-GUIDE.md) · [compare.html](docs/compare.html) ·
+  [landing](docs/index.html) · IntentBench scoreboard: `bench/scoreboard.html`
+
+**Progress against the plan:** Phase 1 (clarity) ✓ · Phase 2 (signed artifacts, replay,
+contract-boundary) ✓ · Phase 3 (Control Room v1) ✓ · Phase 4 (IntentBench 25/25) ✓ · Phase 5
+(SDK + integration prototypes) · Phase 6 (manifesto, whitepaper, landing).
 
 ## Core principles
 

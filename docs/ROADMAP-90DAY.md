@@ -54,24 +54,27 @@ control room that blocks indirect prompt injection while still completing the us
   (`bench/scoreboard.html`). Result: **IntentMesh 25/25**; vanilla blocks 0; MCP-gated blocks only
   the 5 raw-shell cases.
 
-## Days 61–75 — Integration layer
+## Days 61–75 — Integration layer  *(done)*
 *Goal: become useful beyond the demo.*
 
-- MCP wrapper/proxy prototype (sit in front of MCP tools).
-- OpenAPI tool-schema import → typed intent contracts.
-- Promote the fake Gmail/Calendar/File adapters to clean real-OAuth adapter examples behind
-  capability grants.
-- Confirmation-flow polish; local config file; Runtime SDK surface
-  (`propose → compileGraph → evaluatePolicy → executeTypedAction → verify → exportAudit`).
+- **[done]** Runtime SDK surface (`IntentMeshSdk`): propose → run (compile + policy + execute +
+  verify) → bundle/sign; `WithProposer` wraps an existing/LLM agent (proven still gated).
+- **[done]** MCP adapter/proxy prototype (`McpProxy`): gates intent before forwarding a tool call;
+  real stdio/SSE transport stubbed + documented.
+- **[done]** OpenAPI/tool-schema import (`OpenApiImporter`): schema → typed-action-contract descriptor.
+- **[done]** Real-OAuth adapter example (`GmailSendAdapter`) behind the `email` capability grant;
+  real token flow stubbed. See `docs/INTEGRATIONS.md` for exactly what is stubbed.
 
-## Days 76–90 — Launch package
+## Days 76–90 — Launch package  *(done)*
 *Goal: make it shareable.*
 
-- Launch video (the attack → see intent → malicious node loses authority → policy blocks → legit
-  task succeeds → verifier proves → signed audit explains).
-- Landing page; blog post / manifesto "The Case for Verified Intent".
-- Hosted or downloadable demo; GitHub release; architecture whitepaper.
-- "Build your first IntentMesh adapter" guide.
+- **[done]** Manifesto "The Case for Verified Intent" (`docs/launch/MANIFESTO.md`); launch article +
+  90-second video script (`docs/launch/`).
+- **[done]** Landing page (`docs/index.html`); architecture whitepaper (`docs/WHITEPAPER.md`);
+  "build your first adapter" guide (`docs/ADAPTER-GUIDE.md`).
+- **[done]** Per-phase GitHub releases (v1.0.0 → v1.x); public IntentBench scoreboard.
+- Video *render* needs a screen recorder (not available here) — the `.tape` script + the written
+  script are ready.
 
 ---
 
