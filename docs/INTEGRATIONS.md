@@ -20,8 +20,7 @@ and optionally `GOOGLE_OAUTH_SCOPE` (defaults to `https://www.googleapis.com/aut
 them set, `AcquireTokenAsync` prints a verification URL + user code and polls Google until you
 consent. Without them it falls back to `GMAIL_ACCESS_TOKEN`, then to a clear config error.
 
-The rest of this document is the original prototype write-up; the seam descriptions still hold, but
-the "stubbed" notes are superseded by the table above.
+The sections below describe each integration's architecture and current behavior.
 
 ---
 
@@ -30,15 +29,16 @@ the "stubbed" notes are superseded by the table above.
 The Integrations project (`IntentMesh.Integrations`) demonstrates how IntentMesh slots into
 three real-world adoption paths:
 
-| Prototype | File | Adoption path |
+| Integration | File | Adoption path |
 |-----------|------|---------------|
 | McpProxy | `McpProxy.cs` | MCP adapter / proxy mode |
 | OpenApiImporter | `OpenApiImporter.cs` | Tool-schema import → typed contracts |
 | OAuthAdapterExample | `OAuthAdapterExample.cs` | Real OAuth-backed `IToolAdapter` |
 
-**Invariant across all prototypes**: no real network I/O occurs. Every stub is marked with a
-`NotImplementedException` or a clearly-commented no-op. The architectural seams are production-
-ready; only the external calls are deferred.
+**Invariant across all three**: raw language never reaches a tool — only a typed, PolicyGate-approved
+intent does. Real network I/O happens only when you configure a transport or credentials, and only
+*after* the gate approves; with nothing configured the default transports record without transmitting
+(safe for sandbox/demo runs).
 
 ---
 
@@ -54,7 +54,7 @@ The proxy sits *in front of* the MCP transport. When an MCP tool call arrives:
    (`SendEmailAction`, `RunCommandAction`, etc.).
 2. `McpOneNodeProposer` wraps the action as a single-node `ProposedPlan` and runs the full
    IntentMesh pipeline (propose → mesh → PolicyGate → typed adapter → postcondition verifier).
-3. If the pipeline returns `Allowed`, the proxy *would* call `ForwardToRealMcpServer()`.
+3. If the pipeline returns `Allowed`, the proxy calls `ForwardToRealMcpServer()` over the chosen transport.
 4. If the pipeline returns `Block` or `NeedsConfirmation`, the forward is suppressed.
 
 **Security invariant**: an MCP `send_email` to `attacker@evil.com` is gated by the PolicyGate
@@ -70,23 +70,21 @@ that governs the personal demo governs every MCP call.
 - `McpOneNodeProposer` as a real `IIntentProposer` drop-in (v1.0 proposer seam).
 - The fail-closed behaviour for unmapped tools.
 
-### What is stubbed
+### Transports (real)
 
-| Stub | Method | Reason deferred |
-|------|--------|-----------------|
-| Real MCP stdio/SSE transport | `ForwardToRealMcpServer(McpToolCall)` | Requires the MCP .NET SDK, a live MCP server process, and network I/O — out of scope for in-process prototype |
+`ForwardToRealMcpServer(call, IMcpClient)` forwards an approved call over either transport behind the
+`IMcpClient` seam — `McpStdioClient` (newline-delimited JSON-RPC over a child process) or
+`McpHttpClient` (Streamable HTTP/SSE, with an SSRF guard, a read deadline, and response size/event
+caps). `GateAndForward` runs the gate and forwards **only** if IntentMesh approves — a blocked call
+never reaches the server. The built-in map covers `send_email`, `run_command`, `read_calendar`, and
+the `@modelcontextprotocol/server-filesystem` read/write tools (behind a pre-forward path-safety
+policy); cover any other server's manifest with the `customMapper` constructor hook.
 
-`ForwardToRealMcpServer` always throws `NotImplementedException` with a message directing
-implementors to the MCP .NET SDK.
+### Wiring it up
 
-### How it becomes production
-
-1. Add the MCP .NET SDK package (or equivalent stdio/SSE library).
-2. Establish a session with the target MCP server (stdio child process or SSE endpoint).
-3. Implement `ForwardToRealMcpServer`: serialize the `McpToolCall` as a JSON-RPC
-   `tools/call` message, await the response, return it to the original caller.
-4. Extend `MapToAction()` to cover every tool in your MCP server's manifest.
-5. Wire into the MCP server's request handler: `Gate(call)` → if `Allowed`, `ForwardToRealMcpServer(call)`.
+1. Connect a client: `McpStdioClient.Connect(...)` / `.ConnectNpx(...)`, or `McpHttpClient.Connect(url)`.
+2. On each inbound tool call: `proxy.GateAndForward(call, client[, approvals])`.
+3. The result carries the gate decision and — only when approved — the server's raw response.
 
 ---
 
@@ -100,56 +98,36 @@ ecosystem and the IntentMesh typed-contract registry.
 
 ### Core types
 
-- `ToolSchema` — minimal representation of an OpenAPI operation (name, method, summary,
-  parameters, risk hint, side-effect hint). Hand-authored in this prototype; parsed from a
-  real OpenAPI spec in production.
-- `ImportedContract` — typed contract descriptor produced by `ToContract()`. Shape mirrors
-  `ContractInfo` from the bundle: `Kind`, `Risk`, `SideEffect`, `Fields[]`,
-  `RequiresConfirmation`.
+- `ToolSchema` — an OpenAPI operation (name, method, summary, parameters, optional risk/side-effect
+  hints). Parsed from a real spec by `ParseFromOpenApi`, or hand-authored.
+- `ImportedContract` — typed contract descriptor from `ToContract()`: `Kind`, `Risk`, `SideEffect`,
+  `Fields[]`, `RequiresConfirmation`, and `Capability` (the scoping capability inferred for the action).
 
-### Mapping rules (deterministic, no LLM)
+### Parsing & mapping (real, deterministic, no LLM, no NuGet)
 
-| Field | Rule |
-|-------|------|
-| `Kind` | `act-{name}` (hyphenated, lower-case) |
-| `Risk` | Caller `RiskHint` if non-empty; else: DELETE→high, POST/PATCH→medium, GET→low |
-| `SideEffect` | Caller `SideEffectHint` if non-empty; else "none" |
-| `Fields` | Parameters list verbatim |
-| `RequiresConfirmation` | true when method is POST/PUT/PATCH/DELETE AND SideEffect ≠ "none" |
+- `ParseFromOpenApi(spec)` accepts **JSON or YAML** (via the dependency-free `MiniYaml`), resolves
+  local `$ref` pointers (`#/components/...`, incl. `allOf`) for parameters and request bodies, and
+  folds `tags` into the summary. It is **fail-closed**: a remote/unresolvable `$ref`, over-deep
+  nesting, tab-indented YAML, or oversized input throws rather than silently under-scoping a contract.
+- `ToContract(schema)` maps deterministically: `Kind = act-{name}`; `SideEffect`/`Risk`/`Capability`
+  are inferred from operation keywords (e.g. delete/refund → high; email/send → `email-send` + `email`;
+  invoice/charge → `financial-write` + `billing`). A mutating operation with no recognized keyword
+  rounds **up** to confirmation — never silently to `none`.
+- `RegisterToCompiledDir(dir, contracts)` compiles a real `im-imported.tlmz` via `TlmCompiler`;
+  `SymbolicBundle.Load(dir)` then recognizes the kind and the PolicyGate / Translation-Drift guard
+  enforce it — import → usable typed contract, end-to-end.
 
 ### Sample schemas
 
-- `OpenApiImporter.SampleInvoiceSchema` — `create_invoice` POST with `financial-write`
-  side effect → `RequiresConfirmation=true`.
+- `OpenApiImporter.SampleInvoiceSchema` — `create_invoice` POST with `financial-write` →
+  `RequiresConfirmation=true`.
 - `OpenApiImporter.SampleGetCustomerSchema` — `get_customer` GET, no side effect →
   `RequiresConfirmation=false`.
 
-### What is real
+### Limits
 
-- `ToContract(ToolSchema)` — full deterministic mapping, no external dependencies.
-- The `ImportedContract` record as an inspectable contract descriptor.
-- Both sample schemas and their expected contract outputs.
-
-### What is stubbed
-
-| Stub | Method | Reason deferred |
-|------|--------|-----------------|
-| Real OpenAPI YAML/JSON parsing | `ParseFromOpenApi(string openApiJson)` | Requires `Microsoft.OpenApi` NuGet package and a real spec file |
-| Registration into live `SymbolicBundle` | `RegisterInBundle(SymbolicBundle, ImportedContract)` | `SymbolicBundle` is currently immutable; registration requires TLM source emission + recompile |
-
-Both stubs throw `NotImplementedException`.
-
-### How it becomes production
-
-1. **Parse**: add `Microsoft.OpenApi`. Implement `ParseFromOpenApi` by reading
-   `doc.Paths`, mapping each `OpenApiOperation` to a `ToolSchema`, and calling
-   `ToContract()` on each.
-2. **Register**: emit each `ImportedContract` as a TLM `ActionContract` concept into
-   the appropriate `im-*.tlm` source file (or add a `SymbolicBundle.Register(ContractInfo)`
-   hot-registration method).
-3. **Compile**: run `tlm compile all` to produce an updated `.tlmz` bundle.
-4. **Reload**: `SymbolicBundle.Load(compiledDir)` — the new kind is now recognized by the
-   Translation-Drift guard, PolicyGate, and IntentResolver.
+Remote `$ref` (other files/URLs) and full YAML 1.2 (anchors/aliases/tags) are out of scope — both are
+rejected fail-closed rather than partially parsed.
 
 ---
 
@@ -170,67 +148,58 @@ etc.).
   the `email` capability is not in the runtime's granted set (`pol-capability-not-granted`).
 - **`Execute(node, decision, ws, approved)`**:
   1. If `approved == false` → halt, 0 messages transmitted.
-  2. If `approved == true` → run the stub (records in `ws.SentEmails`, no real I/O).
+  2. If `approved == true` → send via the injected `IEmailTransport`. With the default
+     `NullEmailTransport` it records without transmitting; with `SmtpEmailTransport` (when `SMTP_*` is
+     set) it sends for real.
 
-The approval gate is *real* and must not be removed. It mirrors the built-in
-`EmailAdapter.Send()` pattern.
+The approval gate is *real* and must not be removed. It mirrors the built-in `EmailAdapter.Send()` pattern.
 
-### What is real
+### Transports & token flow (real)
 
-- `Handles()` declaration and capability constant.
-- The approval gate (`if (!approved) return Halt(...)`).
-- The structural seam: OAuth token acquisition → Gmail API call → result.
-- `OAuthAdapterWiringExample` showing the intended registration pattern.
+- `IEmailTransport` / `SmtpEmailTransport` (`System.Net.Mail`, no NuGet) transmits when `SMTP_*` is set
+  — including Gmail SMTP with an app password (no OAuth needed). `NullEmailTransport` is the safe default.
+- `GoogleDeviceCodeFlow` implements the real OAuth 2.0 Device Authorization Grant (RFC 8628) on
+  `HttpClient`. `AcquireTokenAsync` uses it when `GOOGLE_OAUTH_CLIENT_ID` + `GOOGLE_OAUTH_CLIENT_SECRET`
+  are set (optional `GOOGLE_OAUTH_SCOPE`): it prints a verification URL + user code and polls until you
+  consent, otherwise it falls back to `GMAIL_ACCESS_TOKEN`, then a clear config error.
 
-### What is stubbed
+### Using it in production
 
-| Stub | Method / location | Reason deferred |
-|------|-------------------|-----------------|
-| OAuth 2.0 token flow | `AcquireTokenAsync()` | Requires Google Cloud Console app registration, client secrets, browser redirect / device flow, secure token store |
-| Real Gmail API call | Inside `Execute()`, clearly commented `// real OAuth-authenticated Gmail send goes here` | Requires `Google.Apis.Gmail.v1`, an access token, and a live Gmail account |
-
-`AcquireTokenAsync()` throws `NotImplementedException`. The send path is a genuine no-op
-(no bytes leave the process; only `ws.SentEmails` is updated for testability).
-
-### How it becomes production
-
-1. **Register the app**: Google Cloud Console → OAuth 2.0 credentials → download
-   `client_secrets.json`.
-2. **Implement `AcquireTokenAsync`**: use `Google.Apis.Auth` —
-   `GoogleWebAuthorizationBroker.AuthorizeAsync(...)` for first login (stores refresh
-   token in `FileDataStore`); subsequent calls silently refresh.
-3. **Implement the send**: build a `GmailService` with the acquired credential; construct
-   a MIME message; call `service.Users.Messages.Send(msg, "me").ExecuteAsync()`.
-4. **Register the adapter**: extend `ToolHost` (or make it injectable) so
-   `GmailSendAdapter` is returned by `ToolHost.For(Kinds.SendEmail)` instead of the
-   built-in `EmailAdapter`.
-5. **Grant the capability**: pass `grantedCapabilities` to `IntentMeshRuntime` that
-   includes `"email"` — the PolicyGate enforces this gate before reaching the adapter.
+1. **SMTP path (simplest)**: set `SMTP_HOST`/`SMTP_PORT`/`SMTP_USER`/`SMTP_PASS`/`SMTP_FROM` and pass a
+   `SmtpEmailTransport` to `GmailSendAdapter`.
+2. **OAuth device-flow path**: register an OAuth client in Google Cloud Console, set
+   `GOOGLE_OAUTH_CLIENT_ID` + `GOOGLE_OAUTH_CLIENT_SECRET`, and complete the device-flow consent once.
+3. **Register the adapter** behind `Kinds.SendEmail` and **grant** the `email` capability — the
+   PolicyGate blocks the adapter until the capability is granted (`pol-capability-not-granted`).
 
 ---
 
 ## Test Coverage
 
-Tests are in `tests/IntentMesh.Tests/IntegrationTests.cs` (17 tests, all passing).
+Integration behavior is in `tests/IntentMesh.Tests/IntegrationTests.cs`; the kernel and transport
+hardening is attacked adversarially in `tests/IntentMesh.Tests/IntentBenchRedTests.cs` (IntentBench-Red).
+The full suite passes (111 tests at time of writing).
 
-| Group | Tests | What they prove |
-|-------|-------|-----------------|
-| McpProxy | 5 | attacker email is gated; benign email needs confirmation; unmapped tool blocked; allow-list blocks bad cmd; ForwardToRealMcpServer is stubbed |
-| OpenApiImporter | 5 | invoice contract (medium/financial-write/RequiresConfirmation=true); GET (low/none/false); DELETE infers high; caller hint overrides; ParseFromOpenApi + RegisterInBundle stubbed |
-| GmailSendAdapter | 7 | Handles only send-email; required capability matches bundle; no transmit without approval; stub no-op when approved; AcquireTokenAsync stubbed; capability scoping blocks when email not granted |
+| Area | What the tests prove |
+|------|----------------------|
+| McpProxy gating | attacker email gated; benign email needs confirmation; unmapped tool blocked; command allow-list enforced; capability restrictions preserved through the proxy |
+| MCP transports | stdio + Streamable HTTP/SSE forward an approved call to a real (in-process) server; a blocked call is never forwarded; SSRF + size/event caps; hostile error body truncated |
+| OpenAPI import | JSON + YAML parse, `$ref` resolution, semantic side-effect/risk/capability inference; remote/unresolvable `$ref`, over-deep nesting, and tab indentation all fail closed |
+| OAuth / email | capability scoping; no transmit without approval; the device-flow state machine (scripted handler — pending/slow_down/denied) |
+| IntentBench-Red | audit tamper + demo-key forgery rejected; symlink/UNC/multi-path escapes blocked; risk-smuggling rejected; blanket approval refused; consent is provable from the signed audit |
 
 Run with:
 
 ```
-dotnet test tests/IntentMesh.Tests/IntentMesh.Tests.csproj --filter "FullyQualifiedName~IntegrationTests"
+dotnet test tests/IntentMesh.Tests/IntentMesh.Tests.csproj
 ```
 
 ---
 
 ## Summary — every former stub is now real
 
-The prototype stubs below were all converted to working, dependency-free implementations. This table
-supersedes the "What is stubbed" notes in the prototype write-up above.
+For reference, here is the mapping from the original prototype stubs to the real, dependency-free
+implementations now shipping.
 
 | Former stub | Component | Real implementation now shipping |
 |------|-----------|-------------------------------|
