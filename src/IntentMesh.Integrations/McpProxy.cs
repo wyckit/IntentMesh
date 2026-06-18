@@ -13,17 +13,17 @@ namespace IntentMesh.Integrations;
 //   • The McpOneNodeProposer implements IIntentProposer — a drop-in proposer on
 //     the real proposer seam (v1.0 framework hardening).
 //
-// WHAT IS STUBBED (clearly marked below):
-//   • Real MCP stdio/SSE transport — ForwardToRealMcpServer throws
-//     NotImplementedException with a comment explaining what goes there.
-//   • Tool argument coercion beyond the two mapped kinds — other tools are
-//     unmapped (the contract emits an "unsupported" diagnostic).
+// NOW REAL (converted from the prototype stub):
+//   • Real MCP stdio transport — ForwardToRealMcpServer(call, McpStdioClient) speaks
+//     newline-delimited JSON-RPC 2.0 (initialize / tools/list / tools/call) to a real
+//     server process. mcp-echo-server.js is a real minimal MCP server to gate against.
+//   • GateAndForward() runs the gate and forwards ONLY if IntentMesh approves — a
+//     blocked call never reaches the server.
 //
-// HOW THIS BECOMES PRODUCTION:
-//   1. Implement ForwardToRealMcpServer using the MCP .NET SDK (stdio or SSE).
-//   2. Extend MapToAction() for every MCP tool in your server's manifest.
-//   3. Wire the proxy in front of MCP: McpProxy.Gate → IntentMesh pipeline →
-//      if Allowed, McpProxy.ForwardToRealMcpServer.
+// STILL FOR PRODUCTION (out of scope here):
+//   • SSE/HTTP transport (a sibling client; the gate is transport-agnostic).
+//   • MapToAction() coverage for every tool in a given server's manifest, and richer
+//     argument coercion than the four mapped tools.
 // ──────────────────────────────────────────────────────────────────────────────
 
 /// <summary>
@@ -51,6 +51,10 @@ public sealed record McpToolCall(
 /// logging, or rendering in a control-room UI.
 /// </param>
 public sealed record McpGateResult(bool Allowed, string Reason, RunResult RunResult);
+
+/// <summary>The outcome of <see cref="McpProxy.GateAndForward"/>: the gate decision, plus the real
+/// MCP server's raw JSON response when (and only when) the call was approved and forwarded.</summary>
+public sealed record McpForwardResult(McpGateResult Gate, string? ServerResponse);
 
 /// <summary>
 /// Internal one-node proposer: wraps a single pre-mapped typed action as the
@@ -174,11 +178,21 @@ public sealed class McpProxy
                 RunResult: result);
         }
 
-        // 4. Allowed — stub the real MCP forward (see below).
-        // STUB: ForwardToRealMcpServer(call) is not called here; the prototype
-        // stops at the gate decision. In production, uncomment the line below:
-        // await ForwardToRealMcpServer(call);
+        // 4. Allowed — the caller may now forward to the real MCP server.
+        //    Use GateAndForward() to do both in one step.
         return new McpGateResult(Allowed: true, Reason: reason, RunResult: result);
+    }
+
+    /// <summary>
+    /// Gate the call AND, only if IntentMesh approves it, forward it to a real MCP server over
+    /// stdio. A blocked/gated call is never forwarded — no bytes reach the server. This is the
+    /// production shape: the proxy verifies intent, then the transport runs.
+    /// </summary>
+    public McpForwardResult GateAndForward(McpToolCall call, McpStdioClient client)
+    {
+        var gate = Gate(call);
+        if (!gate.Allowed) return new McpForwardResult(gate, ServerResponse: null);
+        return new McpForwardResult(gate, ServerResponse: ForwardToRealMcpServer(call, client));
     }
 
     /// <summary>
@@ -202,6 +216,8 @@ public sealed class McpProxy
         {
             "send_email" => MapSendEmail(call.Args),
             "run_command" => MapRunCommand(call.Args),
+            "read_calendar" => (new ReadCalendarAction(call.Args.TryGetValue("range", out var r) ? r : "Friday"),
+                                "MCP read_calendar"),
             _ => (null, string.Empty),
         };
     }
@@ -233,43 +249,16 @@ public sealed class McpProxy
         return (new RunCommandAction(cmd), $"MCP run_command → {cmd}");
     }
 
-    // ── STUB — real MCP transport (NOT IMPLEMENTED) ───────────────────────────
+    // ── REAL — MCP stdio transport ────────────────────────────────────────────
     /// <summary>
-    /// [STUB — NOT IMPLEMENTED] Forwards an approved MCP tool call to the real
-    /// MCP server over stdio or SSE transport.
-    ///
-    /// <para>
-    /// <strong>Why this is stubbed:</strong> real MCP transport requires the MCP
-    /// .NET SDK (or equivalent), a live MCP server process, and network I/O —
-    /// all of which are out of scope for this in-process prototype.
-    /// </para>
-    ///
-    /// <para>
-    /// <strong>Production path:</strong>
-    /// <list type="number">
-    ///   <item>Add the MCP .NET SDK package.</item>
-    ///   <item>Establish a stdio or SSE session with the target MCP server.</item>
-    ///   <item>Serialize <paramref name="call"/> as a JSON-RPC
-    ///         <c>tools/call</c> message.</item>
-    ///   <item>Await the response and return it to the original caller.</item>
-    /// </list>
-    /// This method is called ONLY after <see cref="Gate"/> returns
-    /// <c>Allowed=true</c>, guaranteeing the intent pipeline has approved the
-    /// action before any bytes leave the process.
-    /// </para>
+    /// Forwards an approved MCP tool call to a real MCP server over stdio (newline-delimited
+    /// JSON-RPC 2.0 via <see cref="McpStdioClient"/>) and returns the server's raw JSON result.
+    /// Called ONLY after <see cref="Gate"/> approves the action — the intent pipeline runs before
+    /// any bytes leave the process. (SSE/HTTP transport would be a sibling client; the gate is
+    /// transport-agnostic.)
     /// </summary>
-    /// <exception cref="NotImplementedException">
-    /// Always — real MCP stdio/SSE transport is out of scope for the prototype.
-    /// </exception>
-    public static Task ForwardToRealMcpServer(McpToolCall call)
-    {
-        // TODO (Phase 5 → production): replace with real MCP .NET SDK transport.
-        // The MCP server address, session management, and JSON-RPC serialization
-        // all live here. This method is only reached when Gate() returns Allowed.
-        throw new NotImplementedException(
-            "Real MCP stdio/SSE transport is not implemented in this prototype. " +
-            "Integrate the MCP .NET SDK here. See docs/INTEGRATIONS.md §McpProxy.");
-    }
+    public static string ForwardToRealMcpServer(McpToolCall call, McpStdioClient client)
+        => client.CallTool(call.Tool, call.Args);
 
     // ── Helpers ───────────────────────────────────────────────────────────────
     private static RunResult EmptyResult(string toolName) => new(
