@@ -53,16 +53,18 @@ function exportTrace(format) {
     body: JSON.stringify({ prompt, approvals: [...APPROVALS], format })
   }).then(r => r.text()).then(text => {
     const md = format === 'md';
+    const ext = md ? 'md' : (format === 'signed' ? 'signed.json' : 'json');
     const blob = new Blob([text], { type: md ? 'text/markdown' : 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'intentmesh-trace.' + (md ? 'md' : 'json');
+    a.download = 'intentmesh-trace.' + ext;
     document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(a.href);
   });
 }
 $('#exportJson').onclick = () => exportTrace('json');
 $('#exportMd').onclick = () => exportTrace('md');
+$('#exportSigned').onclick = () => exportTrace('signed');
 
 // ── Render ─────────────────────────────────────────────────────────
 function render(r) {

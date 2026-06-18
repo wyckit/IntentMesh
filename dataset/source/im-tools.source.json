@@ -34,7 +34,8 @@
       "Aliases": [],
       "Properties": {
         "Consumes": "act-read-calendar,act-classify-events,act-create-calendar-block",
-        "SideEffect": "local-write"
+        "SideEffect": "local-write",
+        "Capability": "calendar"
       }
     },
     {
@@ -45,7 +46,8 @@
       "Aliases": [],
       "Properties": {
         "Consumes": "act-find-notes,act-summarize-document",
-        "SideEffect": "none"
+        "SideEffect": "none",
+        "Capability": "notes"
       }
     },
     {
@@ -56,7 +58,8 @@
       "Aliases": [],
       "Properties": {
         "Consumes": "act-draft-email,act-send-email",
-        "SideEffect": "external-comm"
+        "SideEffect": "external-comm",
+        "Capability": "email"
       }
     },
     {
@@ -67,7 +70,8 @@
       "Aliases": [],
       "Properties": {
         "Consumes": "act-scan-downloads,act-classify-junk,act-delete-files",
-        "SideEffect": "destructive"
+        "SideEffect": "destructive",
+        "Capability": "files"
       }
     },
     {
@@ -78,7 +82,8 @@
       "Aliases": [],
       "Properties": {
         "Consumes": "act-read-repo,act-modify-code,act-run-command,act-open-pull-request",
-        "SideEffect": "command"
+        "SideEffect": "command",
+        "Capability": "repo"
       }
     },
     {
@@ -89,7 +94,8 @@
       "Aliases": [],
       "Properties": {
         "Consumes": "act-build-query-plan,act-run-query",
-        "SideEffect": "none"
+        "SideEffect": "none",
+        "Capability": "data"
       }
     }
   ],
@@ -172,5 +178,5 @@
   "Cues": [],
   "FitSignals": [],
   "Generators": [],
-  "ParameterCount": 18
+  "ParameterCount": 24
 }

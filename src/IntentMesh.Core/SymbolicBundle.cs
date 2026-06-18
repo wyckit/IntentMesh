@@ -33,10 +33,19 @@ public sealed class SymbolicBundle
     public IReadOnlyList<string> PostconditionLabels { get; }
     public IReadOnlyList<SkillInfo> Skills { get; }
     public IReadOnlyList<LifecycleStateInfo> Lifecycle { get; }
+    /// <summary>action kind -> the capability its tool requires (from im-tools).</summary>
+    public IReadOnlyDictionary<string, string> Capabilities { get; }
+    /// <summary>Every capability declared in the bundle (the default granted set).</summary>
+    public IReadOnlySet<string> AllCapabilities { get; }
 
     private SymbolicBundle(Dictionary<string, ContractInfo> contracts, List<CueInfo> cues,
-        List<RuleInfo> rules, List<string> postLabels, List<SkillInfo> skills, List<LifecycleStateInfo> lifecycle)
-    { Contracts = contracts; Cues = cues; Rules = rules; PostconditionLabels = postLabels; Skills = skills; Lifecycle = lifecycle; }
+        List<RuleInfo> rules, List<string> postLabels, List<SkillInfo> skills, List<LifecycleStateInfo> lifecycle,
+        Dictionary<string, string> capabilities)
+    {
+        Contracts = contracts; Cues = cues; Rules = rules; PostconditionLabels = postLabels;
+        Skills = skills; Lifecycle = lifecycle; Capabilities = capabilities;
+        AllCapabilities = capabilities.Values.ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
 
     public bool IsRegistered(string kind) => Contracts.ContainsKey(kind);
 
@@ -53,6 +62,7 @@ public sealed class SymbolicBundle
         var postLabels = new List<string>();
         var skills = new List<SkillInfo>();
         var lifecycle = new List<LifecycleStateInfo>();
+        var capabilities = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var pkg in packages)
         {
@@ -61,6 +71,12 @@ public sealed class SymbolicBundle
                 string P(string k) => c.Properties.GetValueOrDefault(k, "");
                 switch (c.Category)
                 {
+                    case "ToolAdapter":
+                        var capName = P("Capability");
+                        if (capName.Length > 0)
+                            foreach (var k in Split(P("Consumes")))
+                                capabilities[k] = capName;
+                        break;
                     case "ActionContract":
                         contracts[c.Id] = new ContractInfo(
                             c.Id, c.Label, P("Risk"), P("SideEffect"),
@@ -93,7 +109,7 @@ public sealed class SymbolicBundle
                 $"No action contracts found in '{compiledDir}'. Run the tlm CLI: author + compile all.");
 
         lifecycle.Sort((a, b) => a.Order.CompareTo(b.Order));
-        return new SymbolicBundle(contracts, cues, rules, postLabels, skills, lifecycle);
+        return new SymbolicBundle(contracts, cues, rules, postLabels, skills, lifecycle, capabilities);
     }
 
     private static List<string> Split(string csv) =>

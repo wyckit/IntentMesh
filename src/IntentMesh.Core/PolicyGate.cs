@@ -15,8 +15,13 @@ public sealed record PolicyDecision(
     bool ExternalSideEffect,
     bool Destructive);
 
-/// <summary>Context the gate reasons over: the workspace + the recipients the USER actually named.</summary>
-public sealed record PolicyContext(Workspace Workspace, IReadOnlySet<string> UserRequestedRecipients);
+/// <summary>Context the gate reasons over: the workspace, the recipients the USER actually named,
+/// the capabilities granted to this runtime, and the kind->capability map (capability scoping).</summary>
+public sealed record PolicyContext(
+    Workspace Workspace,
+    IReadOnlySet<string> UserRequestedRecipients,
+    IReadOnlySet<string> GrantedCapabilities,
+    IReadOnlyDictionary<string, string> Capabilities);
 
 /// <summary>
 /// The Policy / Risk Gate — generalizes PassGen's SpecValidator. Fail-closed: authority lives
@@ -39,6 +44,12 @@ public sealed class PolicyGate
             return new PolicyDecision(node.Id, Decision.Block, "unknown",
                 "No typed contract exists for this action (fail-closed).",
                 new[] { "pol-unregistered" }, false, trust, false, false, false);
+
+        // Capability scoping (v1.0): the action's tool requires a capability the runtime must hold.
+        if (ctx.Capabilities.TryGetValue(node.Type, out var cap) && !ctx.GrantedCapabilities.Contains(cap))
+            return new PolicyDecision(node.Id, Decision.Block, contract.Risk,
+                $"Capability '{cap}' is not granted to this runtime.",
+                new[] { "pol-capability-not-granted" }, false, trust, false, false, false);
 
         bool untrusted = node.Authority == Authority.None;
         bool external = contract.SideEffect == "external-comm";

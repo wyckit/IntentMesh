@@ -1,5 +1,19 @@
 namespace IntentMesh.Core;
 
+/// <summary>The proposal layer's output: candidate typed intent nodes + diagnostics.</summary>
+public sealed record ProposedPlan(IReadOnlyList<IntentNode> Nodes, IReadOnlyList<string> Fired, IReadOnlyList<string> Unsupported);
+
+/// <summary>
+/// The proposal seam (v1.0). The runtime depends only on this — the rule-based IntentResolver is
+/// the default, but an LLM proposer is a drop-in: it still emits typed, registry-bounded intent,
+/// which is still validated by the Policy Gate before anything runs. "Language proposes; only
+/// typed, validated intent executes" — the boundary holds regardless of who proposes.
+/// </summary>
+public interface IIntentProposer
+{
+    ProposedPlan Propose(string prompt, Workspace ws);
+}
+
 /// <summary>
 /// TLM-driven language resolver — the agentic analog of PassGen's TlmNlu. The WORDS live in the
 /// im-nl-vocabulary cues (Trigger -> Signal); the grammar that composes signals into an action
@@ -9,14 +23,14 @@ namespace IntentMesh.Core;
 /// im-action-contracts. It never synthesizes a contract on the fly. Entities are bound from the
 /// workspace, never invented. Every emitted node carries TrustSource=User.
 /// </summary>
-public sealed class IntentResolver
+public sealed class IntentResolver : IIntentProposer
 {
     private readonly SymbolicBundle _bundle;
     public IntentResolver(SymbolicBundle bundle) => _bundle = bundle;
 
-    public sealed record Result(IReadOnlyList<IntentNode> Nodes, IReadOnlyList<string> Fired, IReadOnlyList<string> Unsupported);
+    public ProposedPlan Propose(string prompt, Workspace ws) => Resolve(prompt, ws);
 
-    public Result Resolve(string prompt, Workspace ws)
+    public ProposedPlan Resolve(string prompt, Workspace ws)
     {
         var text = " " + prompt.ToLowerInvariant() + " ";
         var fired = new List<string>();
@@ -164,7 +178,7 @@ public sealed class IntentResolver
                     "Open pull request (draft)", Src("act.open_pr"));
         }
 
-        return new Result(nodes, fired, unsupported);
+        return new ProposedPlan(nodes, fired, unsupported);
     }
 
     private static Contact? BindRecipient(string loweredPadded, Workspace ws, bool clientContext)

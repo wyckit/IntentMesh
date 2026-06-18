@@ -226,6 +226,14 @@
       "Description": "the action kind is not present in im-action-contracts -\u003E block \u2014 no typed contract exists for this action (fail-closed)",
       "Aliases": [],
       "Properties": {}
+    },
+    {
+      "Id": "pol-capability-not-granted",
+      "Label": "pol-capability-not-granted",
+      "Category": "PolicyRule",
+      "Description": "the action\u0027s tool requires a capability the runtime has not been granted -\u003E block \u2014 capability scoping (the real-adapter framework gate)",
+      "Aliases": [],
+      "Properties": {}
     }
   ],
   "Relations": [
@@ -530,6 +538,18 @@
       "Decay": null
     },
     {
+      "SourceId": "policy-root",
+      "TargetId": "pol-capability-not-granted",
+      "Type": "Applies",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
       "SourceId": "pol-zero-trust-side-effect",
       "TargetId": "pol-recipient-substitution",
       "Type": "Precedes",
@@ -708,6 +728,18 @@
       "UtteranceText": null,
       "TurnIndex": null,
       "Decay": null
+    },
+    {
+      "SourceId": "pol-unregistered",
+      "TargetId": "pol-capability-not-granted",
+      "Type": "Precedes",
+      "Description": "evaluated before",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
     }
   ],
   "Dimensions": [],
@@ -791,10 +823,15 @@
       "Id": "pol-unregistered",
       "Rule": "the action kind is not present in im-action-contracts",
       "Action": "block \u2014 no typed contract exists for this action (fail-closed)"
+    },
+    {
+      "Id": "pol-capability-not-granted",
+      "Rule": "the action\u0027s tool requires a capability the runtime has not been granted",
+      "Action": "block \u2014 capability scoping (the real-adapter framework gate)"
     }
   ],
   "Cues": [],
   "FitSignals": [],
   "Generators": [],
-  "ParameterCount": 56
+  "ParameterCount": 59
 }

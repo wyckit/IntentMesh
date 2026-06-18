@@ -52,9 +52,12 @@ app.MapPost("/api/export", (ExportRequest req) =>
     if (string.IsNullOrEmpty(prompt)) return Results.BadRequest(new { error = "empty prompt" });
     var approvals = (req.Approvals ?? Array.Empty<string>()).ToHashSet(StringComparer.OrdinalIgnoreCase);
     var result = runtime.Run(prompt, Workspace.CreateDemo(), approvals);
-    return (req.Format ?? "json").ToLowerInvariant() is "md" or "markdown"
-        ? Results.Text(AuditExporter.ToMarkdown(result), "text/markdown")
-        : Results.Text(AuditExporter.ToJson(result), "application/json");
+    return (req.Format ?? "json").ToLowerInvariant() switch
+    {
+        "md" or "markdown" => Results.Text(AuditExporter.ToMarkdown(result), "text/markdown"),
+        "signed" => Results.Json(AuditSigner.Sign(result)),   // tamper-evident envelope
+        _ => Results.Text(AuditExporter.ToJson(result), "application/json"),
+    };
 });
 
 app.Run();

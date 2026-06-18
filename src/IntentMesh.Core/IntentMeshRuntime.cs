@@ -12,20 +12,26 @@ namespace IntentMesh.Core;
 public sealed class IntentMeshRuntime
 {
     private readonly SymbolicBundle _bundle;
-    private readonly IntentResolver _resolver;
+    private readonly IIntentProposer _proposer;
     private readonly PolicyGate _gate;
     private readonly ToolHost _tools = new();
     private readonly PostconditionVerifier _verifier = new();
     private readonly SkillProposer _skills;
+    private readonly IReadOnlySet<string> _granted;
 
     public SymbolicBundle Bundle => _bundle;
 
-    public IntentMeshRuntime(SymbolicBundle bundle)
+    /// <param name="proposer">The proposal layer (default: the rule-based IntentResolver). Swap in
+    /// an LLM proposer here — nothing downstream changes.</param>
+    /// <param name="grantedCapabilities">Capabilities the runtime is granted (default: all in the
+    /// bundle). A node whose tool requires an ungranted capability is blocked (capability scoping).</param>
+    public IntentMeshRuntime(SymbolicBundle bundle, IIntentProposer? proposer = null, IReadOnlySet<string>? grantedCapabilities = null)
     {
         _bundle = bundle;
-        _resolver = new IntentResolver(bundle);
+        _proposer = proposer ?? new IntentResolver(bundle);
         _gate = new PolicyGate(bundle);
         _skills = new SkillProposer(bundle.Skills);
+        _granted = grantedCapabilities ?? bundle.AllCapabilities;
     }
 
     public static IntentMeshRuntime Load(string? compiledDir = null)
@@ -41,8 +47,8 @@ public sealed class IntentMeshRuntime
         var graph = new IntentGraph();
         var audit = new AuditTrail();
 
-        // 1. Resolve language -> typed, registry-bounded intent nodes (all TrustSource.User).
-        var resolved = _resolver.Resolve(prompt, ws);
+        // 1. Propose: language -> typed, registry-bounded intent nodes (all TrustSource.User).
+        var resolved = _proposer.Propose(prompt, ws);
         foreach (var node in resolved.Nodes)
         {
             graph.Add(node);
@@ -57,7 +63,7 @@ public sealed class IntentMeshRuntime
             .OfType<DraftEmailAction>().Select(a => a.Recipient)
             .Concat(resolved.Nodes.Select(n => n.Action).OfType<SendEmailAction>().Select(a => a.Recipient))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var ctx = new PolicyContext(ws, userRecipients);
+        var ctx = new PolicyContext(ws, userRecipients, _granted, _bundle.Capabilities);
 
         // 2-4. Process the mesh; dynamically-proposed zero-trust nodes join the same pipeline.
         int counter = resolved.Nodes.Count;
@@ -133,7 +139,7 @@ public sealed class IntentMeshRuntime
         return Project(prompt, resolved, graph, verification, audit, _skills.Observe(resolved.Nodes), _bundle.Lifecycle);
     }
 
-    private static RunResult Project(string prompt, IntentResolver.Result resolved, IntentGraph graph,
+    private static RunResult Project(string prompt, ProposedPlan resolved, IntentGraph graph,
         IReadOnlyList<VerificationResult> verification, AuditTrail audit,
         IReadOnlyList<SkillObservation> skillObs, IReadOnlyList<LifecycleStateInfo> lifecycle)
     {

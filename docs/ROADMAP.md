@@ -84,16 +84,32 @@ the audit trail; TLMs verify 7/7; CLI `--trace` shows all panels including a fai
   analog of the email/shell blocks. Demo prompt: *"Summarize signups by plan from the analytics
   database, delete old records, and email the client a report."* (`DataAgentTests`, `--demo 5`).
 
-## v1.0 — Real Adapter Framework
+## v1.0 — Framework Hardening
 
-**Goal:** move from demo to runtime.
+**Goal:** move from demo toward runtime. The architectural seams are in place and tested; the
+production integrations (real OAuth adapters, hot-load) remain deliberately out of scope so nothing
+is faked.
 
-- Real, sandboxed adapter framework with capability scoping (opt-in real Gmail/calendar/fs behind
-  explicit grants and approval workflows).
-- A first-class **policy language** (declarative, diffable) compiled into `im-policy-rules`.
-- Fully **TLM-backed Intent Mesh** via RSRM / sage-rsrm hot-load; plugin/tool contract system.
-- **Signed audit logs**; human-approval workflows; an LLM proposal layer swapped in at the resolver
-  with nothing downstream changing (it still emits typed intent that is still validated first).
+**Delivered:**
+- **[done] Swappable proposer seam** (`IIntentProposer`) — the runtime depends only on the seam; the
+  rule-based `IntentResolver` is the default, and an LLM proposer is a drop-in. Proven that a
+  dangerous proposal (an LLM proposing a send to an attacker) is still **gated** by the Policy Gate
+  and never auto-executes (`FrameworkTests.The_proposer_is_swappable_and_the_gate_still_governs`).
+  "Language proposes; only typed, validated intent executes" — regardless of who proposes.
+- **[done] Capability scoping** — each tool declares a capability in `im-tools`; the runtime is
+  configured with a granted set; a node whose capability isn't granted is blocked
+  (`pol-capability-not-granted`). This is the gate a real-adapter framework needs — wire a real
+  adapter behind a capability and it stays dark until explicitly granted.
+- **[done] Tamper-evident signed audit logs** — `AuditSigner` folds the audit events into a SHA-256
+  hash chain and HMAC-signs the head; deterministic, and any edit/reorder/drop of an event fails
+  `Verify`. Exposed as the Control Room "⬇ Signed" download.
+- **Policy as data** — already true: policies live in `im-policy-rules` as `SymbolicPolicy`,
+  diffable and versioned with the bundle. A dedicated declarative policy *language* that compiles
+  into it is the next refinement.
+
+**Deliberately future (not faked):** real, sandboxed OAuth adapters (Gmail/Calendar/FS) behind the
+capability grants; live RSRM / sage-rsrm hot-load of the `im-*` bundle; a production key-management
+story for the audit signer; multi-step human-approval workflows.
 
 ---
 

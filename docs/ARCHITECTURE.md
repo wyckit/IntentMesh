@@ -120,6 +120,23 @@ byte-compatible with live RSRM / sage-rsrm. Seven linked TLMs, mirroring PassGen
 
 89 concepts, 100 relations, 204 parameters; 7/7 round-trip + checksum verify.
 
+## Framework seams (v1.0)
+
+Three seams turn the demo into the shape of a runtime, without faking production integrations:
+
+- **Proposer seam (`IIntentProposer`).** The runtime depends only on `Propose(prompt, ws) ->
+  ProposedPlan`. The rule-based `IntentResolver` is the default; an LLM proposer is a drop-in and
+  **nothing downstream changes** — it still emits typed, registry-bounded intent that the Policy
+  Gate validates. Critically, a dangerous proposal (e.g., an LLM proposing a send to an attacker)
+  is still gated and never auto-executes. The proposer is the language layer; it is never the
+  authority.
+- **Capability scoping.** Each tool declares a capability in `im-tools`; the runtime holds a granted
+  set (default: all). A node whose capability isn't granted is blocked by `pol-capability-not-
+  granted` before anything runs. This is the gate a real-adapter framework needs: a real Gmail
+  adapter can be wired behind the `email` capability and stays dark until explicitly granted.
+- **Tamper-evident audit (`AuditSigner`).** Audit events are folded into a SHA-256 hash chain whose
+  head is HMAC-signed — deterministic, and any edit/reorder/drop of an event fails `Verify`.
+
 ## The learning loop
 
 New phrasings, contracts, and policies grow the symbolic layer as **data + tests**, never code:

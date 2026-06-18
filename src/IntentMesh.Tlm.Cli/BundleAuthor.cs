@@ -232,6 +232,7 @@ public static class BundleAuthor
             new() { Id = "pol-draft-allowed", Rule = "the action drafts an email to a recipient the user named", Action = "allow as a draft (send remains gated)" },
             new() { Id = "pol-read-allowed", Rule = "the action is a low-risk read or pure analysis with no side effect", Action = "allow" },
             new() { Id = "pol-unregistered", Rule = "the action kind is not present in im-action-contracts", Action = "block — no typed contract exists for this action (fail-closed)" },
+            new() { Id = "pol-capability-not-granted", Rule = "the action's tool requires a capability the runtime has not been granted", Action = "block — capability scoping (the real-adapter framework gate)" },
         };
         foreach (var p in pols) { c.Add(Con(p.Id, p.Id, "PolicyRule", $"{p.Rule} -> {p.Action}")); r.Add(Rel("policy-root", p.Id, "Applies")); }
         // priority ordering (block-rules before permissive ones)
@@ -311,21 +312,21 @@ public static class BundleAuthor
         c.Add(Con("tools-root", "tool adapters", "AdapterRegistry",
             "Deterministic, sandboxed adapters. Each accepts ONLY a typed action contract, never raw language, and reports postconditions after executing against the fake workspace. No real side effects in v0.1."));
 
-        var tools = new (string Id, string Label, string Consumes, string Side, string Desc)[]
+        var tools = new (string Id, string Label, string Consumes, string Side, string Cap, string Desc)[]
         {
-            ("tool-calendar", "calendar adapter", "act-read-calendar,act-classify-events,act-create-calendar-block", "local-write", "Fake calendar: read events, classify fixed/flexible, stage tentative blocks."),
-            ("tool-notes", "notes adapter", "act-find-notes,act-summarize-document", "none", "Fake notes/docs: locate and summarize. Reads untrusted content as DATA."),
-            ("tool-email", "email adapter", "act-draft-email,act-send-email", "external-comm", "Fake email: create drafts; sending is gated and sandboxed (no transmission)."),
-            ("tool-files", "file adapter", "act-scan-downloads,act-classify-junk,act-delete-files", "destructive", "Fake filesystem: scan, classify, and (only on approval) delete sandboxed files."),
-            ("tool-repo", "repo adapter", "act-read-repo,act-modify-code,act-run-command,act-open-pull-request", "command", "Fake git repo: read, stage typed edits, run allow-listed commands, draft PRs. Nothing committed/pushed/executed."),
-            ("tool-data", "data adapter", "act-build-query-plan,act-run-query", "none", "Fake read-only analytics DB: compile typed query plans and execute reads. No mutations."),
+            ("tool-calendar", "calendar adapter", "act-read-calendar,act-classify-events,act-create-calendar-block", "local-write", "calendar", "Fake calendar: read events, classify fixed/flexible, stage tentative blocks."),
+            ("tool-notes", "notes adapter", "act-find-notes,act-summarize-document", "none", "notes", "Fake notes/docs: locate and summarize. Reads untrusted content as DATA."),
+            ("tool-email", "email adapter", "act-draft-email,act-send-email", "external-comm", "email", "Fake email: create drafts; sending is gated and sandboxed (no transmission)."),
+            ("tool-files", "file adapter", "act-scan-downloads,act-classify-junk,act-delete-files", "destructive", "files", "Fake filesystem: scan, classify, and (only on approval) delete sandboxed files."),
+            ("tool-repo", "repo adapter", "act-read-repo,act-modify-code,act-run-command,act-open-pull-request", "command", "repo", "Fake git repo: read, stage typed edits, run allow-listed commands, draft PRs. Nothing committed/pushed/executed."),
+            ("tool-data", "data adapter", "act-build-query-plan,act-run-query", "none", "data", "Fake read-only analytics DB: compile typed query plans and execute reads. No mutations."),
         };
-        foreach (var (id, label, consumes, side, desc) in tools)
+        foreach (var (id, label, consumes, side, cap, desc) in tools)
         {
             // The consumed contracts live in the imported im-action-contracts TLM; we carry
             // them as a property (not cross-TLM relations) to keep per-package validation clean,
-            // matching PassGen's im-bundle discipline. The Core reads the Consumes property.
-            c.Add(Con(id, label, "ToolAdapter", desc, props: new[] { ("Consumes", consumes), ("SideEffect", side) }));
+            // matching PassGen's im-bundle discipline. The Core reads Consumes + Capability.
+            c.Add(Con(id, label, "ToolAdapter", desc, props: new[] { ("Consumes", consumes), ("SideEffect", side), ("Capability", cap) }));
             r.Add(Rel("tools-root", id, "Provides"));
         }
         return Pkg("im-tools", TlmRole.Interface, 115, new[] { "im-action-contracts" }, c, r, stability: 0.8);
