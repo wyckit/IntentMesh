@@ -89,6 +89,35 @@ public sealed class PolicyGate
                 $"Would expose a repository secret in the {secretField}.",
                 new[] { "pol-secret-exposure" }, false, trust, true, false, false);
 
+        // ── Data: validate the typed query plan before anything runs (fail-closed) ──
+        if (node.Action is BuildQueryPlanAction qp)
+        {
+            var db = ctx.Workspace.Db;
+            bool qpDestructive = qp.Operation is "Delete" or "Drop" or "Truncate" or "Update";
+            if (untrusted)
+            {
+                var rules = new List<string> { "pol-query-untrusted" };
+                var reason = "Untrusted retrieved content may not originate a database query.";
+                if (qpDestructive) { rules.Add("pol-query-readonly"); reason += $" It is also a destructive '{qp.Operation}' against a {db.Role} role."; }
+                return new PolicyDecision(node.Id, Decision.Block, risk, reason, rules, false, trust, false, false, qpDestructive);
+            }
+            if (qpDestructive)
+                return new PolicyDecision(node.Id, Decision.Block, risk,
+                    $"The '{db.Role}' database role does not permit a '{qp.Operation}' operation.",
+                    new[] { "pol-query-readonly" }, false, trust, false, false, true);
+            if (!db.HasTable(qp.Table))
+                return new PolicyDecision(node.Id, Decision.Block, risk,
+                    $"Query references table '{qp.Table}', which does not exist.",
+                    new[] { "pol-query-table-missing" }, false, trust, false, false, false);
+            if (qp.RowLimit <= 0 || qp.RowLimit > db.RowCap)
+                return new PolicyDecision(node.Id, Decision.Block, risk,
+                    $"Query has no row limit or exceeds the row cap ({db.RowCap}).",
+                    new[] { "pol-query-unbounded" }, false, trust, false, false, false);
+            return new PolicyDecision(node.Id, Decision.Allow, risk,
+                $"Read-only '{qp.Operation}' on '{qp.Table}' within the row cap.",
+                new[] { "pol-read-allowed" }, false, trust, false, false, false);
+        }
+
         // ── Confirmation / allow rules (trusted user intent) ────────────────
         if (destructive)
             return new PolicyDecision(node.Id, Decision.Confirm, risk,

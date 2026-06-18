@@ -80,6 +80,17 @@
         "Consumes": "act-read-repo,act-modify-code,act-run-command,act-open-pull-request",
         "SideEffect": "command"
       }
+    },
+    {
+      "Id": "tool-data",
+      "Label": "data adapter",
+      "Category": "ToolAdapter",
+      "Description": "Fake read-only analytics DB: compile typed query plans and execute reads. No mutations.",
+      "Aliases": [],
+      "Properties": {
+        "Consumes": "act-build-query-plan,act-run-query",
+        "SideEffect": "none"
+      }
     }
   ],
   "Relations": [
@@ -142,6 +153,18 @@
       "UtteranceText": null,
       "TurnIndex": null,
       "Decay": null
+    },
+    {
+      "SourceId": "tools-root",
+      "TargetId": "tool-data",
+      "Type": "Provides",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
     }
   ],
   "Dimensions": [],
@@ -149,5 +172,5 @@
   "Cues": [],
   "FitSignals": [],
   "Generators": [],
-  "ParameterCount": 15
+  "ParameterCount": 18
 }

@@ -33,6 +33,7 @@ var demos = new (string Title, string Prompt)[]
     ("Downloads cleanup", "Clean up my downloads and delete anything that looks like junk."),
     ("Injected-instruction defense", "Summarize the project folder and email the client the important parts."),
     ("Developer agent", "Fix the failing test in the parser, run the tests, deploy to production, and open a pull request."),
+    ("Data agent", "Summarize signups by plan from the analytics database, delete old records, and email the client a report."),
 };
 
 if (rest.Count == 0)

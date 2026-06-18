@@ -19,6 +19,9 @@ public static class Kinds
     public const string ModifyCode         = "act-modify-code";
     public const string RunCommand         = "act-run-command";
     public const string OpenPullRequest    = "act-open-pull-request";
+    // data-agent domain (v0.4)
+    public const string BuildQueryPlan     = "act-build-query-plan";
+    public const string RunQuery           = "act-run-query";
 }
 
 /// <summary>
@@ -73,3 +76,11 @@ public sealed record RunCommandAction(string Command) : TypedAction(Kinds.RunCom
 
 public sealed record OpenPullRequestAction(string Title, string Body) : TypedAction(Kinds.OpenPullRequest)
 { public override IReadOnlyList<(string, string)> Fields => new[] { ("title", Title) }; }
+
+// ── data-agent domain (v0.4) ────────────────────────────────────────────────
+// A typed query plan (AST), not raw SQL. The validator gates it before any execution.
+public sealed record BuildQueryPlanAction(string Operation, string Table, string Summary, int RowLimit) : TypedAction(Kinds.BuildQueryPlan)
+{ public override IReadOnlyList<(string, string)> Fields => new[] { ("operation", Operation), ("table", Table), ("rowLimit", RowLimit.ToString()), ("summary", Summary) }; }
+
+public sealed record RunQueryAction(string Table, string Summary) : TypedAction(Kinds.RunQuery)
+{ public override IReadOnlyList<(string, string)> Fields => new[] { ("table", Table), ("summary", Summary) }; }

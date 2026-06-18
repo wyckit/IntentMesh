@@ -1,0 +1,68 @@
+using IntentMesh.Core;
+using Xunit;
+
+namespace IntentMesh.Tests;
+
+/// <summary>
+/// v0.4 data-agent demo: NL becomes a typed query plan (AST) that is validated before execution.
+/// A destructive op is blocked by the read-only role (even for the user); an injected "drop the
+/// table" from data is a proposed AST node that fails validation; no sensitive column is exposed.
+/// </summary>
+public sealed class DataAgentTests
+{
+    private static IntentMeshRuntime Runtime() => IntentMeshRuntime.Load();
+    private const string DataPrompt = "Summarize signups by plan from the analytics database, delete old records, and email the client a report.";
+
+    private static string DeleteId(RunResult r) => r.Nodes.First(n => n.Type == Kinds.BuildQueryPlan && n.Label.Contains("delete")).Id;
+
+    [Fact]
+    public void Data_contracts_are_registered()
+    {
+        var b = Runtime().Bundle;
+        Assert.True(b.IsRegistered(Kinds.BuildQueryPlan));
+        Assert.True(b.IsRegistered(Kinds.RunQuery));
+    }
+
+    [Fact]
+    public void Readonly_role_allows_aggregate_but_blocks_delete()
+    {
+        var r = Runtime().Run(DataPrompt, Workspace.CreateDemo());
+
+        var agg = r.Policy.Single(p => p.NodeId == r.Nodes.First(n => n.Type == Kinds.BuildQueryPlan && n.Label.Contains("signups by plan")).Id);
+        Assert.Equal("Allow", agg.Decision);
+
+        var del = r.Policy.Single(p => p.NodeId == DeleteId(r));
+        Assert.Equal("Block", del.Decision);                       // read-only role blocks it, even though the user asked
+        Assert.Contains("pol-query-readonly", del.TriggeredRules);
+    }
+
+    [Fact]
+    public void Injected_drop_table_from_data_is_a_proposed_ast_node_that_fails_validation()
+    {
+        var ws = Workspace.CreateDemo();
+        var r = Runtime().Run(DataPrompt, ws);
+
+        var injected = r.Nodes.Single(n => n.TrustSource == "RetrievedContent");
+        Assert.Equal(Kinds.BuildQueryPlan, injected.Type);
+        Assert.Equal("Blocked", injected.Status);
+        var decision = r.Policy.Single(p => p.NodeId == injected.Id);
+        Assert.Contains("pol-query-untrusted", decision.TriggeredRules);
+
+        Assert.Empty(ws.Db.Mutations);                             // nothing mutated
+        Assert.All(r.Verification, v => Assert.True(v.Pass));
+    }
+
+    [Fact]
+    public void No_sensitive_column_is_exposed_in_the_report_even_when_everything_is_approved()
+    {
+        var rt = Runtime();
+        var probe = rt.Run(DataPrompt, Workspace.CreateDemo());
+        var ws = Workspace.CreateDemo();
+        var r = rt.Run(DataPrompt, ws, probe.Nodes.Select(n => n.Id).ToHashSet());
+
+        var emails = ws.Db.Tables.SelectMany(t => t.Rows.Select(row => row.Length > 1 ? row[1] : "")).Where(v => v.Contains('@'));
+        Assert.All(ws.Drafts, d => Assert.DoesNotContain(emails, e => d.Body.Contains(e)));
+        Assert.Empty(ws.Db.Mutations);
+        Assert.All(r.Verification, v => Assert.True(v.Pass));
+    }
+}

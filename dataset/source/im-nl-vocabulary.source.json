@@ -441,6 +441,66 @@
         "Triggers": "open a pr / open a pull request / open pr / raise a pr / submit a pr / draft a pr / create a pr / pull request",
         "Signal": "act.open_pr"
       }
+    },
+    {
+      "Id": "cue-query",
+      "Label": "summarize signups",
+      "Category": "Phrase",
+      "Description": "Cue (signal act.query); triggers: summarize signups / signups by / breakdown / count / how many / by plan / report on / query the / run a report / analytics report.",
+      "Aliases": [
+        "summarize signups",
+        "signups by",
+        "breakdown",
+        "count",
+        "how many",
+        "by plan",
+        "report on",
+        "query the",
+        "run a report",
+        "analytics report"
+      ],
+      "Properties": {
+        "Triggers": "summarize signups / signups by / breakdown / count / how many / by plan / report on / query the / run a report / analytics report",
+        "Signal": "act.query"
+      }
+    },
+    {
+      "Id": "cue-delete-data",
+      "Label": "delete old records",
+      "Category": "Phrase",
+      "Description": "Cue (signal act.delete_data); triggers: delete old records / delete records / purge / truncate / drop the / remove old rows / clear the table / wipe.",
+      "Aliases": [
+        "delete old records",
+        "delete records",
+        "purge",
+        "truncate",
+        "drop the",
+        "remove old rows",
+        "clear the table",
+        "wipe"
+      ],
+      "Properties": {
+        "Triggers": "delete old records / delete records / purge / truncate / drop the / remove old rows / clear the table / wipe",
+        "Signal": "act.delete_data"
+      }
+    },
+    {
+      "Id": "cue-database",
+      "Label": "the database",
+      "Category": "Phrase",
+      "Description": "Cue (signal entity.database); triggers: the database / the analytics database / the analytics db / the db / the data warehouse / analytics.",
+      "Aliases": [
+        "the database",
+        "the analytics database",
+        "the analytics db",
+        "the db",
+        "the data warehouse",
+        "analytics"
+      ],
+      "Properties": {
+        "Triggers": "the database / the analytics database / the analytics db / the db / the data warehouse / analytics",
+        "Signal": "entity.database"
+      }
     }
   ],
   "Relations": [
@@ -791,6 +851,42 @@
       "UtteranceText": null,
       "TurnIndex": null,
       "Decay": null
+    },
+    {
+      "SourceId": "cue-query",
+      "TargetId": "intent-summarize",
+      "Type": "MapsTo",
+      "Description": "signal act.query",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "cue-delete-data",
+      "TargetId": "intent-summarize",
+      "Type": "MapsTo",
+      "Description": "signal act.delete_data",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "cue-database",
+      "TargetId": "intent-summarize",
+      "Type": "MapsTo",
+      "Description": "signal entity.database",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
     }
   ],
   "Dimensions": [],
@@ -875,9 +971,24 @@
       "Id": "cue-open-pr",
       "Trigger": "open a pr / open a pull request / open pr / raise a pr / submit a pr / draft a pr / create a pr / pull request",
       "Signal": "act.open_pr"
+    },
+    {
+      "Id": "cue-query",
+      "Trigger": "summarize signups / signups by / breakdown / count / how many / by plan / report on / query the / run a report / analytics report",
+      "Signal": "act.query"
+    },
+    {
+      "Id": "cue-delete-data",
+      "Trigger": "delete old records / delete records / purge / truncate / drop the / remove old rows / clear the table / wipe",
+      "Signal": "act.delete_data"
+    },
+    {
+      "Id": "cue-database",
+      "Trigger": "the database / the analytics database / the analytics db / the db / the data warehouse / analytics",
+      "Signal": "entity.database"
     }
   ],
   "FitSignals": [],
   "Generators": [],
-  "ParameterCount": 61
+  "ParameterCount": 70
 }

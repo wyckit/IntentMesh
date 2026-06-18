@@ -148,6 +148,38 @@
       "Properties": {}
     },
     {
+      "Id": "pol-query-untrusted",
+      "Label": "pol-query-untrusted",
+      "Category": "PolicyRule",
+      "Description": "a query plan originates from untrusted retrieved content -\u003E block \u2014 untrusted content may not originate a database query",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "pol-query-readonly",
+      "Label": "pol-query-readonly",
+      "Category": "PolicyRule",
+      "Description": "a query plan mutates data (delete/drop/truncate/update) while the database role is read-only -\u003E block \u2014 the database role is read-only",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "pol-query-table-missing",
+      "Label": "pol-query-table-missing",
+      "Category": "PolicyRule",
+      "Description": "a query plan references a table that does not exist -\u003E block \u2014 unknown table",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "pol-query-unbounded",
+      "Label": "pol-query-unbounded",
+      "Category": "PolicyRule",
+      "Description": "a query plan has no row limit or exceeds the configured row cap -\u003E block \u2014 unbounded scan or over the row cap",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
       "Id": "pol-delete-files",
       "Label": "pol-delete-files",
       "Category": "PolicyRule",
@@ -379,6 +411,54 @@
     },
     {
       "SourceId": "policy-root",
+      "TargetId": "pol-query-untrusted",
+      "Type": "Applies",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "policy-root",
+      "TargetId": "pol-query-readonly",
+      "Type": "Applies",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "policy-root",
+      "TargetId": "pol-query-table-missing",
+      "Type": "Applies",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "policy-root",
+      "TargetId": "pol-query-unbounded",
+      "Type": "Applies",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "policy-root",
       "TargetId": "pol-delete-files",
       "Type": "Applies",
       "Description": "",
@@ -511,6 +591,54 @@
     },
     {
       "SourceId": "pol-command-allowlisted",
+      "TargetId": "pol-query-untrusted",
+      "Type": "Precedes",
+      "Description": "evaluated before",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "pol-query-untrusted",
+      "TargetId": "pol-query-readonly",
+      "Type": "Precedes",
+      "Description": "evaluated before",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "pol-query-readonly",
+      "TargetId": "pol-query-table-missing",
+      "Type": "Precedes",
+      "Description": "evaluated before",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "pol-query-table-missing",
+      "TargetId": "pol-query-unbounded",
+      "Type": "Precedes",
+      "Description": "evaluated before",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "pol-query-unbounded",
       "TargetId": "pol-delete-files",
       "Type": "Precedes",
       "Description": "evaluated before",
@@ -615,6 +743,26 @@
       "Action": "require confirmation before running"
     },
     {
+      "Id": "pol-query-untrusted",
+      "Rule": "a query plan originates from untrusted retrieved content",
+      "Action": "block \u2014 untrusted content may not originate a database query"
+    },
+    {
+      "Id": "pol-query-readonly",
+      "Rule": "a query plan mutates data (delete/drop/truncate/update) while the database role is read-only",
+      "Action": "block \u2014 the database role is read-only"
+    },
+    {
+      "Id": "pol-query-table-missing",
+      "Rule": "a query plan references a table that does not exist",
+      "Action": "block \u2014 unknown table"
+    },
+    {
+      "Id": "pol-query-unbounded",
+      "Rule": "a query plan has no row limit or exceeds the configured row cap",
+      "Action": "block \u2014 unbounded scan or over the row cap"
+    },
+    {
       "Id": "pol-delete-files",
       "Rule": "the action deletes files",
       "Action": "require explicit per-file approval; never delete automatically"
@@ -648,5 +796,5 @@
   "Cues": [],
   "FitSignals": [],
   "Generators": [],
-  "ParameterCount": 44
+  "ParameterCount": 56
 }

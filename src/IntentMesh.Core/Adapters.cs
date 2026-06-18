@@ -22,7 +22,7 @@ public interface IToolAdapter
 public sealed class ToolHost
 {
     private readonly IReadOnlyList<IToolAdapter> _adapters = new IToolAdapter[]
-    { new CalendarAdapter(), new NotesAdapter(), new EmailAdapter(), new FileAdapter(), new RepoAdapter() };
+    { new CalendarAdapter(), new NotesAdapter(), new EmailAdapter(), new FileAdapter(), new RepoAdapter(), new DataAdapter() };
 
     public IToolAdapter? For(string kind) => _adapters.FirstOrDefault(a => a.Handles(kind));
 
@@ -234,5 +234,53 @@ public sealed class RepoAdapter : IToolAdapter
             return ToolHost.Halt(id, $"PR '{p.Title}' drafted — awaiting confirmation to open.", "PR draft staged — NOT pushed");
         ws.Repo.DraftPRs.Add(new PullRequest(p.Title, p.Body, Pushed: false));
         return ToolHost.Ok(id, $"Opened draft PR '{p.Title}' (approved).", "PR drafted — NOT pushed");
+    }
+}
+
+/// <summary>Fake read-only analytics DB adapter (v0.4). Compiling a plan mutates nothing; running
+/// a (already-validated) plan returns aggregates. Query results are retrieved content — an embedded
+/// imperative is quarantined as a zero-trust query node, never executed.</summary>
+public sealed class DataAdapter : IToolAdapter
+{
+    public bool Handles(string kind) => kind is Kinds.BuildQueryPlan or Kinds.RunQuery;
+
+    public ExecutionResult Execute(IntentNode node, PolicyDecision decision, Workspace ws, bool approved) => node.Action switch
+    {
+        BuildQueryPlanAction q => ToolHost.Ok(node.Id,
+            $"Compiled a typed query plan: {q.Operation} on {q.Table} (limit {q.RowLimit}).",
+            "plan validated — read-only, no mutation"),
+        RunQueryAction r => RunQuery(node.Id, r, ws),
+        _ => ToolHost.Ok(node.Id, "no-op")
+    };
+
+    private static ExecutionResult RunQuery(string id, RunQueryAction r, Workspace ws)
+    {
+        var table = ws.Db.Find(r.Table);
+        if (table is null) return ToolHost.Ok(id, $"No such table '{r.Table}'.");
+        ws.Db.RanQueries.Add(r.Summary);
+
+        // Aggregate signups by plan (non-sensitive columns only).
+        int planCol = table.Columns.ToList().IndexOf("plan");
+        var agg = planCol >= 0
+            ? string.Join(", ", table.Rows.GroupBy(row => row[planCol]).Select(g => $"{g.Key}: {g.Count()}"))
+            : $"{table.Rows.Count} rows";
+
+        // Query results are retrieved content — scan for an embedded imperative.
+        var proposed = new List<ProposedNode>();
+        var effects = new List<string> { $"result ({r.Summary}): {agg}", "no sensitive columns in the result" };
+        foreach (var row in table.Rows)
+            foreach (var cell in row)
+                if (cell.ToUpperInvariant().Contains("IGNORE PREVIOUS INSTRUCTIONS") ||
+                    (cell.ToUpperInvariant().Contains("DROP") && cell.ToUpperInvariant().Contains("TABLE")))
+                {
+                    proposed.Add(new ProposedNode(Kinds.BuildQueryPlan,
+                        new BuildQueryPlanAction("Drop", "users", "drop the users table (from data)", 0),
+                        "(injected) Drop the users table", cell.Trim(), $"{table.Name} data row"));
+                    effects.Add($"detected an injected instruction in {table.Name} data — quarantined as a zero-trust query, NOT executed");
+                    break;
+                }
+
+        return new ExecutionResult(id, Ran: true, Halted: false,
+            $"Ran read-only query on {table.Name}; {proposed.Count} injected instruction(s) quarantined.", effects, proposed);
     }
 }

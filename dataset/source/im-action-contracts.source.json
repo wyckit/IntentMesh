@@ -131,6 +131,30 @@
       "Properties": {}
     },
     {
+      "Id": "pc-readonly-no-mutation",
+      "Label": "read-only, no mutation",
+      "Category": "Postcondition",
+      "Description": "No destructive query (delete/drop/truncate/update) ran against the read-only database.",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "pc-query-within-caps",
+      "Label": "query within row caps",
+      "Category": "Postcondition",
+      "Description": "Every executed query plan stayed within the configured row cap.",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "pc-no-sensitive-exposure",
+      "Label": "no sensitive column exposed",
+      "Category": "Postcondition",
+      "Description": "No sensitive column value flowed into an external-bound report.",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
       "Id": "act-read-calendar",
       "Label": "ReadCalendarIntent",
       "Category": "ActionContract",
@@ -324,6 +348,34 @@
         "RequiresConfirmation": "true",
         "Fields": "title,body",
         "Postconditions": "pc-pr-drafted-not-pushed,pc-no-secret-in-diff"
+      }
+    },
+    {
+      "Id": "act-build-query-plan",
+      "Label": "BuildQueryPlanIntent",
+      "Category": "ActionContract",
+      "Description": "Compile language into a typed query plan (AST). Validated before execution: read-only role, table must exist, row caps. Destructive operations and untrusted-origin plans are blocked.",
+      "Aliases": [],
+      "Properties": {
+        "Risk": "medium",
+        "SideEffect": "none",
+        "RequiresConfirmation": "false",
+        "Fields": "operation,table,summary,rowLimit",
+        "Postconditions": "pc-readonly-no-mutation"
+      }
+    },
+    {
+      "Id": "act-run-query",
+      "Label": "RunQueryIntent",
+      "Category": "ActionContract",
+      "Description": "Execute a validated, read-only query plan and return aggregated results.",
+      "Aliases": [],
+      "Properties": {
+        "Risk": "low",
+        "SideEffect": "none",
+        "RequiresConfirmation": "false",
+        "Fields": "table,summary",
+        "Postconditions": "pc-query-within-caps,pc-no-sensitive-exposure"
       }
     }
   ],
@@ -653,6 +705,66 @@
       "Decay": null
     },
     {
+      "SourceId": "contracts-root",
+      "TargetId": "act-build-query-plan",
+      "Type": "Registers",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "act-build-query-plan",
+      "TargetId": "pc-readonly-no-mutation",
+      "Type": "Guarantees",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "contracts-root",
+      "TargetId": "act-run-query",
+      "Type": "Registers",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "act-run-query",
+      "TargetId": "pc-query-within-caps",
+      "Type": "Guarantees",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "act-run-query",
+      "TargetId": "pc-no-sensitive-exposure",
+      "Type": "Guarantees",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
       "SourceId": "act-draft-email",
       "TargetId": "act-send-email",
       "Type": "Precedes",
@@ -694,5 +806,5 @@
   "Cues": [],
   "FitSignals": [],
   "Generators": [],
-  "ParameterCount": 100
+  "ParameterCount": 115
 }

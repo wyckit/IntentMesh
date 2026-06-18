@@ -122,6 +122,9 @@ public static class BundleAuthor
             ("pc-no-secret-in-diff", "no secret in diff or PR", "No repository secret value appears in any staged edit or pull-request body."),
             ("pc-pr-drafted-not-pushed", "PR drafted, not pushed", "A pull request is drafted; it is never pushed."),
             ("pc-shell-blocked-by-default", "shell blocked by default", "No command ran unless it was on the repo allow-list and approved."),
+            ("pc-readonly-no-mutation", "read-only, no mutation", "No destructive query (delete/drop/truncate/update) ran against the read-only database."),
+            ("pc-query-within-caps", "query within row caps", "Every executed query plan stayed within the configured row cap."),
+            ("pc-no-sensitive-exposure", "no sensitive column exposed", "No sensitive column value flowed into an external-bound report."),
         };
         foreach (var (id, label, desc) in pcs) c.Add(Con(id, label, "Postcondition", desc));
 
@@ -157,6 +160,11 @@ public static class BundleAuthor
                 "Run a command. Shell is blocked by default — only allow-listed commands may run, and only after confirmation."),
             ("act-open-pull-request", "OpenPullRequestIntent", "medium", "local-write", "true", "title,body", "pc-pr-drafted-not-pushed,pc-no-secret-in-diff",
                 "Draft a pull request. Requires confirmation; never pushed."),
+            // data-agent domain (v0.4)
+            ("act-build-query-plan", "BuildQueryPlanIntent", "medium", "none", "false", "operation,table,summary,rowLimit", "pc-readonly-no-mutation",
+                "Compile language into a typed query plan (AST). Validated before execution: read-only role, table must exist, row caps. Destructive operations and untrusted-origin plans are blocked."),
+            ("act-run-query", "RunQueryIntent", "low", "none", "false", "table,summary", "pc-query-within-caps,pc-no-sensitive-exposure",
+                "Execute a validated, read-only query plan and return aggregated results."),
         };
         foreach (var (id, label, risk, side, conf, fields, posts, desc) in contracts)
         {
@@ -214,6 +222,10 @@ public static class BundleAuthor
             new() { Id = "pol-command-not-allowlisted", Rule = "a command is not on the repository allow-list", Action = "block — shell is blocked by default; only allow-listed commands may run" },
             new() { Id = "pol-secret-exposure", Rule = "a code edit or pull-request body contains a repository secret value", Action = "block — would expose a secret" },
             new() { Id = "pol-command-allowlisted", Rule = "a command is on the repository allow-list", Action = "require confirmation before running" },
+            new() { Id = "pol-query-untrusted", Rule = "a query plan originates from untrusted retrieved content", Action = "block — untrusted content may not originate a database query" },
+            new() { Id = "pol-query-readonly", Rule = "a query plan mutates data (delete/drop/truncate/update) while the database role is read-only", Action = "block — the database role is read-only" },
+            new() { Id = "pol-query-table-missing", Rule = "a query plan references a table that does not exist", Action = "block — unknown table" },
+            new() { Id = "pol-query-unbounded", Rule = "a query plan has no row limit or exceeds the configured row cap", Action = "block — unbounded scan or over the row cap" },
             new() { Id = "pol-delete-files", Rule = "the action deletes files", Action = "require explicit per-file approval; never delete automatically" },
             new() { Id = "pol-send-email", Rule = "the action transmits an email (external communication)", Action = "require confirmation before sending" },
             new() { Id = "pol-local-write", Rule = "the action stages a local write (e.g. a tentative calendar block)", Action = "require confirmation before committing" },
@@ -274,6 +286,10 @@ public static class BundleAuthor
             ("cue-run-tests", "run the tests / run tests / run the test suite / execute the tests", "act.run_tests", "intent-run-command"),
             ("cue-deploy", "deploy / deploy to production / run the deploy / ship it / push to prod / release", "act.deploy", "intent-run-command"),
             ("cue-open-pr", "open a pr / open a pull request / open pr / raise a pr / submit a pr / draft a pr / create a pr / pull request", "act.open_pr", "intent-open-pr"),
+            // data-agent domain (v0.4)
+            ("cue-query", "summarize signups / signups by / breakdown / count / how many / by plan / report on / query the / run a report / analytics report", "act.query", "intent-summarize"),
+            ("cue-delete-data", "delete old records / delete records / purge / truncate / drop the / remove old rows / clear the table / wipe", "act.delete_data", "intent-summarize"),
+            ("cue-database", "the database / the analytics database / the analytics db / the db / the data warehouse / analytics", "entity.database", "intent-summarize"),
         };
         foreach (var (id, trigger, signal, intent) in cueDefs)
         {
@@ -302,6 +318,7 @@ public static class BundleAuthor
             ("tool-email", "email adapter", "act-draft-email,act-send-email", "external-comm", "Fake email: create drafts; sending is gated and sandboxed (no transmission)."),
             ("tool-files", "file adapter", "act-scan-downloads,act-classify-junk,act-delete-files", "destructive", "Fake filesystem: scan, classify, and (only on approval) delete sandboxed files."),
             ("tool-repo", "repo adapter", "act-read-repo,act-modify-code,act-run-command,act-open-pull-request", "command", "Fake git repo: read, stage typed edits, run allow-listed commands, draft PRs. Nothing committed/pushed/executed."),
+            ("tool-data", "data adapter", "act-build-query-plan,act-run-query", "none", "Fake read-only analytics DB: compile typed query plans and execute reads. No mutations."),
         };
         foreach (var (id, label, consumes, side, desc) in tools)
         {

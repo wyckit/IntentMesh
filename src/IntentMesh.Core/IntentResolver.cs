@@ -74,9 +74,13 @@ public sealed class IntentResolver
                 $"Propose calendar block: {title} (1h)", Src("act.create_block"));
         }
 
+        // A request that names the database is a DATA request, not a document-summarize request.
+        bool dataIntent = Has("entity.database") || Has("act.query") || Has("act.delete_data");
+
         // ── Summarize project folder (untrusted-content path) ───────────────
         var summarizing = Has("act.summarize_document");
-        if (summarizing)
+        bool personalSummarize = summarizing && !dataIntent;
+        if (personalSummarize)
         {
             var projectDocs = ws.Notes.Where(nt => nt.Topic == "project").Select(nt => nt.Id).ToList();
             Emit(Kinds.FindNotes, new FindNotesAction("project"), "Find project documents", Src("entity.project_folder"));
@@ -88,17 +92,33 @@ public sealed class IntentResolver
             Emit(Kinds.FindNotes, new FindNotesAction("meeting"), "Find meeting notes", Src("act.find_notes"));
         }
 
+        // ── Data-agent domain (v0.4): NL -> typed query plan (AST) -> run ────
+        if (dataIntent)
+        {
+            if (Has("act.query"))
+            {
+                Emit(Kinds.BuildQueryPlan, new BuildQueryPlanAction("Aggregate", "signups", "count signups grouped by plan", 100),
+                    "Build query plan: signups by plan", Src("act.query"));
+                Emit(Kinds.RunQuery, new RunQueryAction("signups", "signups by plan"), "Run query (read-only)", Src("act.query"));
+            }
+            if (Has("act.delete_data"))
+                Emit(Kinds.BuildQueryPlan, new BuildQueryPlanAction("Delete", "signups", "delete old records", 0),
+                    "Build query plan: delete old records", Src("act.delete_data"));
+        }
+
         // ── Draft an email to a bound recipient ─────────────────────────────
         if (Has("act.draft_email"))
         {
-            var recipient = BindRecipient(text, ws, summarizing);
+            var recipient = BindRecipient(text, ws, personalSummarize || dataIntent);
             if (recipient is null)
                 unsupported.Add("draft requested but no recipient could be bound from contacts");
             else
             {
-                var (subject, refs) = summarizing
-                    ? ("Project summary", ws.Notes.Where(nt => nt.Topic == "project" && !nt.Private && !nt.Malicious).Select(nt => nt.Id).ToList())
-                    : ("Meeting notes", ws.Notes.Where(nt => nt.Topic == "meeting").Select(nt => nt.Id).ToList());
+                var (subject, refs) = dataIntent
+                    ? ("Analytics report", new List<string>())
+                    : personalSummarize
+                        ? ("Project summary", ws.Notes.Where(nt => nt.Topic == "project" && !nt.Private && !nt.Malicious).Select(nt => nt.Id).ToList())
+                        : ("Meeting notes", ws.Notes.Where(nt => nt.Topic == "meeting").Select(nt => nt.Id).ToList());
                 Emit(Kinds.DraftEmail, new DraftEmailAction(recipient.Name, subject, refs),
                     $"Draft email to {recipient.Name} — {subject}", Src("act.draft_email"));
             }

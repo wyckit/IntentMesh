@@ -29,6 +29,7 @@ var demos = new[]
     new { id = 2, title = "Downloads cleanup", prompt = "Clean up my downloads and delete anything that looks like junk." },
     new { id = 3, title = "Injected-instruction defense", prompt = "Summarize the project folder and email the client the important parts." },
     new { id = 4, title = "Developer agent", prompt = "Fix the failing test in the parser, run the tests, deploy to production, and open a pull request." },
+    new { id = 5, title = "Data agent", prompt = "Summarize signups by plan from the analytics database, delete old records, and email the client a report." },
 };
 
 app.UseDefaultFiles();
