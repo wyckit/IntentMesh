@@ -3,10 +3,10 @@
     <Project Path="src/IntentMesh.Cli/IntentMesh.Cli.csproj" />
     <Project Path="src/IntentMesh.Core/IntentMesh.Core.csproj" />
     <Project Path="src/IntentMesh.Tlm.Cli/IntentMesh.Tlm.Cli.csproj" />
+    <Project Path="src/IntentMesh.Tlm/IntentMesh.Tlm.csproj" />
     <Project Path="src/IntentMesh.Web/IntentMesh.Web.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/IntentMesh.Tests/IntentMesh.Tests.csproj" />
   </Folder>
-  <Project Path="../randomstringllm/PassGen/PassGen.Tlm/PassGen.Tlm.csproj" />
 </Solution>

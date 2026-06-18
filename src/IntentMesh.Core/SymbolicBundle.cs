@@ -1,4 +1,4 @@
-using PassGen.Tlm;
+using IntentMesh.Tlm;
 
 namespace IntentMesh.Core;
 

@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Vendored from PassGen.Tlm (which is itself a faithful port of Rsrm.Core.Models), so IntentMesh
+    is self-contained. System.Text.Json serializes by property name, not namespace, so the .tlmz
+    bytes and SHA-256 checksums are byte-identical to PassGen / live RSRM / sage-rsrm.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>IntentMesh.Tlm</RootNamespace>
+    <AssemblyName>IntentMesh.Tlm</AssemblyName>
+  </PropertyGroup>
+
+</Project>

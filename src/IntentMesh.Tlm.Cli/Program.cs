@@ -1,5 +1,5 @@
 using System.Text.Json;
-using PassGen.Tlm;
+using IntentMesh.Tlm;
 using IntentMesh.Tlm.Cli;
 
 // ─────────────────────────────────────────────────────────────────────────────
