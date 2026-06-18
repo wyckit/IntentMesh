@@ -9,7 +9,7 @@ namespace IntentMesh.Integrations;
 /// notifications/initialized), tools/list, and tools/call. This is the transport the McpProxy
 /// forwards to once IntentMesh has approved the intent. No third-party SDK — just Process + stdio.
 /// </summary>
-public sealed class McpStdioClient : IDisposable
+public sealed class McpStdioClient : IMcpClient
 {
     private readonly Process _proc;
     private readonly StreamWriter _stdin;

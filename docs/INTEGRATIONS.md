@@ -2,15 +2,23 @@
 
 This document describes the three integrations in `src/IntentMesh.Integrations`.
 
-> **Status update — the prototype stubs have been converted to real implementations.** The MCP
-> transport, OpenAPI parsing + bundle registration, and the email transport are now genuinely
-> functional (dependency-free). What remains "needs your setup" is narrow and listed below.
+> **Status update — the prototype stubs have been converted to real implementations, and the
+> documented "future" work is now shipped too.** The MCP transport (stdio **and** Streamable
+> HTTP/SSE), OpenAPI parsing (JSON **and** YAML, with `$ref` resolution + semantic inference), and
+> the email path (SMTP **and** the real OAuth device flow) are all genuinely functional and
+> dependency-free. What remains "needs your setup" is only what is inherently yours to provide
+> (credentials, a target server).
 
 | Integration | What's now REAL | What still needs your setup |
 |---|---|---|
-| **McpProxy** | Real MCP **stdio** transport (JSON-RPC 2.0) via `McpStdioClient`. Wired in front of the **official `@modelcontextprotocol/server-filesystem`** — see [`MCP-FILESYSTEM.md`](MCP-FILESYSTEM.md) and `IntentMesh.McpDemo`: filesystem calls are gated by a **path-safety policy** + read/write rules before forwarding. `GateAndForward` forwards only after IntentMesh approves. | SSE/HTTP transport (a sibling client); per-server tool-mapping coverage. |
-| **OpenApiImporter** | Real OpenAPI 3.x JSON parsing (`ParseFromOpenApi`) and real registration (`RegisterToCompiledDir` compiles an `im-imported.tlmz` the runtime loads → the kind becomes enforced). | YAML + `$ref` resolution; semantic capability inference. |
-| **Email adapter** | Real **SMTP** transport (`SmtpEmailTransport`, `System.Net.Mail`) — transmits when `SMTP_*` env is set (incl. Gmail SMTP + app password). Gated by the `email` capability + approval. | Gmail **API + OAuth** browser/device flow (`AcquireTokenAsync`) needs your Google Cloud client credentials; SMTP needs none. |
+| **McpProxy** | Real MCP **stdio** transport (`McpStdioClient`) **and Streamable HTTP/SSE** transport (`McpHttpClient`) behind one transport-agnostic `IMcpClient` seam — `GateAndForward` works over either. Wired in front of the **official `@modelcontextprotocol/server-filesystem`** — see [`MCP-FILESYSTEM.md`](MCP-FILESYSTEM.md) and `IntentMesh.McpDemo`: filesystem calls are gated by a **path-safety policy** + read/write rules before forwarding. **Per-server tool-mapping** via the `customMapper` constructor hook. | The URL/command of *your* target MCP server. |
+| **OpenApiImporter** | Real OpenAPI 3.x parsing — **JSON or YAML** (dependency-free `MiniYaml`) — with **local `$ref` resolution** (`#/components/...`, incl. `allOf`) for parameters and request bodies, and **semantic inference** of side effect / risk / capability from operation keywords. Real registration (`RegisterToCompiledDir` compiles an `im-imported.tlmz` the runtime loads → the kind becomes enforced). | Nothing structural. Remote `$ref` (other files/URLs) and full YAML 1.2 (anchors/aliases/tags) are out of scope. |
+| **Email adapter** | Real **SMTP** transport (`SmtpEmailTransport`, `System.Net.Mail`) — transmits when `SMTP_*` env is set (incl. Gmail SMTP + app password). Real **OAuth 2.0 device flow** (`GoogleDeviceCodeFlow`, RFC 8628, `HttpClient`-only) used by `AcquireTokenAsync` when `GOOGLE_OAUTH_CLIENT_ID` + `GOOGLE_OAUTH_CLIENT_SECRET` are set. Gated by the `email` capability + approval. | Your Google Cloud **OAuth client id + secret** and a human to approve consent — inherent to OAuth, not a stub. SMTP needs none. |
+
+**Environment variables for the OAuth device flow**: `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`,
+and optionally `GOOGLE_OAUTH_SCOPE` (defaults to `https://www.googleapis.com/auth/gmail.send`). With
+them set, `AcquireTokenAsync` prints a verification URL + user code and polls Google until you
+consent. Without them it falls back to `GMAIL_ACCESS_TOKEN`, then to a clear config error.
 
 The rest of this document is the original prototype write-up; the seam descriptions still hold, but
 the "stubbed" notes are superseded by the table above.
@@ -219,12 +227,18 @@ dotnet test tests/IntentMesh.Tests/IntentMesh.Tests.csproj --filter "FullyQualif
 
 ---
 
-## Summary of stubs
+## Summary — every former stub is now real
 
-| Stub | Prototype | What replaces it in production |
+The prototype stubs below were all converted to working, dependency-free implementations. This table
+supersedes the "What is stubbed" notes in the prototype write-up above.
+
+| Former stub | Component | Real implementation now shipping |
 |------|-----------|-------------------------------|
-| `ForwardToRealMcpServer` | McpProxy | MCP .NET SDK stdio/SSE transport |
-| `ParseFromOpenApi` | OpenApiImporter | `Microsoft.OpenApi` spec parser |
-| `RegisterInBundle` | OpenApiImporter | TLM source emit + `tlm compile all` (or hot-registration API) |
-| `AcquireTokenAsync` | OAuthAdapterExample | `Google.Apis.Auth` / MSAL token flow |
-| Gmail API send (no-op) | OAuthAdapterExample | `Google.Apis.Gmail.v1` `Messages.Send` call |
+| `ForwardToRealMcpServer` | McpProxy | `IMcpClient` over stdio (`McpStdioClient`) **and** Streamable HTTP/SSE (`McpHttpClient`), `HttpClient`-only |
+| `ParseFromOpenApi` | OpenApiImporter | System.Text.Json parser for JSON **and** YAML (`MiniYaml`), with local `$ref` resolution + semantic inference |
+| `RegisterInBundle` | OpenApiImporter | `RegisterToCompiledDir` emits a real `im-imported.tlmz` via `TlmCompiler`; `SymbolicBundle.Load` enforces it |
+| `AcquireTokenAsync` | OAuthAdapterExample | `GoogleDeviceCodeFlow` — real OAuth 2.0 Device Authorization Grant (RFC 8628), `HttpClient`-only |
+| Gmail send | OAuthAdapterExample | Real `IEmailTransport` (`SmtpEmailTransport`, `System.Net.Mail`); transmits when `SMTP_*` is set |
+
+Everything still flows through the same IntentMesh gate: language proposes, the PolicyGate decides,
+and only typed, approved intent is forwarded over any transport.

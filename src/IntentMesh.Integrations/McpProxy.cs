@@ -1,3 +1,4 @@
+using System.Text.Json;
 using IntentMesh.Core;
 
 namespace IntentMesh.Integrations;
@@ -19,11 +20,11 @@ namespace IntentMesh.Integrations;
 //     server process. mcp-echo-server.js is a real minimal MCP server to gate against.
 //   • GateAndForward() runs the gate and forwards ONLY if IntentMesh approves — a
 //     blocked call never reaches the server.
-//
-// STILL FOR PRODUCTION (out of scope here):
-//   • SSE/HTTP transport (a sibling client; the gate is transport-agnostic).
-//   • MapToAction() coverage for every tool in a given server's manifest, and richer
-//     argument coercion than the four mapped tools.
+//   • Transport-agnostic forwarding: GateAndForward/ForwardToRealMcpServer take an
+//     IMcpClient, so the same gate fronts stdio (McpStdioClient) or Streamable
+//     HTTP/SSE (McpHttpClient) without change.
+//   • Per-server tool-mapping coverage: pass a customMapper to the constructor to map
+//     any server's tool names to typed actions ahead of the built-in defaults.
 // ──────────────────────────────────────────────────────────────────────────────
 
 /// <summary>
@@ -102,6 +103,7 @@ public sealed class McpProxy
     private readonly IntentMeshRuntime _runtime;
     private readonly Workspace _workspace;
     private readonly string? _allowedRoot;
+    private readonly Func<McpToolCall, (TypedAction? action, string label)?>? _customMapper;
 
     /// <param name="runtime">
     /// A loaded IntentMeshRuntime. The caller controls which capabilities are
@@ -115,11 +117,16 @@ public sealed class McpProxy
     /// <param name="allowedRoot">When set, filesystem actions (act-fs-read/act-fs-write) whose path
     /// escapes this root are blocked by a path-safety policy BEFORE the pipeline runs and before any
     /// call is forwarded — defense in depth over the MCP filesystem server's own sandbox.</param>
-    public McpProxy(IntentMeshRuntime runtime, Workspace workspace, string? allowedRoot = null)
+    /// <param name="customMapper">Optional per-server mapping: given an inbound call, return the typed
+    /// action + label to use, or <c>null</c> to fall through to the built-in mappings. This is how you
+    /// cover every tool in a specific MCP server's manifest without editing the proxy.</param>
+    public McpProxy(IntentMeshRuntime runtime, Workspace workspace, string? allowedRoot = null,
+        Func<McpToolCall, (TypedAction? action, string label)?>? customMapper = null)
     {
         _runtime = runtime;
         _workspace = workspace;
         _allowedRoot = allowedRoot;
+        _customMapper = customMapper;
     }
 
     /// <summary>
@@ -130,8 +137,9 @@ public sealed class McpProxy
     /// </summary>
     public McpGateResult Gate(McpToolCall call, IReadOnlySet<string>? approvals = null)
     {
-        // 1. Map the MCP tool call to a typed IntentMesh action node.
-        var (action, label) = MapToAction(call);
+        // 1. Map the MCP tool call to a typed IntentMesh action node (custom mapper first,
+        //    then the built-in defaults). This is the per-server tool-mapping seam.
+        var (action, label) = _customMapper?.Invoke(call) ?? MapToAction(call);
         if (action is null)
         {
             // Unmapped tools are blocked — unknown MCP tools must be
@@ -144,10 +152,12 @@ public sealed class McpProxy
         }
 
         // Path-safety policy: a filesystem call whose path escapes the allowed root is blocked here,
-        // before the pipeline runs and before anything is forwarded to the MCP server.
+        // before the pipeline runs and before anything is forwarded to the MCP server. Every
+        // path-bearing argument is checked — including the multi-path `paths` array (read_multiple_files)
+        // — so a tool whose primary action maps to "." cannot smuggle escaping paths past the gate.
         if (_allowedRoot is not null && action is FsReadAction or FsWriteAction)
-            foreach (var key in new[] { "path", "source", "destination" })
-                if (call.Args.TryGetValue(key, out var p) && PathEscapesRoot(p))
+            foreach (var p in CandidatePaths(call.Args))
+                if (PathEscapesRoot(p))
                     return new McpGateResult(
                         Allowed: false,
                         Reason: $"Blocked by path policy: '{p}' escapes the allowed root '{_allowedRoot}'.",
@@ -193,7 +203,7 @@ public sealed class McpProxy
     /// stdio. A blocked/gated call is never forwarded — no bytes reach the server. This is the
     /// production shape: the proxy verifies intent, then the transport runs.
     /// </summary>
-    public McpForwardResult GateAndForward(McpToolCall call, McpStdioClient client, IReadOnlySet<string>? approvals = null)
+    public McpForwardResult GateAndForward(McpToolCall call, IMcpClient client, IReadOnlySet<string>? approvals = null)
     {
         var gate = Gate(call, approvals);
         if (!gate.Allowed) return new McpForwardResult(gate, ServerResponse: null);
@@ -245,18 +255,84 @@ public sealed class McpProxy
         return (new FsWriteAction(path, content ?? ""), $"MCP {call.Tool} → {path}");
     }
 
-    /// <summary>True if <paramref name="path"/> resolves outside the configured allowed root
-    /// (fail-closed: an unparseable path counts as escaping).</summary>
+    /// <summary>Every path-bearing argument for a filesystem tool: the single-path keys plus the
+    /// <c>paths</c> array (read_multiple_files). A <c>paths</c> value is parsed as a JSON array; if
+    /// that fails it is treated as a single raw path (fail-closed — it still gets checked).</summary>
+    private static IEnumerable<string> CandidatePaths(IReadOnlyDictionary<string, string> args)
+    {
+        foreach (var key in new[] { "path", "source", "destination" })
+            if (args.TryGetValue(key, out var p) && !string.IsNullOrEmpty(p))
+                yield return p;
+
+        if (args.TryGetValue("paths", out var multi) && !string.IsNullOrWhiteSpace(multi))
+        {
+            List<string>? parsed = null;
+            try { parsed = JsonSerializer.Deserialize<List<string>>(multi); } catch { /* not JSON */ }
+            if (parsed is not null)
+            {
+                foreach (var e in parsed) if (!string.IsNullOrEmpty(e)) yield return e;
+            }
+            else yield return multi;
+        }
+    }
+
+    /// <summary>True if <paramref name="path"/> resolves outside the configured allowed root.
+    /// FAIL-CLOSED and link-aware: UNC and Win32 device-namespace prefixes are denied outright;
+    /// symlinks/junctions are resolved to their final target (so a link inside the root that points
+    /// outside is caught); the comparison uses the OS's path case sensitivity. An unparseable path
+    /// counts as escaping.
+    /// <para>KNOWN LIMITATIONS (defense in depth, not the sole control): this is a time-of-check
+    /// gate — the path could in principle be re-pointed between this check and the server's later
+    /// open() (TOCTOU), and Windows 8.3 short-name aliases are not long-name expanded here. The real
+    /// MCP filesystem server's own sandbox remains the authoritative enforcement; this check is an
+    /// independent pre-forward layer over it.</para></summary>
     private bool PathEscapesRoot(string path)
     {
         try
         {
-            var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(_allowedRoot!));
-            var full = Path.GetFullPath(Path.IsPathRooted(path) ? path : Path.Combine(root, path));
-            return !(full.Equals(root, StringComparison.OrdinalIgnoreCase)
-                  || full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase));
+            if (string.IsNullOrWhiteSpace(path)) return true;
+            // UNC (\\server\share, //server) and device (\\?\, \\.\) prefixes bypass normal root logic.
+            if (path.StartsWith(@"\\", StringComparison.Ordinal) || path.StartsWith("//", StringComparison.Ordinal)
+                || path.Contains(@"\\?\", StringComparison.Ordinal) || path.Contains(@"\\.\", StringComparison.Ordinal))
+                return true;
+
+            var root = Canonicalize(Path.TrimEndingDirectorySeparator(Path.GetFullPath(_allowedRoot!)));
+            var full = Canonicalize(Path.GetFullPath(Path.IsPathRooted(path) ? path : Path.Combine(root, path)));
+            var cmp = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+            return !(full.Equals(root, cmp) || full.StartsWith(root + Path.DirectorySeparatorChar, cmp));
         }
         catch { return true; }
+    }
+
+    /// <summary>Resolve every symlink/junction on the path to its final on-disk target — including a
+    /// symlinked *directory* component, not just the leaf — so a link anywhere in the chain that
+    /// points outside the root is caught. The parent chain is canonicalized first, then the leaf;
+    /// a not-yet-existing leaf (write target) re-attaches to the canonicalized parent. Depth-guarded
+    /// against symlink cycles.</summary>
+    private static string Canonicalize(string fullPath, int depth = 0)
+    {
+        if (depth > 64) return Path.TrimEndingDirectorySeparator(fullPath);
+        try
+        {
+            var parent = Path.GetDirectoryName(fullPath);
+            var rebuilt = fullPath;
+            if (parent is not null && parent.Length > 0 && parent != fullPath)
+            {
+                var canonicalParent = (Directory.Exists(parent) || File.Exists(parent)) ? Canonicalize(parent, depth + 1) : parent;
+                rebuilt = Path.Combine(canonicalParent, Path.GetFileName(fullPath));
+            }
+
+            FileSystemInfo? info = Directory.Exists(rebuilt) ? new DirectoryInfo(rebuilt)
+                                 : File.Exists(rebuilt) ? new FileInfo(rebuilt) : null;
+            if (info is not null)
+            {
+                var target = info.ResolveLinkTarget(returnFinalTarget: true);
+                if (target is not null) return Path.TrimEndingDirectorySeparator(Path.GetFullPath(target.FullName));
+            }
+            return Path.TrimEndingDirectorySeparator(rebuilt);
+        }
+        catch { /* fall through to lexical form */ }
+        return Path.TrimEndingDirectorySeparator(fullPath);
     }
 
     private static (TypedAction?, string) MapSendEmail(IReadOnlyDictionary<string, string> args)
@@ -286,15 +362,15 @@ public sealed class McpProxy
         return (new RunCommandAction(cmd), $"MCP run_command → {cmd}");
     }
 
-    // ── REAL — MCP stdio transport ────────────────────────────────────────────
+    // ── REAL — transport-agnostic forwarding (stdio or Streamable HTTP/SSE) ───
     /// <summary>
-    /// Forwards an approved MCP tool call to a real MCP server over stdio (newline-delimited
-    /// JSON-RPC 2.0 via <see cref="McpStdioClient"/>) and returns the server's raw JSON result.
-    /// Called ONLY after <see cref="Gate"/> approves the action — the intent pipeline runs before
-    /// any bytes leave the process. (SSE/HTTP transport would be a sibling client; the gate is
-    /// transport-agnostic.)
+    /// Forwards an approved MCP tool call to a real MCP server through any <see cref="IMcpClient"/>
+    /// transport — stdio (<see cref="McpStdioClient"/>) or Streamable HTTP/SSE
+    /// (<see cref="McpHttpClient"/>) — and returns the server's raw JSON result. Called ONLY after
+    /// <see cref="Gate"/> approves the action: the intent pipeline runs before any bytes leave the
+    /// process, regardless of transport.
     /// </summary>
-    public static string ForwardToRealMcpServer(McpToolCall call, McpStdioClient client)
+    public static string ForwardToRealMcpServer(McpToolCall call, IMcpClient client)
         => client.CallTool(call.Tool, call.Args);
 
     // ── Helpers ───────────────────────────────────────────────────────────────
