@@ -45,6 +45,25 @@ function run(keepApprovals = false) {
 function approve(id) { APPROVALS.add(id); run(true); }
 function undo(id) { APPROVALS.delete(id); run(true); }
 
+function exportTrace(format) {
+  const prompt = $('#prompt').value.trim();
+  if (!prompt) return;
+  fetch('/api/export', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt, approvals: [...APPROVALS], format })
+  }).then(r => r.text()).then(text => {
+    const md = format === 'md';
+    const blob = new Blob([text], { type: md ? 'text/markdown' : 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'intentmesh-trace.' + (md ? 'md' : 'json');
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(a.href);
+  });
+}
+$('#exportJson').onclick = () => exportTrace('json');
+$('#exportMd').onclick = () => exportTrace('md');
+
 // ── Render ─────────────────────────────────────────────────────────
 function render(r) {
   $('#promptEcho').textContent = '“' + r.prompt + '”';

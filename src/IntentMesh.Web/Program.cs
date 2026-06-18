@@ -43,8 +43,21 @@ app.MapPost("/api/run", (RunRequest req) =>
     return Results.Json(runtime.Run(prompt, Workspace.CreateDemo(), approvals));
 });
 
+// Export the run as the canonical, deterministic audit artifact (replayable; no timestamps).
+app.MapPost("/api/export", (ExportRequest req) =>
+{
+    var prompt = (req.Prompt ?? "").Trim();
+    if (string.IsNullOrEmpty(prompt)) return Results.BadRequest(new { error = "empty prompt" });
+    var approvals = (req.Approvals ?? Array.Empty<string>()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+    var result = runtime.Run(prompt, Workspace.CreateDemo(), approvals);
+    return (req.Format ?? "json").ToLowerInvariant() is "md" or "markdown"
+        ? Results.Text(AuditExporter.ToMarkdown(result), "text/markdown")
+        : Results.Text(AuditExporter.ToJson(result), "application/json");
+});
+
 app.Run();
 
 // Approvals: node ids the user approved. The runtime only ever applies an approval to a
 // full-authority Confirm node — a blocked zero-trust node stays blocked regardless.
 record RunRequest(string? Prompt, string[]? Approvals);
+record ExportRequest(string? Prompt, string[]? Approvals, string? Format);
