@@ -101,6 +101,7 @@ public sealed class McpProxy
 {
     private readonly IntentMeshRuntime _runtime;
     private readonly Workspace _workspace;
+    private readonly string? _allowedRoot;
 
     /// <param name="runtime">
     /// A loaded IntentMeshRuntime. The caller controls which capabilities are
@@ -111,10 +112,14 @@ public sealed class McpProxy
     /// The sandboxed workspace the adapter executes against. In a real
     /// integration this is replaced by a live adapter layer.
     /// </param>
-    public McpProxy(IntentMeshRuntime runtime, Workspace workspace)
+    /// <param name="allowedRoot">When set, filesystem actions (act-fs-read/act-fs-write) whose path
+    /// escapes this root are blocked by a path-safety policy BEFORE the pipeline runs and before any
+    /// call is forwarded — defense in depth over the MCP filesystem server's own sandbox.</param>
+    public McpProxy(IntentMeshRuntime runtime, Workspace workspace, string? allowedRoot = null)
     {
         _runtime = runtime;
         _workspace = workspace;
+        _allowedRoot = allowedRoot;
     }
 
     /// <summary>
@@ -123,7 +128,7 @@ public sealed class McpProxy
     /// allowed or blocked. The caller MUST check <c>Allowed</c> before
     /// forwarding to a real MCP server.
     /// </summary>
-    public McpGateResult Gate(McpToolCall call)
+    public McpGateResult Gate(McpToolCall call, IReadOnlySet<string>? approvals = null)
     {
         // 1. Map the MCP tool call to a typed IntentMesh action node.
         var (action, label) = MapToAction(call);
@@ -138,6 +143,16 @@ public sealed class McpProxy
                 RunResult: EmptyResult(call.Tool));
         }
 
+        // Path-safety policy: a filesystem call whose path escapes the allowed root is blocked here,
+        // before the pipeline runs and before anything is forwarded to the MCP server.
+        if (_allowedRoot is not null && action is FsReadAction or FsWriteAction)
+            foreach (var key in new[] { "path", "source", "destination" })
+                if (call.Args.TryGetValue(key, out var p) && PathEscapesRoot(p))
+                    return new McpGateResult(
+                        Allowed: false,
+                        Reason: $"Blocked by path policy: '{p}' escapes the allowed root '{_allowedRoot}'.",
+                        RunResult: EmptyResult(call.Tool));
+
         var node = new IntentNode
         {
             Id = "n1",
@@ -149,37 +164,27 @@ public sealed class McpProxy
             Status = NodeStatus.Resolved,
         };
 
-        // 2. Run through the full IntentMesh pipeline using a one-node proposer.
+        // 2. Run through the full IntentMesh pipeline using a one-node proposer (with any approvals).
         var proposer = new McpOneNodeProposer(node);
         var scopedRuntime = new IntentMeshRuntime(_runtime.Bundle, proposer);
-        var result = scopedRuntime.Run($"mcp:{call.Tool}", _workspace);
+        var result = scopedRuntime.Run($"mcp:{call.Tool}", _workspace, approvals ?? new HashSet<string>());
 
-        // 3. Determine the gate outcome from the pipeline result.
+        // 3. Decide from the node's final status: it forwards only if the node actually proceeded
+        //    (Allowed/Executed/Verified). Blocked → never; NeedsConfirmation → not until approved.
         var policyView = result.Policy.FirstOrDefault(p => p.NodeId == "n1");
-        bool blocked = policyView?.Decision == "Block"
-                    || result.Nodes.FirstOrDefault(n => n.Id == "n1")?.Status == "Blocked";
-        bool needsConfirmation = policyView?.Decision == "Confirm" && !blocked;
+        var status = result.Nodes.FirstOrDefault(n => n.Id == "n1")?.Status ?? "Blocked";
+        string reason = policyView is not null ? $"{policyView.Decision}: {policyView.Reason}" : "No policy decision recorded.";
 
-        string reason = policyView is not null
-            ? $"{policyView.Decision}: {policyView.Reason}"
-            : "No policy decision recorded.";
-
-        if (blocked)
+        if (status == "Blocked")
             return new McpGateResult(Allowed: false, Reason: reason, RunResult: result);
 
-        if (needsConfirmation)
-        {
-            // In a production proxy, this would surface a confirmation request
-            // to the MCP client or the human operator. The call is NOT forwarded
-            // until explicit approval is received.
+        if (status == "NeedsConfirmation")
             return new McpGateResult(
                 Allowed: false,
                 Reason: $"Gated (NeedsConfirmation): {reason} — operator approval required before forwarding.",
                 RunResult: result);
-        }
 
-        // 4. Allowed — the caller may now forward to the real MCP server.
-        //    Use GateAndForward() to do both in one step.
+        // 4. Allowed (or approved) — the caller may now forward to the real MCP server.
         return new McpGateResult(Allowed: true, Reason: reason, RunResult: result);
     }
 
@@ -188,9 +193,9 @@ public sealed class McpProxy
     /// stdio. A blocked/gated call is never forwarded — no bytes reach the server. This is the
     /// production shape: the proxy verifies intent, then the transport runs.
     /// </summary>
-    public McpForwardResult GateAndForward(McpToolCall call, McpStdioClient client)
+    public McpForwardResult GateAndForward(McpToolCall call, McpStdioClient client, IReadOnlySet<string>? approvals = null)
     {
-        var gate = Gate(call);
+        var gate = Gate(call, approvals);
         if (!gate.Allowed) return new McpForwardResult(gate, ServerResponse: null);
         return new McpForwardResult(gate, ServerResponse: ForwardToRealMcpServer(call, client));
     }
@@ -218,8 +223,40 @@ public sealed class McpProxy
             "run_command" => MapRunCommand(call.Args),
             "read_calendar" => (new ReadCalendarAction(call.Args.TryGetValue("range", out var r) ? r : "Friday"),
                                 "MCP read_calendar"),
+            // @modelcontextprotocol/server-filesystem tools (reads vs writes)
+            "read_file" or "read_text_file" or "read_media_file" or "read_multiple_files"
+                or "get_file_info" or "list_directory" or "list_directory_with_sizes"
+                or "directory_tree" or "search_files" or "list_allowed_directories"
+                => (new FsReadAction(call.Args.TryGetValue("path", out var rp) ? rp : "."), $"MCP {call.Tool} → {(call.Args.TryGetValue("path", out var rp2) ? rp2 : ".")}"),
+            "write_file" or "edit_file" or "create_directory"
+                => MapFsWrite(call),
+            "move_file"
+                => call.Args.TryGetValue("destination", out var dest)
+                    ? (new FsWriteAction(dest, ""), $"MCP move_file → {dest}")
+                    : ((TypedAction?)null, "move_file missing 'destination'"),
             _ => (null, string.Empty),
         };
+    }
+
+    private static (TypedAction?, string) MapFsWrite(McpToolCall call)
+    {
+        if (!call.Args.TryGetValue("path", out var path)) return (null, $"{call.Tool} missing 'path'");
+        call.Args.TryGetValue("content", out var content);
+        return (new FsWriteAction(path, content ?? ""), $"MCP {call.Tool} → {path}");
+    }
+
+    /// <summary>True if <paramref name="path"/> resolves outside the configured allowed root
+    /// (fail-closed: an unparseable path counts as escaping).</summary>
+    private bool PathEscapesRoot(string path)
+    {
+        try
+        {
+            var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(_allowedRoot!));
+            var full = Path.GetFullPath(Path.IsPathRooted(path) ? path : Path.Combine(root, path));
+            return !(full.Equals(root, StringComparison.OrdinalIgnoreCase)
+                  || full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase));
+        }
+        catch { return true; }
     }
 
     private static (TypedAction?, string) MapSendEmail(IReadOnlyDictionary<string, string> args)

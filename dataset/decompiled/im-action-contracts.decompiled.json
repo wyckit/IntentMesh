@@ -6,7 +6,7 @@
       "Role": 1,
       "Priority": 120,
       "Version": "1.0.0",
-      "Checksum": "A477DE2393049AF35A52EBDD7CA33FB7EA4895A3B63CF9EAB322D5BD6E92FD26",
+      "Checksum": "C8890137E7C8BD3F3B1292CF775FA62D77E07E610D98FEE2EF4C7E43045E7F23",
       "HotSwapPolicy": 1,
       "StabilityScore": 0.9
     },
@@ -376,6 +376,34 @@
         "RequiresConfirmation": "false",
         "Fields": "table,summary",
         "Postconditions": "pc-query-within-caps,pc-no-sensitive-exposure"
+      }
+    },
+    {
+      "Id": "act-fs-read",
+      "Label": "FsReadIntent",
+      "Category": "ActionContract",
+      "Description": "Read a file or list a directory through an MCP filesystem server. Pure read, within the allowed root.",
+      "Aliases": [],
+      "Properties": {
+        "Risk": "low",
+        "SideEffect": "none",
+        "RequiresConfirmation": "false",
+        "Fields": "path",
+        "Postconditions": ""
+      }
+    },
+    {
+      "Id": "act-fs-write",
+      "Label": "FsWriteIntent",
+      "Category": "ActionContract",
+      "Description": "Write / create / move a file through an MCP filesystem server. Local write within the allowed root; requires confirmation.",
+      "Aliases": [],
+      "Properties": {
+        "Risk": "medium",
+        "SideEffect": "local-write",
+        "RequiresConfirmation": "true",
+        "Fields": "path,content",
+        "Postconditions": ""
       }
     }
   ],
@@ -765,6 +793,30 @@
       "Decay": null
     },
     {
+      "SourceId": "contracts-root",
+      "TargetId": "act-fs-read",
+      "Type": "Registers",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "contracts-root",
+      "TargetId": "act-fs-write",
+      "Type": "Registers",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
       "SourceId": "act-draft-email",
       "TargetId": "act-send-email",
       "Type": "Precedes",
@@ -806,5 +858,5 @@
   "Cues": [],
   "FitSignals": [],
   "Generators": [],
-  "ParameterCount": 115
+  "ParameterCount": 127
 }

@@ -22,6 +22,9 @@ public static class Kinds
     // data-agent domain (v0.4)
     public const string BuildQueryPlan     = "act-build-query-plan";
     public const string RunQuery           = "act-run-query";
+    // filesystem-via-MCP domain
+    public const string FsRead             = "act-fs-read";
+    public const string FsWrite            = "act-fs-write";
 }
 
 /// <summary>
@@ -84,3 +87,10 @@ public sealed record BuildQueryPlanAction(string Operation, string Table, string
 
 public sealed record RunQueryAction(string Table, string Summary) : TypedAction(Kinds.RunQuery)
 { public override IReadOnlyList<(string, string)> Fields => new[] { ("table", Table), ("summary", Summary) }; }
+
+// ── filesystem-via-MCP domain ───────────────────────────────────────────────
+public sealed record FsReadAction(string Path) : TypedAction(Kinds.FsRead)
+{ public override IReadOnlyList<(string, string)> Fields => new[] { ("path", Path) }; }
+
+public sealed record FsWriteAction(string Path, string Content) : TypedAction(Kinds.FsWrite)
+{ public override IReadOnlyList<(string, string)> Fields => new[] { ("path", Path) }; }

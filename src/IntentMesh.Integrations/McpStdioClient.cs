@@ -95,6 +95,17 @@ public sealed class McpStdioClient : IDisposable
         _stdin.Flush();
     }
 
+    /// <summary>Connect to an npm-published MCP server via npx (platform-aware: uses cmd.exe on
+    /// Windows where <c>npx</c> is a .cmd). Example: ConnectNpx("@modelcontextprotocol/server-filesystem", root).</summary>
+    public static McpStdioClient ConnectNpx(string package, params string[] serverArgs)
+    {
+        var args = new List<string> { "-y", package };
+        args.AddRange(serverArgs);
+        return OperatingSystem.IsWindows()
+            ? Connect("cmd.exe", new[] { "/c", "npx" }.Concat(args).ToArray())
+            : Connect("npx", args.ToArray());
+    }
+
     /// <summary>Locate the bundled mcp-echo-server.js by walking up to the repo root.</summary>
     public static string EchoServerScript()
     {

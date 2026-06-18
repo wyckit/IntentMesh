@@ -20,12 +20,13 @@ public sealed class PipelineTests
     public void Bundle_loads_the_full_registry()
     {
         var rt = Runtime();
-        Assert.Equal(16, rt.Bundle.Contracts.Count);   // 10 personal + 4 dev + 2 data
+        Assert.Equal(18, rt.Bundle.Contracts.Count);   // 10 personal + 4 dev + 2 data + 2 fs
         Assert.True(rt.Bundle.Cues.Count >= 19);
         Assert.True(rt.Bundle.Rules.Count >= 16);
         Assert.True(rt.Bundle.IsRegistered(Kinds.SendEmail));
         Assert.True(rt.Bundle.IsRegistered(Kinds.RunCommand));
         Assert.True(rt.Bundle.IsRegistered(Kinds.BuildQueryPlan));
+        Assert.True(rt.Bundle.IsRegistered(Kinds.FsRead));
     }
 
     [Fact]

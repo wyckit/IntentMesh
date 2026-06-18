@@ -22,7 +22,7 @@ public interface IToolAdapter
 public sealed class ToolHost
 {
     private readonly IReadOnlyList<IToolAdapter> _adapters = new IToolAdapter[]
-    { new CalendarAdapter(), new NotesAdapter(), new EmailAdapter(), new FileAdapter(), new RepoAdapter(), new DataAdapter() };
+    { new CalendarAdapter(), new NotesAdapter(), new EmailAdapter(), new FileAdapter(), new RepoAdapter(), new DataAdapter(), new FilesystemAdapter() };
 
     public IToolAdapter? For(string kind) => _adapters.FirstOrDefault(a => a.Handles(kind));
 
@@ -282,5 +282,24 @@ public sealed class DataAdapter : IToolAdapter
 
         return new ExecutionResult(id, Ran: true, Halted: false,
             $"Ran read-only query on {table.Name}; {proposed.Count} injected instruction(s) quarantined.", effects, proposed);
+    }
+}
+
+/// <summary>Gate-side adapter for filesystem actions whose REAL I/O is performed by forwarding to an
+/// MCP filesystem server (see IntentMesh.Integrations.McpProxy). It does no local I/O — it lets the
+/// pipeline produce a clean policy decision (read = allow, write = confirm) that the proxy gates on
+/// before forwarding.</summary>
+public sealed class FilesystemAdapter : IToolAdapter
+{
+    public bool Handles(string kind) => kind is Kinds.FsRead or Kinds.FsWrite;
+
+    public ExecutionResult Execute(IntentNode node, PolicyDecision decision, Workspace ws, bool approved)
+    {
+        var path = node.Action switch { FsReadAction r => r.Path, FsWriteAction w => w.Path, _ => "" };
+        if (node.Action is FsWriteAction && !approved)
+            return ToolHost.Halt(node.Id, $"fs write to '{path}' requires confirmation — not forwarded.", "0 writes forwarded");
+        return ToolHost.Ok(node.Id,
+            $"{node.Type} on '{path}' — validated; the MCP filesystem server performs the real I/O.",
+            "gated; ready to forward to the MCP server");
     }
 }

@@ -6,7 +6,7 @@
       "Role": 2,
       "Priority": 115,
       "Version": "1.0.0",
-      "Checksum": "CF7C3FA36615542A0D1BE96787DD2DA5BFD53E25EBCC6E5AD3FC577E58781419",
+      "Checksum": "7E25F20EF1395E86DD3078A727E34338578152650B32DF2B9B40A0560284B19A",
       "HotSwapPolicy": 1,
       "StabilityScore": 0.8
     },
@@ -97,6 +97,18 @@
         "SideEffect": "none",
         "Capability": "data"
       }
+    },
+    {
+      "Id": "tool-fs",
+      "Label": "filesystem (MCP) adapter",
+      "Category": "ToolAdapter",
+      "Description": "Real filesystem via an MCP server (e.g. @modelcontextprotocol/server-filesystem), gated by IntentMesh \u002B a path-safety policy before any call is forwarded.",
+      "Aliases": [],
+      "Properties": {
+        "Consumes": "act-fs-read,act-fs-write",
+        "SideEffect": "local-write",
+        "Capability": "filesystem"
+      }
     }
   ],
   "Relations": [
@@ -171,6 +183,18 @@
       "UtteranceText": null,
       "TurnIndex": null,
       "Decay": null
+    },
+    {
+      "SourceId": "tools-root",
+      "TargetId": "tool-fs",
+      "Type": "Provides",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
     }
   ],
   "Dimensions": [],
@@ -178,5 +202,5 @@
   "Cues": [],
   "FitSignals": [],
   "Generators": [],
-  "ParameterCount": 24
+  "ParameterCount": 28
 }

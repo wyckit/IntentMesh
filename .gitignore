@@ -3,3 +3,4 @@ obj/
 .vs/
 .playwright-mcp/
 *.user
+.fs-sandbox/

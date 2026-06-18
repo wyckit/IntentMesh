@@ -4,6 +4,7 @@
     <Project Path="src/IntentMesh.Cli/IntentMesh.Cli.csproj" />
     <Project Path="src/IntentMesh.Core/IntentMesh.Core.csproj" />
     <Project Path="src/IntentMesh.Integrations/IntentMesh.Integrations.csproj" />
+    <Project Path="src/IntentMesh.McpDemo/IntentMesh.McpDemo.csproj" />
     <Project Path="src/IntentMesh.Tlm.Cli/IntentMesh.Tlm.Cli.csproj" />
     <Project Path="src/IntentMesh.Tlm/IntentMesh.Tlm.csproj" />
     <Project Path="src/IntentMesh.Web/IntentMesh.Web.csproj" />

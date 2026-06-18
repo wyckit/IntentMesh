@@ -209,6 +209,103 @@ public sealed class IntegrationTests
         Assert.Empty(ws.SentEmails);
     }
 
+    // ── Filesystem MCP gating (path policy + read/write gating; no real server) ──
+    private static string TempRoot()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "im-fs-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        return root;
+    }
+
+    [Fact]
+    public void McpProxy_path_policy_blocks_a_read_outside_the_allowed_root()
+    {
+        var root = TempRoot();
+        try
+        {
+            var proxy = new McpProxy(Runtime(), Workspace.CreateDemo(), allowedRoot: root);
+            var outside = OperatingSystem.IsWindows() ? @"C:\Windows\win.ini" : "/etc/passwd";
+            var res = proxy.Gate(new McpToolCall("read_file", new Dictionary<string, string> { ["path"] = outside }));
+            Assert.False(res.Allowed);
+            Assert.Contains("path policy", res.Reason, StringComparison.OrdinalIgnoreCase);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void McpProxy_allows_a_read_inside_the_allowed_root()
+    {
+        var root = TempRoot();
+        File.WriteAllText(Path.Combine(root, "note.txt"), "hi");
+        try
+        {
+            var proxy = new McpProxy(Runtime(), Workspace.CreateDemo(), allowedRoot: root);
+            var res = proxy.Gate(new McpToolCall("read_file", new Dictionary<string, string> { ["path"] = Path.Combine(root, "note.txt") }));
+            Assert.True(res.Allowed);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void McpProxy_fs_write_is_gated_then_allowed_with_approval()
+    {
+        var root = TempRoot();
+        try
+        {
+            var proxy = new McpProxy(Runtime(), Workspace.CreateDemo(), allowedRoot: root);
+            var call = new McpToolCall("write_file", new Dictionary<string, string> { ["path"] = Path.Combine(root, "out.txt"), ["content"] = "x" });
+            Assert.False(proxy.Gate(call).Allowed);                                  // no approval → gated
+            Assert.True(proxy.Gate(call, new HashSet<string> { "n1" }).Allowed);     // approved → allowed
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    /// <summary>
+    /// END-TO-END against the REAL @modelcontextprotocol/server-filesystem over stdio. Gated behind
+    /// INTENTMESH_FS_E2E=1 because it downloads the npm package (kept off the default CI run); the
+    /// path-policy + gating logic above is fully covered without it.
+    /// </summary>
+    [Fact]
+    public void McpProxy_wires_a_real_filesystem_mcp_server_end_to_end()
+    {
+        if (Environment.GetEnvironmentVariable("INTENTMESH_FS_E2E") != "1") return;
+        if (!NodeAvailable()) return;
+
+        var root = TempRoot();
+        File.WriteAllText(Path.Combine(root, "note.txt"), "hello from the sandbox");
+        McpStdioClient? client = null;
+        try
+        {
+            try { client = McpStdioClient.ConnectNpx("@modelcontextprotocol/server-filesystem", root); }
+            catch { return; }
+            var tools = client.ListTools();
+            if (tools.Count == 0) return;
+            Assert.Contains("read_file", tools);
+            Assert.Contains("write_file", tools);
+
+            var proxy = new McpProxy(Runtime(), Workspace.CreateDemo(), allowedRoot: root);
+
+            // Allowed read → forwarded → real file content.
+            var read = proxy.GateAndForward(new McpToolCall("read_file", new Dictionary<string, string> { ["path"] = Path.Combine(root, "note.txt") }), client);
+            Assert.True(read.Gate.Allowed);
+            Assert.Contains("hello from the sandbox", read.ServerResponse!);
+
+            // Path escape → blocked → never forwarded.
+            var outside = OperatingSystem.IsWindows() ? @"C:\Windows\win.ini" : "/etc/passwd";
+            var esc = proxy.GateAndForward(new McpToolCall("read_file", new Dictionary<string, string> { ["path"] = outside }), client);
+            Assert.False(esc.Gate.Allowed);
+            Assert.Null(esc.ServerResponse);
+
+            // Write gated; with approval → forwarded → the real server writes the file.
+            var writeCall = new McpToolCall("write_file", new Dictionary<string, string> { ["path"] = Path.Combine(root, "out.txt"), ["content"] = "written via IntentMesh" });
+            Assert.False(proxy.GateAndForward(writeCall, client).Gate.Allowed);
+            var approved = proxy.GateAndForward(writeCall, client, new HashSet<string> { "n1" });
+            Assert.True(approved.Gate.Allowed);
+            Assert.True(File.Exists(Path.Combine(root, "out.txt")));
+        }
+        finally { client?.Dispose(); try { Directory.Delete(root, true); } catch { } }
+    }
+
     // ═══════════════════════════════════════════════════════════════════════════
     // (b) OpenApiImporter — ToContract produces the expected ImportedContract
     // ═══════════════════════════════════════════════════════════════════════════

@@ -165,6 +165,11 @@ public static class BundleAuthor
                 "Compile language into a typed query plan (AST). Validated before execution: read-only role, table must exist, row caps. Destructive operations and untrusted-origin plans are blocked."),
             ("act-run-query", "RunQueryIntent", "low", "none", "false", "table,summary", "pc-query-within-caps,pc-no-sensitive-exposure",
                 "Execute a validated, read-only query plan and return aggregated results."),
+            // filesystem-via-MCP domain (gated by IntentMesh + a path-safety policy)
+            ("act-fs-read", "FsReadIntent", "low", "none", "false", "path", "",
+                "Read a file or list a directory through an MCP filesystem server. Pure read, within the allowed root."),
+            ("act-fs-write", "FsWriteIntent", "medium", "local-write", "true", "path,content", "",
+                "Write / create / move a file through an MCP filesystem server. Local write within the allowed root; requires confirmation."),
         };
         foreach (var (id, label, risk, side, conf, fields, posts, desc) in contracts)
         {
@@ -320,6 +325,7 @@ public static class BundleAuthor
             ("tool-files", "file adapter", "act-scan-downloads,act-classify-junk,act-delete-files", "destructive", "files", "Fake filesystem: scan, classify, and (only on approval) delete sandboxed files."),
             ("tool-repo", "repo adapter", "act-read-repo,act-modify-code,act-run-command,act-open-pull-request", "command", "repo", "Fake git repo: read, stage typed edits, run allow-listed commands, draft PRs. Nothing committed/pushed/executed."),
             ("tool-data", "data adapter", "act-build-query-plan,act-run-query", "none", "data", "Fake read-only analytics DB: compile typed query plans and execute reads. No mutations."),
+            ("tool-fs", "filesystem (MCP) adapter", "act-fs-read,act-fs-write", "local-write", "filesystem", "Real filesystem via an MCP server (e.g. @modelcontextprotocol/server-filesystem), gated by IntentMesh + a path-safety policy before any call is forwarded."),
         };
         foreach (var (id, label, consumes, side, cap, desc) in tools)
         {
