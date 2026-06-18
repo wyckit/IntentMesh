@@ -117,6 +117,33 @@ public sealed class IntentResolver
             }
         }
 
+        // ── Dev-agent domain (v0.3) ─────────────────────────────────────────
+        bool devIntent = Has("act.read_repo") || Has("act.modify_code") || Has("act.run_tests") || Has("act.deploy") || Has("act.open_pr");
+        if (devIntent)
+        {
+            // Always read the repo first — this is where an injected instruction surfaces.
+            Emit(Kinds.ReadRepo, new ReadRepoAction(), "Read repository", Src("act.read_repo"));
+
+            if (Has("act.modify_code"))
+            {
+                var buggy = ws.Repo.Files.FirstOrDefault(f => f.Buggy);
+                if (buggy is not null)
+                    Emit(Kinds.ModifyCode,
+                        new ModifyCodeAction(buggy.Path, "guard empty/null input so Parse(\"\") returns 0",
+                            "public int Parse(string s) => string.IsNullOrEmpty(s) ? 0 : int.Parse(s);"),
+                        $"Modify code: {buggy.Path}", Src("act.modify_code"));
+            }
+            if (Has("act.run_tests"))
+                Emit(Kinds.RunCommand, new RunCommandAction("dotnet test"), "Run command: dotnet test", Src("act.run_tests"));
+            if (Has("act.deploy"))
+                Emit(Kinds.RunCommand, new RunCommandAction("deploy to production"), "Run command: deploy to production", Src("act.deploy"));
+            if (Has("act.open_pr"))
+                Emit(Kinds.OpenPullRequest,
+                    new OpenPullRequestAction("Fix parser empty-input bug",
+                        "Adds a guard so Parse(\"\") returns 0 instead of throwing. No secrets included."),
+                    "Open pull request (draft)", Src("act.open_pr"));
+        }
+
         return new Result(nodes, fired, unsupported);
     }
 

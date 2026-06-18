@@ -99,6 +99,38 @@
       "Properties": {}
     },
     {
+      "Id": "pc-edit-staged-not-pushed",
+      "Label": "edit staged, not pushed",
+      "Category": "Postcondition",
+      "Description": "A code edit is staged; it is not committed or pushed.",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "pc-no-secret-in-diff",
+      "Label": "no secret in diff or PR",
+      "Category": "Postcondition",
+      "Description": "No repository secret value appears in any staged edit or pull-request body.",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "pc-pr-drafted-not-pushed",
+      "Label": "PR drafted, not pushed",
+      "Category": "Postcondition",
+      "Description": "A pull request is drafted; it is never pushed.",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "pc-shell-blocked-by-default",
+      "Label": "shell blocked by default",
+      "Category": "Postcondition",
+      "Description": "No command ran unless it was on the repo allow-list and approved.",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
       "Id": "act-read-calendar",
       "Label": "ReadCalendarIntent",
       "Category": "ActionContract",
@@ -236,6 +268,62 @@
         "RequiresConfirmation": "true",
         "Fields": "fileRefs",
         "Postconditions": "pc-zero-deletions-without-approval"
+      }
+    },
+    {
+      "Id": "act-read-repo",
+      "Label": "ReadRepoIntent",
+      "Category": "ActionContract",
+      "Description": "Read repository files. Pure read.",
+      "Aliases": [],
+      "Properties": {
+        "Risk": "low",
+        "SideEffect": "none",
+        "RequiresConfirmation": "false",
+        "Fields": "",
+        "Postconditions": ""
+      }
+    },
+    {
+      "Id": "act-modify-code",
+      "Label": "ModifyCodeIntent",
+      "Category": "ActionContract",
+      "Description": "Apply a typed code edit. Staged and requires confirmation; never committed or pushed.",
+      "Aliases": [],
+      "Properties": {
+        "Risk": "medium",
+        "SideEffect": "local-write",
+        "RequiresConfirmation": "true",
+        "Fields": "path,summary,newContent",
+        "Postconditions": "pc-edit-staged-not-pushed,pc-no-secret-in-diff"
+      }
+    },
+    {
+      "Id": "act-run-command",
+      "Label": "RunCommandIntent",
+      "Category": "ActionContract",
+      "Description": "Run a command. Shell is blocked by default \u2014 only allow-listed commands may run, and only after confirmation.",
+      "Aliases": [],
+      "Properties": {
+        "Risk": "high",
+        "SideEffect": "command",
+        "RequiresConfirmation": "true",
+        "Fields": "command",
+        "Postconditions": "pc-shell-blocked-by-default"
+      }
+    },
+    {
+      "Id": "act-open-pull-request",
+      "Label": "OpenPullRequestIntent",
+      "Category": "ActionContract",
+      "Description": "Draft a pull request. Requires confirmation; never pushed.",
+      "Aliases": [],
+      "Properties": {
+        "Risk": "medium",
+        "SideEffect": "local-write",
+        "RequiresConfirmation": "true",
+        "Fields": "title,body",
+        "Postconditions": "pc-pr-drafted-not-pushed,pc-no-secret-in-diff"
       }
     }
   ],
@@ -457,6 +545,114 @@
       "Decay": null
     },
     {
+      "SourceId": "contracts-root",
+      "TargetId": "act-read-repo",
+      "Type": "Registers",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "contracts-root",
+      "TargetId": "act-modify-code",
+      "Type": "Registers",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "act-modify-code",
+      "TargetId": "pc-edit-staged-not-pushed",
+      "Type": "Guarantees",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "act-modify-code",
+      "TargetId": "pc-no-secret-in-diff",
+      "Type": "Guarantees",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "contracts-root",
+      "TargetId": "act-run-command",
+      "Type": "Registers",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "act-run-command",
+      "TargetId": "pc-shell-blocked-by-default",
+      "Type": "Guarantees",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "contracts-root",
+      "TargetId": "act-open-pull-request",
+      "Type": "Registers",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "act-open-pull-request",
+      "TargetId": "pc-pr-drafted-not-pushed",
+      "Type": "Guarantees",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "act-open-pull-request",
+      "TargetId": "pc-no-secret-in-diff",
+      "Type": "Guarantees",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
       "SourceId": "act-draft-email",
       "TargetId": "act-send-email",
       "Type": "Precedes",
@@ -498,5 +694,5 @@
   "Cues": [],
   "FitSignals": [],
   "Generators": [],
-  "ParameterCount": 71
+  "ParameterCount": 100
 }

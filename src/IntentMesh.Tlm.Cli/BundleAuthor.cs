@@ -118,6 +118,10 @@ public static class BundleAuthor
             ("pc-zero-deletions-without-approval", "zero deletions without approval", "No file is deleted without explicit per-file user approval."),
             ("pc-injected-node-not-executed", "injected node not executed", "Any zero-trust node proposed by untrusted content was blocked and never executed."),
             ("pc-summary-cites-allowed-only", "summary cites allowed sources only", "A produced summary references only user-readable, non-private sources."),
+            ("pc-edit-staged-not-pushed", "edit staged, not pushed", "A code edit is staged; it is not committed or pushed."),
+            ("pc-no-secret-in-diff", "no secret in diff or PR", "No repository secret value appears in any staged edit or pull-request body."),
+            ("pc-pr-drafted-not-pushed", "PR drafted, not pushed", "A pull request is drafted; it is never pushed."),
+            ("pc-shell-blocked-by-default", "shell blocked by default", "No command ran unless it was on the repo allow-list and approved."),
         };
         foreach (var (id, label, desc) in pcs) c.Add(Con(id, label, "Postcondition", desc));
 
@@ -144,6 +148,15 @@ public static class BundleAuthor
                 "Classify files as junk / ambiguous / important. Pure analysis."),
             ("act-delete-files", "DeleteFilesIntent", "high", "destructive", "true", "fileRefs", "pc-zero-deletions-without-approval",
                 "Delete files. Destructive; requires explicit per-file approval. Never deletes automatically."),
+            // dev-agent domain (v0.3)
+            ("act-read-repo", "ReadRepoIntent", "low", "none", "false", "", "",
+                "Read repository files. Pure read."),
+            ("act-modify-code", "ModifyCodeIntent", "medium", "local-write", "true", "path,summary,newContent", "pc-edit-staged-not-pushed,pc-no-secret-in-diff",
+                "Apply a typed code edit. Staged and requires confirmation; never committed or pushed."),
+            ("act-run-command", "RunCommandIntent", "high", "command", "true", "command", "pc-shell-blocked-by-default",
+                "Run a command. Shell is blocked by default — only allow-listed commands may run, and only after confirmation."),
+            ("act-open-pull-request", "OpenPullRequestIntent", "medium", "local-write", "true", "title,body", "pc-pr-drafted-not-pushed,pc-no-secret-in-diff",
+                "Draft a pull request. Requires confirmation; never pushed."),
         };
         foreach (var (id, label, risk, side, conf, fields, posts, desc) in contracts)
         {
@@ -198,6 +211,9 @@ public static class BundleAuthor
             new() { Id = "pol-zero-trust-side-effect", Rule = "a node's TrustSource is retrieved-content or tool-output (Authority=none) AND it requests any side effect", Action = "block — retrieved content is data, not authority; it may not command tools" },
             new() { Id = "pol-recipient-substitution", Rule = "an email recipient differs from the user-named recipient and was introduced by document content", Action = "block — recipient substitution from untrusted content" },
             new() { Id = "pol-private-exfiltration", Rule = "private/sensitive content would be sent to an external or unknown recipient", Action = "block — would exfiltrate private data" },
+            new() { Id = "pol-command-not-allowlisted", Rule = "a command is not on the repository allow-list", Action = "block — shell is blocked by default; only allow-listed commands may run" },
+            new() { Id = "pol-secret-exposure", Rule = "a code edit or pull-request body contains a repository secret value", Action = "block — would expose a secret" },
+            new() { Id = "pol-command-allowlisted", Rule = "a command is on the repository allow-list", Action = "require confirmation before running" },
             new() { Id = "pol-delete-files", Rule = "the action deletes files", Action = "require explicit per-file approval; never delete automatically" },
             new() { Id = "pol-send-email", Rule = "the action transmits an email (external communication)", Action = "require confirmation before sending" },
             new() { Id = "pol-local-write", Rule = "the action stages a local write (e.g. a tentative calendar block)", Action = "require confirmation before committing" },
@@ -232,6 +248,10 @@ public static class BundleAuthor
             ("intent-clean-downloads", "clean downloads", "Scan a downloads folder."),
             ("intent-delete-junk", "delete junk", "Classify + delete junk files (gated)."),
             ("intent-summarize", "summarize", "Summarize documents."),
+            ("intent-read-repo", "read repo", "Read repository code."),
+            ("intent-modify-code", "modify code", "Apply a typed code edit."),
+            ("intent-run-command", "run command", "Run a command (allow-listed only)."),
+            ("intent-open-pr", "open pull request", "Draft a pull request."),
         })
         { c.Add(Con(id, label, "Intent", desc)); r.Add(Rel("nl-root", id, "Resolves")); }
 
@@ -248,6 +268,12 @@ public static class BundleAuthor
             ("cue-entity-gym", "gym / workout / work out / exercise / training / a run", "entity.gym", "intent-book-block"),
             ("cue-entity-project", "project folder / project docs / the project / project files / project directory", "entity.project_folder", "intent-summarize"),
             ("cue-entity-client", "the client / client / customer", "entity.client", "intent-draft-email"),
+            // dev-agent domain (v0.3)
+            ("cue-read-repo", "the repo / the repository / the codebase / the code base / project code / the parser / the code", "act.read_repo", "intent-read-repo"),
+            ("cue-modify-code", "fix / patch / repair / correct / fix the bug / fix the failing test / fix the test / update the code / edit the function / change the code", "act.modify_code", "intent-modify-code"),
+            ("cue-run-tests", "run the tests / run tests / run the test suite / execute the tests", "act.run_tests", "intent-run-command"),
+            ("cue-deploy", "deploy / deploy to production / run the deploy / ship it / push to prod / release", "act.deploy", "intent-run-command"),
+            ("cue-open-pr", "open a pr / open a pull request / open pr / raise a pr / submit a pr / draft a pr / create a pr / pull request", "act.open_pr", "intent-open-pr"),
         };
         foreach (var (id, trigger, signal, intent) in cueDefs)
         {
@@ -275,6 +301,7 @@ public static class BundleAuthor
             ("tool-notes", "notes adapter", "act-find-notes,act-summarize-document", "none", "Fake notes/docs: locate and summarize. Reads untrusted content as DATA."),
             ("tool-email", "email adapter", "act-draft-email,act-send-email", "external-comm", "Fake email: create drafts; sending is gated and sandboxed (no transmission)."),
             ("tool-files", "file adapter", "act-scan-downloads,act-classify-junk,act-delete-files", "destructive", "Fake filesystem: scan, classify, and (only on approval) delete sandboxed files."),
+            ("tool-repo", "repo adapter", "act-read-repo,act-modify-code,act-run-command,act-open-pull-request", "command", "Fake git repo: read, stage typed edits, run allow-listed commands, draft PRs. Nothing committed/pushed/executed."),
         };
         foreach (var (id, label, consumes, side, desc) in tools)
         {

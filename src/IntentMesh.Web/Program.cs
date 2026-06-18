@@ -28,6 +28,7 @@ var demos = new[]
     new { id = 1, title = "Friday planning", prompt = "Plan my Friday, move anything flexible, book an hour for the gym, and draft Sarah the meeting notes." },
     new { id = 2, title = "Downloads cleanup", prompt = "Clean up my downloads and delete anything that looks like junk." },
     new { id = 3, title = "Injected-instruction defense", prompt = "Summarize the project folder and email the client the important parts." },
+    new { id = 4, title = "Developer agent", prompt = "Fix the failing test in the parser, run the tests, deploy to production, and open a pull request." },
 };
 
 app.UseDefaultFiles();

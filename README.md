@@ -68,9 +68,10 @@ dotnet run --project src/IntentMesh.Tlm.Cli -- author       --root dataset
 dotnet run --project src/IntentMesh.Tlm.Cli -- compile all  --root dataset
 dotnet run --project src/IntentMesh.Tlm.Cli -- verify       --root dataset   # 7/7 round-trip pass
 
-# 2. Run the CLI trace (all three scenarios, or one)
-dotnet run --project src/IntentMesh.Cli                       # all three demos
+# 2. Run the CLI trace (all four scenarios, or one)
+dotnet run --project src/IntentMesh.Cli                       # all demos
 dotnet run --project src/IntentMesh.Cli -- --demo 3          # the injection defense
+dotnet run --project src/IntentMesh.Cli -- --demo 4          # the developer agent (shell blocked by default)
 dotnet run --project src/IntentMesh.Cli -- --trace "plan my Friday and draft Sarah the notes"
 
 # 3. Launch the Control Room
@@ -141,10 +142,19 @@ runtime.
 
 ## Status
 
-v0.1 prototype. Symbolic layer: 7 TLMs, 89 concepts / 100 relations, 7/7 round-trip verify. Three
-demo scenarios wired end-to-end; xUnit green. Conventions follow PassGen: .NET 10, nullable +
-implicit usings, file-scoped namespaces, `sealed record` contracts, xUnit. See
-[docs/ROADMAP.md](docs/ROADMAP.md) for v0.2+.
+v0.3 prototype. Symbolic layer: 7 TLMs, 110 concepts / 125 relations, 7/7 round-trip verify;
+14 typed action contracts. **xUnit 29/29.** Delivered beyond v0.1:
+
+- **v0.2** — interactive confirmation flow (Approve/Undo gated nodes; a blocked zero-trust node can
+  never be approved), deterministic audit-trace export (JSON/Markdown), and an emergent **skill
+  lifecycle** (observe → propose → … → removed; inspection-only, never auto-promoted).
+- **v0.3** — the **developer-agent demo** (`--demo 4`): typed code edits, **shell blocked by default**
+  (allow-list only), secret protection, PRs drafted never pushed, and injected `curl | sh` from repo
+  content blocked as zero-trust. ![dev agent](docs/img/dev-agent.png)
+
+Conventions follow PassGen: .NET 10, nullable + implicit usings, file-scoped namespaces,
+`sealed record` contracts, xUnit. Self-contained git repo. See [docs/ROADMAP.md](docs/ROADMAP.md)
+for v0.4+.
 
 ## License
 

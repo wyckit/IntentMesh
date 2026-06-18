@@ -32,6 +32,7 @@ var demos = new (string Title, string Prompt)[]
     ("Friday planning", "Plan my Friday, move anything flexible, book an hour for the gym, and draft Sarah the meeting notes."),
     ("Downloads cleanup", "Clean up my downloads and delete anything that looks like junk."),
     ("Injected-instruction defense", "Summarize the project folder and email the client the important parts."),
+    ("Developer agent", "Fix the failing test in the parser, run the tests, deploy to production, and open a pull request."),
 };
 
 if (rest.Count == 0)

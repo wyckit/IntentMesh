@@ -6,7 +6,7 @@
       "Role": 2,
       "Priority": 105,
       "Version": "1.0.0",
-      "Checksum": "13FB01DD7BD7281310B37AFE3EBED2ACDDC1815A5C7388903F6795962581B401",
+      "Checksum": "C278D8B65DA3730D9A51989BC0511B948330DBA7C1E2C497EA9AB16369404BA1",
       "HotSwapPolicy": 1,
       "StabilityScore": 0.7
     },
@@ -95,6 +95,38 @@
       "Label": "summarize",
       "Category": "Intent",
       "Description": "Summarize documents.",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "intent-read-repo",
+      "Label": "read repo",
+      "Category": "Intent",
+      "Description": "Read repository code.",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "intent-modify-code",
+      "Label": "modify code",
+      "Category": "Intent",
+      "Description": "Apply a typed code edit.",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "intent-run-command",
+      "Label": "run command",
+      "Category": "Intent",
+      "Description": "Run a command (allow-listed only).",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "intent-open-pr",
+      "Label": "open pull request",
+      "Category": "Intent",
+      "Description": "Draft a pull request.",
       "Aliases": [],
       "Properties": {}
     },
@@ -314,6 +346,101 @@
         "Triggers": "the client / client / customer",
         "Signal": "entity.client"
       }
+    },
+    {
+      "Id": "cue-read-repo",
+      "Label": "the repo",
+      "Category": "Phrase",
+      "Description": "Cue (signal act.read_repo); triggers: the repo / the repository / the codebase / the code base / project code / the parser / the code.",
+      "Aliases": [
+        "the repo",
+        "the repository",
+        "the codebase",
+        "the code base",
+        "project code",
+        "the parser",
+        "the code"
+      ],
+      "Properties": {
+        "Triggers": "the repo / the repository / the codebase / the code base / project code / the parser / the code",
+        "Signal": "act.read_repo"
+      }
+    },
+    {
+      "Id": "cue-modify-code",
+      "Label": "fix",
+      "Category": "Phrase",
+      "Description": "Cue (signal act.modify_code); triggers: fix / patch / repair / correct / fix the bug / fix the failing test / fix the test / update the code / edit the function / change the code.",
+      "Aliases": [
+        "fix",
+        "patch",
+        "repair",
+        "correct",
+        "fix the bug",
+        "fix the failing test",
+        "fix the test",
+        "update the code",
+        "edit the function",
+        "change the code"
+      ],
+      "Properties": {
+        "Triggers": "fix / patch / repair / correct / fix the bug / fix the failing test / fix the test / update the code / edit the function / change the code",
+        "Signal": "act.modify_code"
+      }
+    },
+    {
+      "Id": "cue-run-tests",
+      "Label": "run the tests",
+      "Category": "Phrase",
+      "Description": "Cue (signal act.run_tests); triggers: run the tests / run tests / run the test suite / execute the tests.",
+      "Aliases": [
+        "run the tests",
+        "run tests",
+        "run the test suite",
+        "execute the tests"
+      ],
+      "Properties": {
+        "Triggers": "run the tests / run tests / run the test suite / execute the tests",
+        "Signal": "act.run_tests"
+      }
+    },
+    {
+      "Id": "cue-deploy",
+      "Label": "deploy",
+      "Category": "Phrase",
+      "Description": "Cue (signal act.deploy); triggers: deploy / deploy to production / run the deploy / ship it / push to prod / release.",
+      "Aliases": [
+        "deploy",
+        "deploy to production",
+        "run the deploy",
+        "ship it",
+        "push to prod",
+        "release"
+      ],
+      "Properties": {
+        "Triggers": "deploy / deploy to production / run the deploy / ship it / push to prod / release",
+        "Signal": "act.deploy"
+      }
+    },
+    {
+      "Id": "cue-open-pr",
+      "Label": "open a pr",
+      "Category": "Phrase",
+      "Description": "Cue (signal act.open_pr); triggers: open a pr / open a pull request / open pr / raise a pr / submit a pr / draft a pr / create a pr / pull request.",
+      "Aliases": [
+        "open a pr",
+        "open a pull request",
+        "open pr",
+        "raise a pr",
+        "submit a pr",
+        "draft a pr",
+        "create a pr",
+        "pull request"
+      ],
+      "Properties": {
+        "Triggers": "open a pr / open a pull request / open pr / raise a pr / submit a pr / draft a pr / create a pr / pull request",
+        "Signal": "act.open_pr"
+      }
     }
   ],
   "Relations": [
@@ -416,6 +543,54 @@
     {
       "SourceId": "nl-root",
       "TargetId": "intent-summarize",
+      "Type": "Resolves",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "nl-root",
+      "TargetId": "intent-read-repo",
+      "Type": "Resolves",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "nl-root",
+      "TargetId": "intent-modify-code",
+      "Type": "Resolves",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "nl-root",
+      "TargetId": "intent-run-command",
+      "Type": "Resolves",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "nl-root",
+      "TargetId": "intent-open-pr",
       "Type": "Resolves",
       "Description": "",
       "Strength": 1,
@@ -556,6 +731,66 @@
       "UtteranceText": null,
       "TurnIndex": null,
       "Decay": null
+    },
+    {
+      "SourceId": "cue-read-repo",
+      "TargetId": "intent-read-repo",
+      "Type": "MapsTo",
+      "Description": "signal act.read_repo",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "cue-modify-code",
+      "TargetId": "intent-modify-code",
+      "Type": "MapsTo",
+      "Description": "signal act.modify_code",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "cue-run-tests",
+      "TargetId": "intent-run-command",
+      "Type": "MapsTo",
+      "Description": "signal act.run_tests",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "cue-deploy",
+      "TargetId": "intent-run-command",
+      "Type": "MapsTo",
+      "Description": "signal act.deploy",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "cue-open-pr",
+      "TargetId": "intent-open-pr",
+      "Type": "MapsTo",
+      "Description": "signal act.open_pr",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
     }
   ],
   "Dimensions": [],
@@ -615,9 +850,34 @@
       "Id": "cue-entity-client",
       "Trigger": "the client / client / customer",
       "Signal": "entity.client"
+    },
+    {
+      "Id": "cue-read-repo",
+      "Trigger": "the repo / the repository / the codebase / the code base / project code / the parser / the code",
+      "Signal": "act.read_repo"
+    },
+    {
+      "Id": "cue-modify-code",
+      "Trigger": "fix / patch / repair / correct / fix the bug / fix the failing test / fix the test / update the code / edit the function / change the code",
+      "Signal": "act.modify_code"
+    },
+    {
+      "Id": "cue-run-tests",
+      "Trigger": "run the tests / run tests / run the test suite / execute the tests",
+      "Signal": "act.run_tests"
+    },
+    {
+      "Id": "cue-deploy",
+      "Trigger": "deploy / deploy to production / run the deploy / ship it / push to prod / release",
+      "Signal": "act.deploy"
+    },
+    {
+      "Id": "cue-open-pr",
+      "Trigger": "open a pr / open a pull request / open pr / raise a pr / submit a pr / draft a pr / create a pr / pull request",
+      "Signal": "act.open_pr"
     }
   ],
   "FitSignals": [],
   "Generators": [],
-  "ParameterCount": 42
+  "ParameterCount": 61
 }

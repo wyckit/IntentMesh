@@ -63,8 +63,31 @@ public sealed class PolicyGate
                 rules.Add("pol-private-exfiltration");
                 reason += " It would exfiltrate private notes externally.";
             }
+            if (node.Action is RunCommandAction zrc && !ctx.Workspace.Repo.IsAllowed(zrc.Command))
+            {
+                rules.Add("pol-command-not-allowlisted");
+                reason += $" The command '{zrc.Command}' is not on the repo allow-list either.";
+            }
             return new PolicyDecision(node.Id, Decision.Block, risk, reason, rules, false, trust, sensitive, external, destructive);
         }
+
+        // ── Dev: shell is blocked by default (allow-list), even for the user ──
+        if (node.Action is RunCommandAction rc)
+        {
+            if (!ctx.Workspace.Repo.IsAllowed(rc.Command))
+                return new PolicyDecision(node.Id, Decision.Block, risk,
+                    $"Shell is blocked by default; '{rc.Command}' is not on the repository allow-list.",
+                    new[] { "pol-command-not-allowlisted" }, false, trust, sensitive, false, false);
+            return new PolicyDecision(node.Id, Decision.Confirm, risk,
+                $"Allow-listed command '{rc.Command}': requires confirmation before running.",
+                new[] { "pol-command-allowlisted" }, true, trust, sensitive, false, false);
+        }
+
+        // ── Dev: a code edit / PR that would carry a repository secret is blocked ──
+        if (ContainsSecret(node.Action, ctx.Workspace, out var secretField))
+            return new PolicyDecision(node.Id, Decision.Block, risk,
+                $"Would expose a repository secret in the {secretField}.",
+                new[] { "pol-secret-exposure" }, false, trust, true, false, false);
 
         // ── Confirmation / allow rules (trusted user intent) ────────────────
         if (destructive)
@@ -100,6 +123,26 @@ public sealed class PolicyGate
             case SendEmailAction s: recipient = s.Recipient; return true;
             default: recipient = ""; return false;
         }
+    }
+
+    private static bool ContainsSecret(TypedAction a, Workspace ws, out string field)
+    {
+        field = "";
+        var secrets = ws.Repo.SecretValues.ToList();
+        if (secrets.Count == 0) return false;
+        string? payload = a switch
+        {
+            ModifyCodeAction m => m.NewContent,
+            OpenPullRequestAction p => p.Body,
+            _ => null
+        };
+        if (payload is null) return false;
+        if (secrets.Any(s => payload.Contains(s, StringComparison.Ordinal)))
+        {
+            field = a is OpenPullRequestAction ? "pull-request body" : "code edit";
+            return true;
+        }
+        return false;
     }
 
     private static bool ReferencesPrivate(TypedAction a, Workspace ws)

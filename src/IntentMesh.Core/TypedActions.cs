@@ -14,6 +14,11 @@ public static class Kinds
     public const string ScanDownloads      = "act-scan-downloads";
     public const string ClassifyJunk       = "act-classify-junk";
     public const string DeleteFiles        = "act-delete-files";
+    // dev-agent domain (v0.3)
+    public const string ReadRepo           = "act-read-repo";
+    public const string ModifyCode         = "act-modify-code";
+    public const string RunCommand         = "act-run-command";
+    public const string OpenPullRequest    = "act-open-pull-request";
 }
 
 /// <summary>
@@ -55,3 +60,16 @@ public sealed record ClassifyJunkAction() : TypedAction(Kinds.ClassifyJunk)
 
 public sealed record DeleteFilesAction(IReadOnlyList<string> FileRefs) : TypedAction(Kinds.DeleteFiles)
 { public override IReadOnlyList<(string, string)> Fields => new[] { ("fileRefs", string.Join(", ", FileRefs)) }; }
+
+// ── dev-agent domain (v0.3) ─────────────────────────────────────────────────
+public sealed record ReadRepoAction() : TypedAction(Kinds.ReadRepo)
+{ public override IReadOnlyList<(string, string)> Fields => Array.Empty<(string, string)>(); }
+
+public sealed record ModifyCodeAction(string Path, string Summary, string NewContent) : TypedAction(Kinds.ModifyCode)
+{ public override IReadOnlyList<(string, string)> Fields => new[] { ("path", Path), ("summary", Summary) }; }
+
+public sealed record RunCommandAction(string Command) : TypedAction(Kinds.RunCommand)
+{ public override IReadOnlyList<(string, string)> Fields => new[] { ("command", Command) }; }
+
+public sealed record OpenPullRequestAction(string Title, string Body) : TypedAction(Kinds.OpenPullRequest)
+{ public override IReadOnlyList<(string, string)> Fields => new[] { ("title", Title) }; }

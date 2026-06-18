@@ -6,7 +6,7 @@
       "Role": 5,
       "Priority": 110,
       "Version": "1.0.0",
-      "Checksum": "A4CB880AF0C7307BEA6E2D32D3274A3F63E015D2E7321436552287FCA0F35F52",
+      "Checksum": "ABD444430D859882BD7C076606ED1E2FB8C32EF359290B1494B19ECA86BC48B3",
       "HotSwapPolicy": 1,
       "StabilityScore": 0.85
     },
@@ -120,6 +120,30 @@
       "Label": "pol-private-exfiltration",
       "Category": "PolicyRule",
       "Description": "private/sensitive content would be sent to an external or unknown recipient -\u003E block \u2014 would exfiltrate private data",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "pol-command-not-allowlisted",
+      "Label": "pol-command-not-allowlisted",
+      "Category": "PolicyRule",
+      "Description": "a command is not on the repository allow-list -\u003E block \u2014 shell is blocked by default; only allow-listed commands may run",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "pol-secret-exposure",
+      "Label": "pol-secret-exposure",
+      "Category": "PolicyRule",
+      "Description": "a code edit or pull-request body contains a repository secret value -\u003E block \u2014 would expose a secret",
+      "Aliases": [],
+      "Properties": {}
+    },
+    {
+      "Id": "pol-command-allowlisted",
+      "Label": "pol-command-allowlisted",
+      "Category": "PolicyRule",
+      "Description": "a command is on the repository allow-list -\u003E require confirmation before running",
       "Aliases": [],
       "Properties": {}
     },
@@ -319,6 +343,42 @@
     },
     {
       "SourceId": "policy-root",
+      "TargetId": "pol-command-not-allowlisted",
+      "Type": "Applies",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "policy-root",
+      "TargetId": "pol-secret-exposure",
+      "Type": "Applies",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "policy-root",
+      "TargetId": "pol-command-allowlisted",
+      "Type": "Applies",
+      "Description": "",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "policy-root",
       "TargetId": "pol-delete-files",
       "Type": "Applies",
       "Description": "",
@@ -415,6 +475,42 @@
     },
     {
       "SourceId": "pol-private-exfiltration",
+      "TargetId": "pol-command-not-allowlisted",
+      "Type": "Precedes",
+      "Description": "evaluated before",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "pol-command-not-allowlisted",
+      "TargetId": "pol-secret-exposure",
+      "Type": "Precedes",
+      "Description": "evaluated before",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "pol-secret-exposure",
+      "TargetId": "pol-command-allowlisted",
+      "Type": "Precedes",
+      "Description": "evaluated before",
+      "Strength": 1,
+      "SchemaVersion": 1,
+      "SourceTag": "",
+      "UtteranceText": null,
+      "TurnIndex": null,
+      "Decay": null
+    },
+    {
+      "SourceId": "pol-command-allowlisted",
       "TargetId": "pol-delete-files",
       "Type": "Precedes",
       "Description": "evaluated before",
@@ -504,6 +600,21 @@
       "Action": "block \u2014 would exfiltrate private data"
     },
     {
+      "Id": "pol-command-not-allowlisted",
+      "Rule": "a command is not on the repository allow-list",
+      "Action": "block \u2014 shell is blocked by default; only allow-listed commands may run"
+    },
+    {
+      "Id": "pol-secret-exposure",
+      "Rule": "a code edit or pull-request body contains a repository secret value",
+      "Action": "block \u2014 would expose a secret"
+    },
+    {
+      "Id": "pol-command-allowlisted",
+      "Rule": "a command is on the repository allow-list",
+      "Action": "require confirmation before running"
+    },
+    {
       "Id": "pol-delete-files",
       "Rule": "the action deletes files",
       "Action": "require explicit per-file approval; never delete automatically"
@@ -537,5 +648,5 @@
   "Cues": [],
   "FitSignals": [],
   "Generators": [],
-  "ParameterCount": 35
+  "ParameterCount": 44
 }

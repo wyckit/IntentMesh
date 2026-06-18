@@ -53,15 +53,20 @@ the audit trail; TLMs verify 7/7; CLI `--trace` shows all panels including a fai
 - Reusable skill example: `DailyPlanningAndFollowup` with input/output schema, allowed tools, risk
   class, tests, version, status.
 
-## v0.3 — Developer Agent Demo
+## v0.3 — Developer Agent Demo  *(done)*
 
-**Goal:** generalize beyond the personal domain into code.
+**Goal:** generalize beyond the personal domain into code. **Delivered.**
 
-- Fake repo adapter; safe, typed code-modification contracts (`ModifyCodeIntent`, `RunCommandIntent`).
-- Command-execution policy: shell **blocked by default**, allow-listed typed commands only.
-- Secret protection (no secrets in drafts/diffs/logs); PR drafting (draft, never push).
-- Demonstrates the same boundary on a dev agent: the model proposes diffs; only validated typed
-  edits execute.
+- **[done]** Fake `Repo` workspace + `RepoAdapter`; typed contracts `ReadRepoIntent`,
+  `ModifyCodeIntent`, `RunCommandIntent`, `OpenPullRequestIntent`.
+- **[done]** Command-execution policy: shell **blocked by default** (`pol-command-not-allowlisted`),
+  only allow-listed commands run and only after confirmation (`pol-command-allowlisted`) — blocks a
+  non-allow-listed `deploy to production` even though the user asked for it.
+- **[done]** Secret protection (`pol-secret-exposure` blocks any edit/PR carrying a repo secret;
+  `pc-no-secret-in-diff`); edits/PRs are staged/drafted, **never pushed** (`pc-edit-and-pr-not-pushed`).
+- **[done]** Injected `curl … | sh` in a repo file is quarantined as zero-trust and blocked. The
+  same boundary, on a dev agent. Demo prompt: *"Fix the failing test in the parser, run the tests,
+  deploy to production, and open a pull request."* (`DevAgentTests`, `intentmesh --demo 4`).
 
 ## v0.4 — Data Agent Demo
 
