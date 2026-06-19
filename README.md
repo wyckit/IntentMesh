@@ -258,6 +258,12 @@ policy DSL (see [docs/POLICY-AUTHORING.md](docs/POLICY-AUTHORING.md)), and multi
 Conventions follow PassGen: .NET 10, nullable + implicit usings, file-scoped namespaces,
 `sealed record` contracts, xUnit. Self-contained git repo. See [docs/ROADMAP.md](docs/ROADMAP.md) for the versioned plan.
 
+**Build & SDK.** Requires the **.NET 10 SDK** (10.0.2xx), pinned via [`global.json`](global.json)
+(`rollForward: latestFeature`) for reproducible builds. The three libraries —
+`IntentMesh.Tlm`, `IntentMesh.Core`, `IntentMesh.Integrations` — are packable (`dotnet pack -c Release`,
+versioned at 1.7.0 with NuGet READMEs); demos, the web host, tools, and tests are not. Publishing to
+nuget.org is a future decision — `dotnet pack` produces valid local packages today.
+
 ## License
 
 Demonstration / research prototype.

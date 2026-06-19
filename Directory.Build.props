@@ -1,0 +1,27 @@
+<Project>
+
+  <!-- Shared release + package metadata for the whole solution. Nothing packs by default
+       (IsPackable=false); only the three genuine libraries (Tlm, Core, Integrations) opt back in.
+       Demos, tools, the web host, the E2E/bench runners, the template, and tests stay non-packable. -->
+
+  <PropertyGroup>
+    <Version>1.7.0</Version>
+    <Authors>Chad Sandor</Authors>
+    <Company>wyckit</Company>
+    <Product>IntentMesh</Product>
+    <Copyright>Copyright (c) wyckit</Copyright>
+    <RepositoryUrl>https://github.com/wyckit/IntentMesh</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>https://github.com/wyckit/IntentMesh</PackageProjectUrl>
+    <PackageTags>ai-agents;agent-security;verified-intent;prompt-injection;mcp;policy;audit;dotnet</PackageTags>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+
+    <!-- Research/SDK preview: all rights reserved (no OSS license claimed). Publishing to nuget.org is
+         a future decision; `dotnet pack` produces valid, versioned, documented nupkgs today. -->
+    <PackageReleaseNotes>v1.7.0 — verified-intent platform preview. See CHANGELOG.md.</PackageReleaseNotes>
+
+    <!-- Default: not packable. Library projects set IsPackable=true explicitly. -->
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+</Project>
