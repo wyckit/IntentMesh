@@ -1,5 +1,8 @@
 # IntentMesh v0.1 — Task List
 
+> **Historical (v0.1 task list).** Status: complete — shipped through v1.5 (111/111 tests,
+> IntentBench 25/25). Kept for provenance; the current forward plan is [V1.6-SCOPE.md](V1.6-SCOPE.md).
+
 > Ordered top-down. Each task is sized to be one TaskCreate item. Reuse PassGen
 > (`C:\Software\research\randomstringllm\PassGen`) as the reference implementation — author TLMs in
 > the `PassGen.Tlm` format, load via RSRM / sage-rsrm, and keep the resolve -> validate -> execute
