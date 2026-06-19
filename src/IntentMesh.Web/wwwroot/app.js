@@ -45,10 +45,12 @@ $('#prompt').addEventListener('keydown', e => { if (e.key === 'Enter' && (e.meta
 document.querySelectorAll('.mode-btn').forEach(b => b.onclick = () => {
   document.querySelectorAll('.mode-btn').forEach(x => x.classList.remove('active'));
   b.classList.add('active');
-  const compare = b.dataset.mode === 'compare';
-  $('#compareView').classList.toggle('hidden', !compare);
-  $('#controlView').classList.toggle('hidden', compare);
-  if (compare) startCompareAnimation();
+  const mode = b.dataset.mode;
+  $('#controlView').classList.toggle('hidden', mode !== 'control');
+  $('#opsView').classList.toggle('hidden', mode !== 'ops');
+  $('#compareView').classList.toggle('hidden', mode !== 'compare');
+  if (mode === 'compare') startCompareAnimation();
+  if (mode === 'ops') loadRuns();
 });
 
 function run(keepApprovals) {
@@ -478,6 +480,141 @@ function resetCompareSteps() {
 }
 
 $('#replayBtn').onclick = startCompareAnimation;
+
+// ── Operations: run history · approval reasoning · replay · integrity ──
+function loadRuns() {
+  fetch('/api/runs').then(r => r.json()).then(rows => {
+    const box = $('#opsRuns'); box.innerHTML = '';
+    if (!rows.length) { box.innerHTML = '<p class="empty">No runs yet — run a pipeline to populate history.</p>'; return; }
+    const tbl = el('table', 'ops-table');
+    tbl.innerHTML = '<thead><tr><th>run</th><th>prompt</th><th>blocked</th><th>confirm</th><th>verified</th><th>key</th><th>appr.</th></tr></thead>';
+    const tb = el('tbody');
+    rows.forEach(r => {
+      const tr = el('tr', 'ops-row');
+      tr.innerHTML =
+        `<td class="mono">${esc(r.runId)}</td>` +
+        `<td class="ops-prompt">${esc(clip(r.prompt, 64))}</td>` +
+        `<td class="num ${r.blocked ? 'bad' : ''}">${r.blocked}</td>` +
+        `<td class="num">${r.needsConfirmation}</td>` +
+        `<td class="num ok">${r.verified}</td>` +
+        `<td class="mono">${esc(r.keyId)}</td>` +
+        `<td class="num">${r.approvalCount}</td>`;
+      tr.onclick = () => openRun(r.runId);
+      tb.appendChild(tr);
+    });
+    tbl.appendChild(tb); box.appendChild(tbl);
+  });
+}
+
+function openRun(id) {
+  const box = $('#opsDetail');
+  box.innerHTML = '<p class="empty">Loading…</p>';
+  fetch('/api/runs/' + encodeURIComponent(id)).then(r => r.json()).then(b => {
+    box.innerHTML = '';
+    const head = el('div', 'ops-detail-head');
+    head.innerHTML = `<div class="mono ops-id">${esc(id)}</div><div class="ops-detail-prompt">"${esc(b.prompt)}"</div>`;
+    box.appendChild(head);
+
+    // Action bar: verify integrity, replay (diff), and links to each signed split artifact.
+    const bar = el('div', 'ops-actions');
+    const vBtn = el('button', 'exp-btn'); vBtn.textContent = '✓ Verify integrity';
+    vBtn.onclick = () => verifyRun(id);
+    const rBtn = el('button', 'exp-btn'); rBtn.textContent = '↺ Replay (diff)';
+    rBtn.onclick = () => replayRun(id);
+    bar.append(vBtn, rBtn);
+    ['intent.graph.json', 'policy.decisions.json', 'execution.trace.json', 'verification.report.json', 'audit.signed.json'].forEach(name => {
+      const a = el('a', 'exp-btn artifact-link');
+      a.textContent = '⬇ ' + name.replace('.json', '');
+      a.href = '/api/runs/' + encodeURIComponent(id) + '/artifact/' + name;
+      a.target = '_blank';
+      bar.appendChild(a);
+    });
+    box.appendChild(bar);
+
+    const out = el('div', 'ops-out'); out.id = 'opsOut'; box.appendChild(out);
+
+    // Policy evidence — the decisions that produced this run.
+    const sec = el('div', 'ops-policy');
+    sec.innerHTML = '<div class="nd-sec-title">Policy evidence</div>';
+    (b.policyDecisions.decisions || []).forEach(p => {
+      const row = el('div', 'row' + (p.decision === 'Block' ? ' block' : ''));
+      row.innerHTML = `<div class="top"><div class="lbl">${esc(p.label)}</div>` +
+        `<span class="badge ${statusClassFromDecision(p.decision)}">${esc(p.decision.toUpperCase())}</span></div>` +
+        `<div class="reason">${esc(p.reason)}</div>` +
+        `<div class="rules">rules: ${esc((p.triggeredRules || []).join(', '))}</div>`;
+      sec.appendChild(row);
+    });
+    box.appendChild(sec);
+  }).catch(() => { box.innerHTML = '<p class="empty">Could not load run.</p>'; });
+}
+
+function verifyRun(id) {
+  const out = $('#opsOut'); if (out) out.innerHTML = 'Verifying…';
+  fetch('/api/runs/' + encodeURIComponent(id) + '/verify').then(r => r.json()).then(v => {
+    const ok = v.signatureValid && v.artifactsValid;
+    out.innerHTML = `<div class="verdict ${ok ? 'ok' : 'bad'}">` +
+      `${ok ? '✓ TAMPER-EVIDENT: bundle + all artifacts verify' : '✕ INTEGRITY FAILED'} · ` +
+      `signature ${v.signatureValid ? '✓' : '✕'} · artifacts ${v.artifactsValid ? '✓' : '✕'} · key ${esc(v.keyId)}</div>`;
+  });
+}
+
+function replayRun(id) {
+  const out = $('#opsOut'); if (out) out.innerHTML = 'Replaying…';
+  fetch('/api/runs/' + encodeURIComponent(id) + '/replay', { method: 'POST' }).then(r => r.json()).then(v => {
+    const ok = v.signatureVerified && v.reproduced;
+    let html = `<div class="verdict ${ok ? 'ok' : 'bad'}">` +
+      `${ok ? '✓ REPRODUCED byte-for-byte' : (v.reproduced ? '' : '✕ NON-REPRODUCTION')}` +
+      ` · signature ${v.signatureVerified ? '✓' : '✕'} · reproduced ${v.reproduced ? '✓' : '✕'}</div>`;
+    html += `<div class="ops-diff"><div class="mono">stored:     ${esc(clip(v.storedSignature, 40))}</div>` +
+      `<div class="mono">recomputed: ${esc(clip(v.recomputedSignature, 40))}</div></div>`;
+    out.innerHTML = html;
+  });
+}
+
+function explainPrompt() {
+  const prompt = $('#prompt').value.trim();
+  const box = $('#explain');
+  if (!prompt) { box.innerHTML = '<p class="empty">Enter a prompt above first.</p>'; return; }
+  box.innerHTML = '<p class="empty">Explaining…</p>';
+  fetch('/api/explain', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt, approvals: [...APPROVALS] })
+  }).then(r => r.json()).then(x => {
+    box.innerHTML = '';
+    section('Blocked — cannot proceed (approval can’t lift these)', x.blocked, true);
+    section('Awaiting approval', x.awaitingApproval, false);
+    if (x.ifApproved && x.ifApproved.length) {
+      const sec = el('div', 'ops-policy');
+      sec.innerHTML = '<div class="nd-sec-title">If you approve every pending item…</div>';
+      x.ifApproved.forEach(d => {
+        const row = el('div', 'row');
+        row.innerHTML = `<div class="top"><div class="lbl">${esc(d.label)}</div>` +
+          `<span class="badge ${d.changed ? 'st-Verified' : 'st-Blocked'}">${esc(d.before)} → ${esc(d.after)}</span></div>`;
+        sec.appendChild(row);
+      });
+      box.appendChild(sec);
+    }
+    if (!x.blocked.length && !x.awaitingApproval.length) box.innerHTML = '<p class="empty">Nothing gated — every node was allowed.</p>';
+
+    function section(title, items, isBlock) {
+      if (!items || !items.length) return;
+      const sec = el('div', 'ops-policy');
+      sec.innerHTML = `<div class="nd-sec-title">${esc(title)}</div>`;
+      items.forEach(g => {
+        const row = el('div', 'row' + (isBlock ? ' block' : ''));
+        row.innerHTML = `<div class="top"><div class="lbl">${esc(g.label)}</div>` +
+          `<span class="badge ${statusClassFromDecision(g.decision)}">${esc(g.decision.toUpperCase())}</span></div>` +
+          `<div class="reason">${esc(g.reason)}</div>` +
+          `<div class="rules">rules: ${esc((g.triggeredRules || []).join(', '))}</div>`;
+        sec.appendChild(row);
+      });
+      box.appendChild(sec);
+    }
+  });
+}
+
+$('#refreshRuns').onclick = loadRuns;
+$('#explainBtn').onclick = explainPrompt;
 
 // ── helpers ────────────────────────────────────────────────────────
 function pretty(s) { return ({ NeedsConfirmation: 'needs-confirm', Verified: 'verified', Executed: 'executed', Blocked: 'blocked', Allowed: 'allowed', Resolved: 'resolved', Pending: 'pending' })[s] || s; }
