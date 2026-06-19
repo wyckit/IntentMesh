@@ -107,9 +107,15 @@ is faked.
   diffable and versioned with the bundle. A dedicated declarative policy *language* that compiles
   into it is the next refinement.
 
-**Deliberately future (not faked):** real, sandboxed OAuth adapters (Gmail/Calendar/FS) behind the
-capability grants; live RSRM / sage-rsrm hot-load of the `im-*` bundle; a production key-management
-story for the audit signer; multi-step human-approval workflows.
+**Shipped since (v1.4–v1.5):** real MCP stdio **and** Streamable HTTP/SSE transports, OpenAPI
+JSON/YAML import with `$ref` + semantic inference, a real SMTP transport **and** an OAuth 2.0 device
+flow, plus kernel hardening (env-keyed audit, fail-closed parsing, SSRF/path safety, provable
+consent). See [INTEGRATIONS.md](INTEGRATIONS.md) and [SECURITY_MODEL.md](SECURITY_MODEL.md).
+
+**Still deliberately future (not faked):** live RSRM / sage-rsrm hot-load of the `im-*` bundle; a
+production key-management *backend* (KMS/HSM) behind the existing `IAuditKeyProvider` seam;
+audit-log persistence backends; multi-step human-approval workflows; a declarative policy DSL (see
+[POLICY-AUTHORING.md](POLICY-AUTHORING.md)).
 
 ---
 

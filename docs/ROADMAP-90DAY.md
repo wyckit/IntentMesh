@@ -1,8 +1,10 @@
 # IntentMesh — 90-Day Execution Roadmap
 
-> From a tested v1.0 prototype to a visual, benchmarked, reproducible proof of the **Verified Intent
-> Runtime** category. Six fortnights. See [GOAL-verified-intent-runtime.md](GOAL-verified-intent-runtime.md)
-> for the why and [TASKLIST-NEXT.md](TASKLIST-NEXT.md) for the task breakdown.
+> **Historical execution plan.** From a tested v1.0 prototype to a visual, benchmarked, reproducible
+> proof of the **Verified Intent Runtime** category. Six fortnights. **Status: shipped through v1.5**
+> (real integrations + kernel hardening, 111/111 tests, IntentBench 25/25); the current forward plan
+> is [V1.6-SCOPE.md](V1.6-SCOPE.md). See [GOAL-verified-intent-runtime.md](GOAL-verified-intent-runtime.md)
+> for the why and [TASKLIST-NEXT.md](TASKLIST-NEXT.md) for the original task breakdown.
 
 The biggest product decision: **do not go broad.** Make one narrow thing perfect — *a safe agent
 control room that blocks indirect prompt injection while still completing the user's real task.*

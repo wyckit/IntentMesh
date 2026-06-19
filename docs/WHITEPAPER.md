@@ -93,10 +93,13 @@ identical: the model may propose; only typed, validated intent executes.
 
 ## 6. Scope and limitations
 
-This is a research runtime. Tool adapters are sandboxed; real OAuth adapters, live MCP transport,
-and a production key-management story for the audit signer are deliberately stubbed and documented
-(see INTEGRATIONS.md). The benchmark baselines are deterministic architecture-class models, not live
-LLMs; they illustrate a structural difference, not a product comparison.
+This is a research runtime. The demo adapters are sandboxed, but the integration seams are now
+**real** (v1.4–v1.5): MCP stdio + Streamable HTTP/SSE transport, OpenAPI JSON/YAML import, a real
+SMTP transport and an OAuth 2.0 device flow, and a hardened signed-audit path behind an
+`IAuditKeyProvider` seam (see INTEGRATIONS.md / SECURITY_MODEL.md). Still future: a KMS/HSM
+key-management *backend*, audit-log persistence backends, and RSRM hot-load. The benchmark baselines
+are deterministic architecture-class models, not live LLMs; they illustrate a structural difference,
+not a product comparison.
 
 ## 7. Conclusion
 

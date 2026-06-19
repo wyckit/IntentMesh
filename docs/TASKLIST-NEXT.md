@@ -1,5 +1,9 @@
 # IntentMesh — Next-Phase Task List (Verified Intent Runtime)
 
+> **Historical task breakdown.** The Phase 5 integration items (MCP transport, OpenAPI import, OAuth)
+> are **shipped** as of v1.4–v1.5 (see [INTEGRATIONS.md](INTEGRATIONS.md)); the current forward plan
+> is [V1.6-SCOPE.md](V1.6-SCOPE.md).
+
 > Work breakdown for the 90-day push. Grouped by phase; each item is sized to be one task. See
 > [GOAL-verified-intent-runtime.md](GOAL-verified-intent-runtime.md) and
 > [ROADMAP-90DAY.md](ROADMAP-90DAY.md). Expert owner shown in `[brackets]` — dispatch in parallel.

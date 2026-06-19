@@ -548,6 +548,8 @@ public sealed class IntegrationTests
         var transport = new NullEmailTransport();
         var adapter = OAuthAdapterWiringExample.CreateAdapter(transport);
         var ws = Workspace.CreateDemo();
+        // Draft-before-send: the send continues an existing draft (addressed by email here).
+        ws.Drafts.Add(new EmailDraft("Meeting summary", "sarah@company.com", "sarah@company.com", "Meeting summary", "summary body", Array.Empty<string>(), Sent: false));
 
         var node = new IntentNode
         {

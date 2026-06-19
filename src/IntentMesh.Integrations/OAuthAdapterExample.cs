@@ -121,19 +121,30 @@ public sealed class GmailSendAdapter : IToolAdapter
                 $"send to {send.Recipient} requires explicit user approval — NOT transmitted.",
                 "0 messages transmitted");
 
-        // REAL send via the configured transport.
-        bool transmitted;
-        try { transmitted = _transport.SendAsync(send.Recipient, send.DraftRef, string.Join(",", send.BodySourceRefs)).GetAwaiter().GetResult(); }
-        catch (Exception ex)
-        { return ToolHost.Halt(node.Id, $"transport error sending to {send.Recipient}: {ex.Message}", "0 messages transmitted"); }
+        // Draft-before-send — the SAME invariant the built-in EmailAdapter enforces, with draftRef as
+        // the AUTHORITATIVE handle: the send must reference an existing draft by its exact id (a wrong
+        // id does not transmit even if a recipient matches). recipient/subject/body come FROM that
+        // draft, so this real-transport adapter never transmits raw intent fields.
+        var draft = ws.Drafts.FirstOrDefault(d => d.Ref.Equals(send.DraftRef, StringComparison.OrdinalIgnoreCase));
+        if (draft is null)
+            return ToolHost.Halt(node.Id,
+                $"Send halted: no draft with id '{send.DraftRef}' — a send must reference an existing draft by its exact draftRef.",
+                "0 messages transmitted");
+        var to = string.IsNullOrEmpty(draft.RecipientEmail) || draft.RecipientEmail == "?" ? draft.Recipient : draft.RecipientEmail;
 
-        ws.SentEmails.Add(send.Recipient);
+        // REAL send via the configured transport — to the DRAFT's recipient/subject/body.
+        bool transmitted;
+        try { transmitted = _transport.SendAsync(to, draft.Subject, draft.Body).GetAwaiter().GetResult(); }
+        catch (Exception ex)
+        { return ToolHost.Halt(node.Id, $"transport error sending to {to}: {ex.Message}", "0 messages transmitted"); }
+
+        ws.SentEmails.Add(draft.Recipient);
         return ToolHost.Ok(node.Id,
             transmitted
-                ? $"Sent to {send.Recipient} via {_transport.Describe()}."
-                : $"Recorded send to {send.Recipient} ({_transport.Describe()}). Set SMTP_* env to transmit for real.",
+                ? $"Sent to {draft.Recipient} <{to}> via {_transport.Describe()}."
+                : $"Recorded send to {draft.Recipient} ({_transport.Describe()}). Set SMTP_* env to transmit for real.",
             transmitted ? "1 message transmitted" : "0 messages transmitted (no SMTP configured)",
-            $"recipient = {send.Recipient}");
+            $"recipient = {draft.Recipient}");
     }
 
     /// <summary>

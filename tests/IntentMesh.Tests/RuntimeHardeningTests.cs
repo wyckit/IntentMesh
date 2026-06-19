@@ -97,7 +97,7 @@ public sealed class RuntimeHardeningTests
         });
         var ws = Workspace.CreateDemo();
         ws.Drafts.Clear();
-        ws.Drafts.Add(new EmailDraft("Attacker", "attacker@evil.com", "Report", "body", System.Array.Empty<string>(), Sent: false));
+        ws.Drafts.Add(new EmailDraft("d1", "Attacker", "attacker@evil.com", "Report", "body", System.Array.Empty<string>(), Sent: false));
 
         var results = new PostconditionVerifier().Verify(graph, ws, new HashSet<string> { "Acme Client" });
         var check = Assert.Single(results, v => v.Id == "pc-recipient-contract-match");

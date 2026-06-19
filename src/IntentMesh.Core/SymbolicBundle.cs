@@ -5,7 +5,7 @@ namespace IntentMesh.Core;
 /// <summary>Metadata for one registered action contract, loaded from im-action-contracts.</summary>
 public sealed record ContractInfo(
     string Kind, string Label, string Risk, string SideEffect,
-    bool RequiresConfirmation, IReadOnlyList<string> Fields, IReadOnlyList<string> Postconditions);
+    bool RequiresConfirmation, IReadOnlyList<string> Fields, IReadOnlyList<string> RequiredFields, IReadOnlyList<string> Postconditions);
 
 /// <summary>One cue: trigger synonyms -> a signal. Loaded from im-nl-vocabulary.</summary>
 public sealed record CueInfo(string Id, IReadOnlyList<string> Triggers, string Signal);
@@ -81,7 +81,7 @@ public sealed class SymbolicBundle
                         contracts[c.Id] = new ContractInfo(
                             c.Id, c.Label, P("Risk"), P("SideEffect"),
                             bool.TryParse(P("RequiresConfirmation"), out var rc) && rc,
-                            Split(P("Fields")), Split(P("Postconditions")));
+                            Split(P("Fields")), Split(P("RequiredFields")), Split(P("Postconditions")));
                         break;
                     case "Postcondition":
                         postLabels.Add(c.Label);

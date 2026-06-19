@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/wyckit/IntentMesh/actions/workflows/ci.yml/badge.svg)](https://github.com/wyckit/IntentMesh/actions/workflows/ci.yml)
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4.svg)](https://dotnet.microsoft.com/)
-[![tests](https://img.shields.io/badge/tests-111%2F111-34d399.svg)](#status)
+[![tests](https://img.shields.io/badge/tests-126%2F126-34d399.svg)](#status)
 [![IntentBench](https://img.shields.io/badge/IntentBench-25%2F25-34d399.svg)](docs/WHITEPAPER.md)
 
 Before an AI agent sends an email, edits code, queries data, books a meeting, deletes a file, or
@@ -177,7 +177,12 @@ calls; IntentMesh governs intent before it becomes a tool call.* The product is 
 **Progress against the plan — all six phases complete, shipped through v1.5.0:** Phase 1 (clarity) ✓ · Phase 2
 (signed artifacts, replay, contract-boundary) ✓ · Phase 3 (Control Room v1) ✓ · Phase 4 (IntentBench
 25/25) ✓ · Phase 5 (SDK + MCP proxy / OpenAPI import / real-adapter example) ✓ · Phase 6 (manifesto,
-whitepaper, landing) ✓. **111/111 tests · IntentBench 25/25 · TLM 7/7.**
+whitepaper, landing) ✓. **126/126 tests · IntentBench 25/25 · TLM 7/7.**
+
+**Proven vs. future (claims discipline).** Everything in the list below has a passing test that would
+fail if the claim stopped being true. What is *not* yet built is named as such — see
+[docs/V1.6-SCOPE.md](docs/V1.6-SCOPE.md) for the current scope and the head-to-head in
+[docs/BENCHMARK-REPORT.md](docs/BENCHMARK-REPORT.md) (IntentMesh vs. a naive agent vs. an MCP-gated agent).
 
 ## Core principles
 
@@ -187,8 +192,8 @@ whitepaper, landing) ✓. **111/111 tests · IntentBench 25/25 · TLM 7/7.**
 
 ## Status
 
-Research prototype, v1.5.0. Symbolic layer: 7 TLMs, ~125 concepts, 7/7 round-trip verify; typed action
-contracts across four domains. **xUnit 111/111.** Five demo scenarios. Delivered beyond v0.1:
+Research prototype, v1.6.0. Symbolic layer: 7 TLMs, ~125 concepts, 7/7 round-trip verify; typed action
+contracts across four domains. **xUnit 126/126.** Five demo scenarios. Delivered beyond v0.1:
 
 - **v0.2** — interactive confirmation flow (Approve/Undo gated nodes; a blocked zero-trust node can
   never be approved), deterministic audit-trace export (JSON/Markdown), and an emergent **skill
@@ -212,10 +217,21 @@ contracts across four domains. **xUnit 111/111.** Five demo scenarios. Delivered
   size/event caps, and **provable consent** (the approval set is folded into the signed audit, with a
   blanket-approval cap). Each defense is exercised by **IntentBench-Red**, an adversarial suite that
   attacks the kernel itself. See [docs/SECURITY_MODEL.md](docs/SECURITY_MODEL.md).
+- **v1.6** — one complete, externally-credible path, end to end: a real **LLM proposer**
+  (`LlmIntentProposer` + `AnthropicLlmClient`, zero-dep) behind the untrusted proposal seam —
+  Translation-Drift bounded and fail-closed (hallucinated kinds dropped, malformed output yields
+  nothing, a rogue send is still gated); **file-based run/audit persistence + replay**
+  (`FileRunArtifactStore`, deterministic run id, signature-verifying `RunReplay`); a **live benchmark
+  harness** (`intentbench --live`) and the published [comparison report](docs/BENCHMARK-REPORT.md);
+  and a runnable end-to-end demo (`dotnet run --project src/IntentMesh.E2E`). See [docs/V1.6-SCOPE.md](docs/V1.6-SCOPE.md).
+
+**Deliberately future (not built, not faked):** a KMS/HSM key-management *backend* behind the existing
+`IAuditKeyProvider` seam, durable audit-log persistence backends (file-based shipped; DB/blob future),
+live RSRM hot-load of the `im-*` bundle, a declarative policy DSL (see [docs/POLICY-AUTHORING.md](docs/POLICY-AUTHORING.md)),
+and multi-tenant isolation / authn-z.
 
 Conventions follow PassGen: .NET 10, nullable + implicit usings, file-scoped namespaces,
-`sealed record` contracts, xUnit. Self-contained git repo. See [docs/ROADMAP.md](docs/ROADMAP.md)
-for what's deliberately left as future (RSRM hot-load, a declarative policy DSL, audit-log persistence).
+`sealed record` contracts, xUnit. Self-contained git repo. See [docs/ROADMAP.md](docs/ROADMAP.md) for the versioned plan.
 
 ## License
 
