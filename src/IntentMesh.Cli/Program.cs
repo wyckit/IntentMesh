@@ -112,9 +112,12 @@ if (rest[0] == "verify-run")
     TraceBundle bundle;
     try { bundle = store.Load(rest[2]); }
     catch (Exception ex) { Console.Error.WriteLine(ex.Message); return 1; }
-    bool artifactsOk = store.VerifyArtifacts(rest[2]);
-    var replay = RunReplay.Reproduce(runtime, Workspace.CreateDemo(), bundle);
-    Console.WriteLine($"run:       {rest[2]}  (key {bundle.SignedAudit.KeyId})");
+    // Rotation-aware: prior keys (INTENTMESH_AUDIT_PRIOR_KEYS) let a run signed under an older key
+    // still verify after the current signing key has rotated.
+    var keyProvider = AuditKeyProviders.FromEnvironment();
+    bool artifactsOk = store.VerifyArtifacts(rest[2], keyProvider);
+    var replay = RunReplay.Reproduce(runtime, Workspace.CreateDemo(), bundle, keyProvider);
+    Console.WriteLine($"run:       {rest[2]}  (key {bundle.KeyId})");
     Console.WriteLine($"prompt:    \"{bundle.Prompt}\"");
     Console.WriteLine($"artifacts: {(artifactsOk ? "INTACT (bundle + 5 split files match the signature)" : "TAMPERED")}");
     Console.WriteLine($"signature: {(replay.SignatureVerified ? "VALID" : "INVALID")}");

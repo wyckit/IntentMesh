@@ -29,7 +29,9 @@ builders, credible against real agents, and operationally clear for tool governa
 ### Area 4 — Integrations hardened for realistic use
 - MCP stdio: per-response **read timeout** + **8 MiB line cap** (hung/runaway server can't block or
   OOM the runtime).
-- `RetryingMcpClient`: transient retry with exponential backoff; fatal errors never retried.
+- `RetryingMcpClient`: transient retry with exponential backoff; fatal errors never retried. Retries
+  read-only `ListTools` by default; `CallTool` is **not** retried unless `retryToolCalls` is set
+  (a mid-call timeout must never re-issue a non-idempotent send/write/delete).
 - OAuth: token carries the **granted scope**; a downgraded grant is refused fail-closed.
 - `McpProxy.GateAndForward` reports **progress** for a control room / CLI.
 
@@ -47,6 +49,18 @@ builders, credible against real agents, and operationally clear for tool governa
 ### Area 8 — Public narrative & release posture
 - [MATURITY.md](docs/MATURITY.md) — canonical proven / experimental / future statement.
 - This changelog; README refreshed to v1.7.
+
+### PR #5 review hardening
+- **Audit key rotation now covers the whole bundle.** `TraceBundle` records the `KeyId` that produced
+  its `BundleSignature`; `VerifySignature`, `FileRunArtifactStore.VerifyArtifacts`, and
+  `RunReplay.Reproduce` gained `IAuditKeyProvider` overloads that resolve **that recorded key** (not
+  just the current one), so a run persisted before a rotation still verifies and replays byte-for-byte.
+  CLI/Control Room build the provider via `AuditKeyProviders.FromEnvironment()` (current key +
+  `INTENTMESH_AUDIT_PRIOR_KEYS`). Regression-tested.
+- **Retry is idempotency-safe** (see Area 4) — `CallTool` no longer retried by default.
+- **Stdio line cap enforced during read.** `McpStdioClient` reads in bounded chunks and checks
+  `MaxLineChars` as it accumulates (≈ bytes for JSON framing), so a server streaming an unbounded line
+  is cut off instead of being buffered whole; framing across messages is preserved.
 
 ## v1.6.0 — One externally-credible path, end to end
 Real LLM proposer (`LlmIntentProposer` + `AnthropicLlmClient`), file-based run/audit persistence +

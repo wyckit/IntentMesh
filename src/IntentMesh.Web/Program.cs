@@ -29,6 +29,11 @@ var runsDir = Environment.GetEnvironmentVariable("INTENTMESH_RUNS_DIR")
     ?? Path.Combine(Directory.GetCurrentDirectory(), "runs");
 var store = new FileRunArtifactStore(runsDir);
 
+// The audit key provider, rotation-aware: prior keys (INTENTMESH_AUDIT_PRIOR_KEYS) let runs signed
+// before a key rotation still verify/replay. Sign and verify go through THIS provider so a bundle's
+// recorded key id always resolves to the key that produced it.
+var keyProvider = AuditKeyProviders.FromEnvironment();
+
 var demos = new[]
 {
     new { id = 1, title = "Friday planning", prompt = "Plan my Friday, move anything flexible, book an hour for the gym, and draft Sarah the meeting notes." },
@@ -54,7 +59,7 @@ app.MapPost("/api/run", (RunRequest req, HttpResponse http) =>
     // The run id is content-addressed (bundle signature), so re-running the same prompt is idempotent.
     try
     {
-        var runId = store.Save(TraceBundleBuilder.From(result, approvals.ToList()));
+        var runId = store.Save(TraceBundleBuilder.From(result, approvals.ToList(), keyProvider));
         http.Headers["X-Run-Id"] = runId;   // SPA reads this to deep-link the persisted run
     }
     catch (Exception ex) { Console.Error.WriteLine($"WARN: could not persist run: {ex.Message}"); }
@@ -96,9 +101,9 @@ app.MapGet("/api/runs/{id}/verify", (string id) =>
         return Results.Json(new
         {
             runId = id,
-            signatureValid = TraceBundleBuilder.VerifySignature(bundle),
-            artifactsValid = store.VerifyArtifacts(id),
-            keyId = bundle.SignedAudit.KeyId,
+            signatureValid = TraceBundleBuilder.VerifySignature(bundle, keyProvider),
+            artifactsValid = store.VerifyArtifacts(id, keyProvider),
+            keyId = bundle.KeyId,
         });
     }
     catch (FileNotFoundException) { return Results.NotFound(new { error = $"no run '{id}'" }); }
@@ -111,7 +116,7 @@ app.MapPost("/api/runs/{id}/replay", (string id) =>
     try
     {
         var saved = store.Load(id);
-        var replay = RunReplay.Reproduce(runtime, Workspace.CreateDemo(), saved);
+        var replay = RunReplay.Reproduce(runtime, Workspace.CreateDemo(), saved, keyProvider);
         return Results.Json(new
         {
             runId = id,

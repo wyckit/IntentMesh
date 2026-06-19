@@ -47,6 +47,39 @@ public sealed class AuditOperationsTests
         => Assert.Throws<InvalidOperationException>(() => new RotatingAuditKeyProvider("k", new byte[] { 1, 2, 3 }));
 
     [Fact]
+    public void A_persisted_run_still_verifies_and_replays_after_the_signing_key_rotates()
+    {
+        var root = TempRoot();
+        try
+        {
+            var rt = Runtime();
+            var keyA = Key(0xA1);
+
+            // Persist a run SIGNED UNDER key A (records KeyId "k-2026a" on the bundle).
+            var store = new FileRunArtifactStore(root);
+            var signProvider = new RotatingAuditKeyProvider("k-2026a", keyA);
+            var runId = store.Save(TraceBundleBuilder.From(rt.Run(Prompt, Workspace.CreateDemo()), null, signProvider));
+            Assert.Equal("k-2026a", store.Load(runId).KeyId);
+
+            // Rotate: current key is now k-2026b; k-2026a retained as a prior key.
+            var rotated = new RotatingAuditKeyProvider("k-2026b", Key(0xB2),
+                new Dictionary<string, byte[]> { ["k-2026a"] = keyA });
+
+            // The whole bundle path must still verify + reproduce under the rotated provider.
+            Assert.True(store.VerifyArtifacts(runId, rotated), "old run's artifacts must verify after rotation");
+            var replay = RunReplay.Reproduce(rt, Workspace.CreateDemo(), store.Load(runId), rotated);
+            Assert.True(replay.SignatureVerified);
+            Assert.True(replay.Reproduced, "replay must reproduce byte-for-byte under the recorded (prior) key");
+
+            // A provider that lost the old key cannot verify or reproduce it (fail-closed, no silent pass).
+            var lostOldKey = new RotatingAuditKeyProvider("k-2026b", Key(0xB2));
+            Assert.False(store.VerifyArtifacts(runId, lostOldKey));
+            Assert.False(RunReplay.Reproduce(rt, Workspace.CreateDemo(), store.Load(runId), lostOldKey).Reproduced);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
     public void Retention_prune_archives_older_runs_and_keeps_the_newest()
     {
         var root = TempRoot();

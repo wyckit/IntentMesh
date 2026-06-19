@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 
 namespace IntentMesh.Integrations;
@@ -15,14 +16,21 @@ public sealed class McpStdioClient : IMcpClient
     /// so a forwarded tool call can't block the runtime forever (fail-closed against a dead transport).</summary>
     public static readonly TimeSpan DefaultReadTimeout = TimeSpan.FromSeconds(30);
 
-    /// <summary>Hard cap on a single JSON-RPC line; a server streaming an unbounded line can't
-    /// exhaust memory. 8 MiB is far above any legitimate tools/list or tools/call response.</summary>
-    public const int MaxLineBytes = 8 * 1024 * 1024;
+    /// <summary>Hard cap on a single JSON-RPC line, enforced WHILE reading (not after the whole line is
+    /// buffered) so a server streaming an unbounded line can't exhaust memory first. Counted in chars
+    /// (≈ bytes for the ASCII-dominant JSON-RPC framing); 8M is far above any legitimate response.</summary>
+    public const int MaxLineChars = 8 * 1024 * 1024;
+
+    private const int ReadChunkChars = 16 * 1024;
 
     private readonly Process _proc;
     private readonly StreamWriter _stdin;
     private readonly StreamReader _stdout;
     private readonly TimeSpan _readTimeout;
+    // Residual chars read past the last newline (a chunk read can overshoot into the next message);
+    // carried to the next ReadLine so framing is preserved. Single-threaded request/response client.
+    private readonly char[] _buf = new char[ReadChunkChars];
+    private int _bufPos, _bufLen;
     private int _id;
 
     private McpStdioClient(Process proc, TimeSpan readTimeout)
@@ -92,15 +100,13 @@ public sealed class McpStdioClient : IMcpClient
         while (true)
         {
             string? line;
-            try { line = _stdout.ReadLineAsync(deadline.Token).AsTask().GetAwaiter().GetResult(); }
+            try { line = ReadLineBounded(method, deadline.Token); }
             catch (OperationCanceledException)
             {
                 throw new TimeoutException($"MCP server did not answer '{method}' within {_readTimeout.TotalSeconds:0}s — abandoning the call (fail-closed).");
             }
             if (line is null) throw new IOException("MCP server closed the connection.");
             if (line.Length == 0) continue;
-            if (line.Length > MaxLineBytes)
-                throw new IOException($"MCP server response line exceeded {MaxLineBytes} bytes — refusing to buffer it.");
             using var doc = JsonDocument.Parse(line);
             var root = doc.RootElement;
             if (!root.TryGetProperty("id", out var idEl) || idEl.ValueKind != JsonValueKind.Number || idEl.GetInt32() != id)
@@ -110,6 +116,40 @@ public sealed class McpStdioClient : IMcpClient
             return root.GetProperty("result").Clone();   // Clone survives JsonDocument disposal
         }
     }
+
+    /// <summary>Read one newline-delimited line, enforcing <see cref="MaxLineChars"/> AS IT ACCUMULATES
+    /// — chunks are read into a fixed buffer and the cap is checked before each refill, so a server
+    /// streaming an unbounded line is cut off after ~cap+chunk chars instead of buffering it whole.
+    /// Chars read past the newline are retained for the next call (framing-safe). Honors the read
+    /// deadline via <paramref name="ct"/>; returns null at EOF.</summary>
+    private string? ReadLineBounded(string method, CancellationToken ct)
+    {
+        var line = new StringBuilder();
+        while (true)
+        {
+            if (_bufPos >= _bufLen)
+            {
+                _bufLen = _stdout.ReadAsync(_buf.AsMemory(), ct).AsTask().GetAwaiter().GetResult();
+                _bufPos = 0;
+                if (_bufLen == 0) return line.Length == 0 ? null : line.ToString();   // EOF
+            }
+            int nl = Array.IndexOf(_buf, '\n', _bufPos, _bufLen - _bufPos);
+            if (nl >= 0)
+            {
+                line.Append(_buf, _bufPos, nl - _bufPos);
+                _bufPos = nl + 1;
+                if (line.Length > MaxLineChars) throw LineTooLong(method);
+                return line.Length > 0 && line[^1] == '\r' ? line.ToString(0, line.Length - 1) : line.ToString();
+            }
+            // No newline in this chunk — take it all, enforce the cap, then refill.
+            line.Append(_buf, _bufPos, _bufLen - _bufPos);
+            _bufPos = _bufLen;
+            if (line.Length > MaxLineChars) throw LineTooLong(method);
+        }
+    }
+
+    private static IOException LineTooLong(string method)
+        => new($"MCP server response line for '{method}' exceeded {MaxLineChars} chars — refusing to buffer it (fail-closed).");
 
     private void Notify(string method)
     {

@@ -946,8 +946,8 @@ public sealed class IntegrationTests
     // (g) Hardening — transient retry/backoff, OAuth token-scope, progress
     // ═══════════════════════════════════════════════════════════════════════════
 
-    /// <summary>RetryingMcpClient retries a TRANSIENT transport failure with (zero-wait, injected)
-    /// backoff and succeeds — a flaky network blip doesn't surface to the caller.</summary>
+    /// <summary>RetryingMcpClient retries a TRANSIENT transport failure on the READ-ONLY ListTools with
+    /// (zero-wait, injected) backoff and succeeds — a flaky network blip doesn't surface to the caller.</summary>
     [Fact]
     public void RetryingMcpClient_retries_a_transient_failure_then_succeeds()
     {
@@ -960,8 +960,33 @@ public sealed class IntegrationTests
         });
         var retrying = new RetryingMcpClient(inner, maxAttempts: 3, delay: _ => Task.CompletedTask);
 
-        Assert.Equal("ok", retrying.CallTool("read_calendar", new Dictionary<string, string>()));
+        Assert.NotNull(retrying.ListTools());
         Assert.Equal(3, calls);   // two transient failures, third succeeds
+    }
+
+    /// <summary>CallTool is NOT retried by default — a transient failure after the server may have
+    /// already performed a non-idempotent side effect must not re-issue it (duplicate send/write/delete).</summary>
+    [Fact]
+    public void RetryingMcpClient_does_not_retry_CallTool_by_default()
+    {
+        int calls = 0;
+        var inner = new FakeMcpClient(() => { calls++; throw new IOException("reset after the send went out"); });
+        var retrying = new RetryingMcpClient(inner, maxAttempts: 5, delay: _ => Task.CompletedTask);
+
+        Assert.Throws<IOException>(() => retrying.CallTool("send_email", new Dictionary<string, string>()));
+        Assert.Equal(1, calls);   // single attempt — no duplicate side effect
+    }
+
+    /// <summary>CallTool IS retried when the caller opts in (idempotent tools only).</summary>
+    [Fact]
+    public void RetryingMcpClient_retries_CallTool_when_opted_in()
+    {
+        int calls = 0;
+        var inner = new FakeMcpClient(() => { calls++; if (calls < 2) throw new IOException("blip"); return "ok"; });
+        var retrying = new RetryingMcpClient(inner, maxAttempts: 3, delay: _ => Task.CompletedTask, retryToolCalls: true);
+
+        Assert.Equal("ok", retrying.CallTool("read_file", new Dictionary<string, string>()));
+        Assert.Equal(2, calls);
     }
 
     /// <summary>A FATAL error (an MCP protocol error / blocked call surfaces as
@@ -973,7 +998,7 @@ public sealed class IntegrationTests
         var inner = new FakeMcpClient(() => { calls++; throw new InvalidOperationException("MCP error: tool denied"); });
         var retrying = new RetryingMcpClient(inner, maxAttempts: 5, delay: _ => Task.CompletedTask);
 
-        Assert.Throws<InvalidOperationException>(() => retrying.CallTool("x", new Dictionary<string, string>()));
+        Assert.Throws<InvalidOperationException>(() => retrying.ListTools());
         Assert.Equal(1, calls);   // fatal → no retry
     }
 

@@ -52,6 +52,19 @@ bool ok = AuditSigner.Verify(loadedSignedAudit, provider);   // resolves the key
 `AuditSigner.Verify(SignedAudit, provider)` looks the key up **by the audit's own `KeyId`** — an
 unknown id fails closed. Retire a key only once no live run you need to verify still references it.
 
+Rotation covers the **whole bundle**, not just the audit envelope. A `TraceBundle` records the `KeyId`
+that produced its `BundleSignature`, and the full verification path resolves that recorded key:
+`TraceBundleBuilder.VerifySignature(bundle, provider)`, `FileRunArtifactStore.VerifyArtifacts(runId, provider)`,
+and `RunReplay.Reproduce(runtime, ws, saved, provider)` all take an `IAuditKeyProvider` and verify/replay
+a run **under the key it was signed with** — so a run persisted before a rotation still verifies and
+reproduces byte-for-byte (regression-tested in `AuditOperationsTests`). Pass a rotation-aware provider,
+not a raw key, when old runs may have been signed under a prior key.
+
+**Operationally**, the CLI (`verify-run`) and the Control Room build their provider from the
+environment via `AuditKeyProviders.FromEnvironment()`: the current key from `INTENTMESH_AUDIT_KEY` plus
+prior keys from **`INTENTMESH_AUDIT_PRIOR_KEYS`** — a `id=base64;id2=base64` list. Keep a rotated-out
+key in that list for as long as you need its runs to verify.
+
 ## Retention
 
 `FileRunArtifactStore` retains runs explicitly — there is no implicit deletion:

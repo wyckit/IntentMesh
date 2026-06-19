@@ -16,6 +16,10 @@ public interface IRunArtifactStore
     /// <summary>Full on-disk integrity check: the signed bundle verifies AND every derived split
     /// artifact byte-matches the re-derived bundle (catches tampering with any inspectable export).</summary>
     bool VerifyArtifacts(string runId, byte[]? key = null);
+
+    /// <summary>Rotation-aware integrity check: verify the bundle under the key its recorded id names
+    /// (the provider supplies historical keys), so a run signed before a key rotation still verifies.</summary>
+    bool VerifyArtifacts(string runId, IAuditKeyProvider provider);
 }
 
 /// <summary>
@@ -68,9 +72,14 @@ public sealed class FileRunArtifactStore : IRunArtifactStore
     /// re-derives. Catches tampering with either the bundle or any split export.
     /// </summary>
     public bool VerifyArtifacts(string runId, byte[]? key = null)
+        => VerifyArtifacts(runId, Load(runId), TraceBundleBuilder.VerifySignature(Load(runId), key));
+
+    public bool VerifyArtifacts(string runId, IAuditKeyProvider provider)
+        => VerifyArtifacts(runId, Load(runId), TraceBundleBuilder.VerifySignature(Load(runId), provider));
+
+    private bool VerifyArtifacts(string runId, TraceBundle bundle, bool signatureValid)
     {
-        var bundle = Load(runId);
-        if (!TraceBundleBuilder.VerifySignature(bundle, key)) return false;
+        if (!signatureValid) return false;
         var dir = Path.Combine(_root, runId);
         foreach (var (name, expected) in TraceBundleBuilder.SplitFiles(bundle))
         {
@@ -159,6 +168,20 @@ public static class RunReplay
         bool sigOk = TraceBundleBuilder.VerifySignature(saved, key);
         var approvals = saved.Approvals.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var rerun = TraceBundleBuilder.From(runtime.Run(saved.Prompt, freshWorkspace, approvals), saved.Approvals.ToList(), key);
+        return new ReplayResult(sigOk, rerun.BundleSignature == saved.BundleSignature, rerun.BundleSignature);
+    }
+
+    /// <summary>Rotation-aware replay: verify the saved bundle under the key its recorded id names, then
+    /// re-sign the deterministic re-run under that SAME key — so reproduction stays byte-identical even
+    /// after the current signing key has rotated. An unknown key id can't reproduce (fail-closed).</summary>
+    public static ReplayResult Reproduce(IntentMeshRuntime runtime, Workspace freshWorkspace, TraceBundle saved, IAuditKeyProvider provider)
+    {
+        bool sigOk = TraceBundleBuilder.VerifySignature(saved, provider);
+        var key = AuditSigner.ResolveKey(saved.KeyId, provider);
+        if (key is null) return new ReplayResult(sigOk, Reproduced: false, RecomputedSignature: "");
+        var approvals = saved.Approvals.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var rerun = TraceBundleBuilder.From(runtime.Run(saved.Prompt, freshWorkspace, approvals),
+            saved.Approvals.ToList(), new FixedKeyProvider(saved.KeyId, key));
         return new ReplayResult(sigOk, rerun.BundleSignature == saved.BundleSignature, rerun.BundleSignature);
     }
 }

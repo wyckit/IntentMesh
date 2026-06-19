@@ -145,15 +145,22 @@ public static class AuditSigner
     /// An unknown KeyId fails closed.</summary>
     public static bool Verify(SignedAudit signed, IAuditKeyProvider provider)
     {
-        byte[]? key =
-            provider is IRotatableAuditKeyProvider rot && rot.TryGetKey(signed.KeyId, out var k) ? k
-            : string.Equals(signed.KeyId, provider.KeyId, StringComparison.Ordinal) ? provider.GetKey()
-            : null;
+        var key = ResolveKey(signed.KeyId, provider);
         if (key is null) return false;
         return CryptographicOperations.FixedTimeEquals(
             Encoding.UTF8.GetBytes(Hmac(signed.ChainHash, key)),
             Encoding.UTF8.GetBytes(signed.Signature ?? ""));
     }
+
+    /// <summary>Resolve the key a stored artifact was signed under, by its recorded <paramref name="keyId"/>:
+    /// a rotatable provider looks up the historical key; a single-key provider answers only if its id
+    /// matches. Returns null (→ caller fails closed) for an unknown id — so rotating the current key
+    /// never silently verifies an old artifact with the wrong key. The one resolution rule shared by
+    /// audit-level and bundle-level verification.</summary>
+    public static byte[]? ResolveKey(string keyId, IAuditKeyProvider provider) =>
+        provider is IRotatableAuditKeyProvider rot && rot.TryGetKey(keyId, out var k) ? k
+        : string.Equals(keyId, provider.KeyId, StringComparison.Ordinal) ? provider.GetKey()
+        : null;
 
     private static IAuditKeyProvider Resolve(byte[]? key) => key is null ? Default : new RawKeyProvider(key);
 
@@ -199,5 +206,57 @@ public static class AuditSigner
         public RawKeyProvider(byte[] key) { _key = key; KeyId = "raw-" + EnvironmentAuditKeyProvider.ShortHash(key); }
         public byte[] GetKey() => _key;
         public string KeyId { get; }
+    }
+}
+
+/// <summary>An audit key provider pinned to one explicit (keyId, key) pair. Used to RE-sign a run
+/// under the exact key id a saved bundle recorded — so a deterministic replay reproduces the original
+/// signature byte-for-byte even after the current signing key has rotated.</summary>
+public sealed class FixedKeyProvider : IAuditKeyProvider
+{
+    private readonly byte[] _key;
+    public FixedKeyProvider(string keyId, byte[] key)
+    {
+        if (string.IsNullOrWhiteSpace(keyId)) throw new ArgumentException("keyId is required.", nameof(keyId));
+        KeyId = keyId; _key = key;
+    }
+    public byte[] GetKey() => _key;
+    public string KeyId { get; }
+}
+
+/// <summary>
+/// Builds the audit key provider a host/CLI uses, with rotation support sourced from the environment.
+/// The CURRENT key comes from <see cref="EnvironmentAuditKeyProvider"/>; PRIOR keys (so already-signed
+/// runs still verify after rotation) come from <c>INTENTMESH_AUDIT_PRIOR_KEYS</c>, a
+/// <c>id=base64;id2=base64</c> list. With no priors configured it returns the single-key provider —
+/// which still resolves strictly by recorded key id (fail-closed), it just can't verify a run signed
+/// under a key it was never told about.
+/// </summary>
+public static class AuditKeyProviders
+{
+    public const string PriorKeysEnv = "INTENTMESH_AUDIT_PRIOR_KEYS";
+
+    public static IAuditKeyProvider FromEnvironment()
+    {
+        var current = new EnvironmentAuditKeyProvider();
+        var priors = ParsePriors(Environment.GetEnvironmentVariable(PriorKeysEnv));
+        return priors.Count == 0
+            ? current
+            : new RotatingAuditKeyProvider(current.KeyId, current.GetKey(), priors);
+    }
+
+    private static Dictionary<string, byte[]> ParsePriors(string? raw)
+    {
+        var map = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        if (string.IsNullOrWhiteSpace(raw)) return map;
+        foreach (var pair in raw.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var eq = pair.IndexOf('=');
+            if (eq <= 0) continue;
+            var id = pair[..eq].Trim();
+            try { map[id] = Convert.FromBase64String(pair[(eq + 1)..].Trim()); }
+            catch (FormatException) { /* skip a malformed prior-key entry rather than fail startup */ }
+        }
+        return map;
     }
 }
