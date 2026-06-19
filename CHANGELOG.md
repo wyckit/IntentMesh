@@ -6,7 +6,7 @@ for the production-ready / experimental / future breakdown.
 ## v1.7.0 — Verified-intent **platform** (adoptable by outside builders)
 
 The transition from research-grade prototype to an adoptable runtime platform: usable by outside
-builders, credible against real agents, and operationally clear for tool governance. **161/161 tests.**
+builders, credible against real agents, and operationally clear for tool governance. **176/176 tests.**
 
 ### Area 1 — Productize the runtime surface
 - `IntentMeshSdk` now covers the full lifecycle through one stable facade: `Bundle(run)`,

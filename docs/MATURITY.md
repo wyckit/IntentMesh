@@ -2,7 +2,7 @@
 
 The single source of truth for **what is production-ready, what is experimental, and what is future
 work.** Every "proven" claim below is backed by a test that would fail if the claim stopped being
-true (`dotnet test IntentMesh.slnx` — **161/161**). Nothing here is aspirational unless it says so.
+true (`dotnet test IntentMesh.slnx` — **176/176**). Nothing here is aspirational unless it says so.
 
 > IntentMesh is a **research prototype with a production-shaped core**: the security kernel and its
 > guarantees are proven and stable; the *operational backends* around it (KMS, DB persistence,
@@ -33,7 +33,7 @@ true (`dotnet test IntentMesh.slnx` — **161/161**). Nothing here is aspiration
 | `AnthropicLlmClient` real LLM path | Works against the live API (env-gated test); not load-tested or cost-managed |
 | Live benchmark harness (`intentbench --live`) | Runs against a real model; numbers are illustrative, see [BENCHMARK-REPORT.md](BENCHMARK-REPORT.md) |
 | SMTP + OAuth 2.0 device flow | Real transports; need your credentials and a consent screen |
-| Control Room SPA | Useful for governance/debugging; dependency-free demo UI, not a multi-user console |
+| Control Room SPA | Useful for governance/debugging; dependency-free demo UI, **local-only** — no auth, rate-limiting, or tenant isolation (run it behind your own boundary). It **refuses to start in Production with the demo audit key** (set `INTENTMESH_AUDIT_KEY`, or `INTENTMESH_ALLOW_INSECURE_KEY=1` to opt out). |
 | Policy authoring | C# `PolicyGate` is authoritative; symbolic metadata + fixtures/diff support review (no declarative DSL yet) |
 
 ## 🔭 Future — named seams, not built (not faked)
