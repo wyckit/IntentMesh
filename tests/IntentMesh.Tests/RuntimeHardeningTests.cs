@@ -91,9 +91,12 @@ public sealed class RuntimeHardeningTests
         var graph = new IntentGraph();
         graph.Add(new IntentNode
         {
-            Id = "n1", Type = Kinds.DraftEmail, Label = "Draft email to Acme Client",
+            Id = "n1",
+            Type = Kinds.DraftEmail,
+            Label = "Draft email to Acme Client",
             Action = new DraftEmailAction("Acme Client", "Report", System.Array.Empty<string>()),
-            TrustSource = TrustSource.User, Status = NodeStatus.Executed
+            TrustSource = TrustSource.User,
+            Status = NodeStatus.Executed
         });
         var ws = Workspace.CreateDemo();
         ws.Drafts.Clear();

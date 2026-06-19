@@ -61,8 +61,13 @@ public sealed class IntentResolver : IIntentProposer
             }
             var node = new IntentNode
             {
-                Id = $"n{++n}", Type = kind, Label = label, Action = action,
-                SourceText = src, TrustSource = TrustSource.User, Status = NodeStatus.Resolved,
+                Id = $"n{++n}",
+                Type = kind,
+                Label = label,
+                Action = action,
+                SourceText = src,
+                TrustSource = TrustSource.User,
+                Status = NodeStatus.Resolved,
                 ParentId = parent
             };
             nodes.Add(node);

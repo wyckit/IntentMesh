@@ -82,8 +82,11 @@ public sealed class FrameworkTests
         Assert.False(AuditSigner.Verify(r, signed.Signature + "00")); // wrong signature
 
         // Tamper with one audit event -> the chain head changes -> verification fails.
-        var tampered = r with { Audit = r.Audit.Select((a, i) =>
-            i == 0 ? a with { Message = a.Message + " (tampered)" } : a).ToList() };
+        var tampered = r with
+        {
+            Audit = r.Audit.Select((a, i) =>
+            i == 0 ? a with { Message = a.Message + " (tampered)" } : a).ToList()
+        };
         Assert.False(AuditSigner.Verify(tampered, signed.Signature));
     }
 

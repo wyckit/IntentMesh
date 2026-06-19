@@ -4,27 +4,27 @@ namespace IntentMesh.Core;
 /// The resolver may only emit these (Translation-Drift guard).</summary>
 public static class Kinds
 {
-    public const string ReadCalendar       = "act-read-calendar";
-    public const string ClassifyEvents     = "act-classify-events";
-    public const string CreateCalendarBlock= "act-create-calendar-block";
-    public const string FindNotes          = "act-find-notes";
-    public const string SummarizeDocument  = "act-summarize-document";
-    public const string DraftEmail         = "act-draft-email";
-    public const string SendEmail          = "act-send-email";
-    public const string ScanDownloads      = "act-scan-downloads";
-    public const string ClassifyJunk       = "act-classify-junk";
-    public const string DeleteFiles        = "act-delete-files";
+    public const string ReadCalendar = "act-read-calendar";
+    public const string ClassifyEvents = "act-classify-events";
+    public const string CreateCalendarBlock = "act-create-calendar-block";
+    public const string FindNotes = "act-find-notes";
+    public const string SummarizeDocument = "act-summarize-document";
+    public const string DraftEmail = "act-draft-email";
+    public const string SendEmail = "act-send-email";
+    public const string ScanDownloads = "act-scan-downloads";
+    public const string ClassifyJunk = "act-classify-junk";
+    public const string DeleteFiles = "act-delete-files";
     // dev-agent domain (v0.3)
-    public const string ReadRepo           = "act-read-repo";
-    public const string ModifyCode         = "act-modify-code";
-    public const string RunCommand         = "act-run-command";
-    public const string OpenPullRequest    = "act-open-pull-request";
+    public const string ReadRepo = "act-read-repo";
+    public const string ModifyCode = "act-modify-code";
+    public const string RunCommand = "act-run-command";
+    public const string OpenPullRequest = "act-open-pull-request";
     // data-agent domain (v0.4)
-    public const string BuildQueryPlan     = "act-build-query-plan";
-    public const string RunQuery           = "act-run-query";
+    public const string BuildQueryPlan = "act-build-query-plan";
+    public const string RunQuery = "act-run-query";
     // filesystem-via-MCP domain
-    public const string FsRead             = "act-fs-read";
-    public const string FsWrite            = "act-fs-write";
+    public const string FsRead = "act-fs-read";
+    public const string FsWrite = "act-fs-write";
 }
 
 /// <summary>

@@ -441,9 +441,11 @@ public static class OpenApiImporter
                 Description = $"Imported typed contract for {c.Kind}.",
                 Properties = new()
                 {
-                    ["Risk"] = c.Risk, ["SideEffect"] = c.SideEffect,
+                    ["Risk"] = c.Risk,
+                    ["SideEffect"] = c.SideEffect,
                     ["RequiresConfirmation"] = c.RequiresConfirmation ? "true" : "false",
-                    ["Fields"] = string.Join(",", c.Fields), ["Postconditions"] = "",
+                    ["Fields"] = string.Join(",", c.Fields),
+                    ["Postconditions"] = "",
                     ["Capability"] = c.Capability
                 }
             });
@@ -454,12 +456,24 @@ public static class OpenApiImporter
         {
             Manifest = new TlmManifest
             {
-                Metadata = new TlmMetadata { TlmId = "im-imported", IsMutable = false, Role = TlmRole.Logic,
-                    Priority = 125, Version = "1.0.0", Checksum = "", HotSwapPolicy = HotSwapPolicy.Safe, StabilityScore = 0.5 },
-                Imports = new(), Derives = new(),
-                CreatedUtc = new DateTime(2026, 6, 18, 0, 0, 0, DateTimeKind.Utc), SchemaVersion = "1.0"
+                Metadata = new TlmMetadata
+                {
+                    TlmId = "im-imported",
+                    IsMutable = false,
+                    Role = TlmRole.Logic,
+                    Priority = 125,
+                    Version = "1.0.0",
+                    Checksum = "",
+                    HotSwapPolicy = HotSwapPolicy.Safe,
+                    StabilityScore = 0.5
+                },
+                Imports = new(),
+                Derives = new(),
+                CreatedUtc = new DateTime(2026, 6, 18, 0, 0, 0, DateTimeKind.Utc),
+                SchemaVersion = "1.0"
             },
-            Concepts = concepts, Relations = relations
+            Concepts = concepts,
+            Relations = relations
         };
 
         var compiler = new TlmCompiler();

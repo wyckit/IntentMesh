@@ -174,9 +174,14 @@ public sealed class IntentMeshRuntime
             {
                 var zt = new IntentNode
                 {
-                    Id = $"n{++counter}", Type = p.Type, Label = p.Label, Action = p.Action,
-                    SourceText = p.SourceText, TrustSource = TrustSource.RetrievedContent,
-                    Status = NodeStatus.Resolved, ParentId = node.Id
+                    Id = $"n{++counter}",
+                    Type = p.Type,
+                    Label = p.Label,
+                    Action = p.Action,
+                    SourceText = p.SourceText,
+                    TrustSource = TrustSource.RetrievedContent,
+                    Status = NodeStatus.Resolved,
+                    ParentId = node.Id
                 };
                 graph.Add(zt);
                 audit.Add(zt.Id, "resolve",
