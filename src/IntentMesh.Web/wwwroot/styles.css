@@ -301,3 +301,26 @@ html, body { margin: 0; background: var(--bg); color: var(--ink);
 .edge { stroke: #2a3647; stroke-width: 1.5; fill: none; }
 .edge.zt { stroke: var(--zt); stroke-dasharray: 4 3; }
 .nstatus { font-size: 9px; font-weight: 700; }
+
+/* ── Operations view ─────────────────────────────────────────────── */
+.ops { display: block; padding: 18px; gap: 16px; }
+.ops .panel { margin-bottom: 16px; }
+.ops-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.ops-table th { text-align: left; color: #8b9bb0; font-weight: 600; padding: 6px 10px; border-bottom: 1px solid #243042; }
+.ops-table td { padding: 6px 10px; border-bottom: 1px solid #1a2230; }
+.ops-row { cursor: pointer; }
+.ops-row:hover { background: #141c28; }
+.ops-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.ops-table td.num.bad { color: var(--zt); font-weight: 700; }
+.ops-table td.num.ok { color: #34d399; }
+.ops-prompt { color: #c8d3e0; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.ops-detail-head { margin-bottom: 10px; }
+.ops-id { color: var(--accent); font-size: 13px; }
+.ops-detail-prompt { color: #c8d3e0; margin-top: 3px; }
+.ops-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 12px; }
+.artifact-link { text-decoration: none; display: inline-block; }
+.ops-out { margin: 8px 0; }
+.ops-diff { margin-top: 6px; font-size: 12px; color: #8b9bb0; }
+.ops-policy { margin-top: 12px; }
+.ops-policy .row { margin-bottom: 6px; }

@@ -16,6 +16,10 @@ public interface IRunArtifactStore
     /// <summary>Full on-disk integrity check: the signed bundle verifies AND every derived split
     /// artifact byte-matches the re-derived bundle (catches tampering with any inspectable export).</summary>
     bool VerifyArtifacts(string runId, byte[]? key = null);
+
+    /// <summary>Rotation-aware integrity check: verify the bundle under the key its recorded id names
+    /// (the provider supplies historical keys), so a run signed before a key rotation still verifies.</summary>
+    bool VerifyArtifacts(string runId, IAuditKeyProvider provider);
 }
 
 /// <summary>
@@ -39,6 +43,29 @@ public sealed class FileRunArtifactStore : IRunArtifactStore
     public static string RunIdOf(TraceBundle bundle)
         => bundle.BundleSignature[..Math.Min(16, bundle.BundleSignature.Length)];
 
+    /// <summary>A run id is 1–64 hex characters — exactly the shape <see cref="RunIdOf"/> produces. By
+    /// construction it has no path separator, drive, or <c>..</c>, so it can never escape the runs root.</summary>
+    public static bool IsValidRunId(string runId)
+        => !string.IsNullOrEmpty(runId) && runId.Length <= 64 && runId.All(Uri.IsHexDigit);
+
+    /// <summary>Validate a (possibly untrusted, e.g. route-supplied) run id and resolve it to its
+    /// on-disk directory. Rejects anything that isn't a hex content-address — a path-traversal id can't
+    /// reach <see cref="Path.Combine(string,string)"/>. Defense-in-depth: the resolved path must also
+    /// stay directly under the runs root.</summary>
+    private string RunDir(string runId)
+    {
+        if (!IsValidRunId(runId))
+            throw new ArgumentException($"Invalid run id '{runId}' — expected a hex content-address.", nameof(runId));
+        // Trim any trailing separator the root carried (GetFullPath preserves it, e.g. "C:\runs\") so the
+        // containment prefix is "<root><sep>" — not "<root><sep><sep>", which would reject every valid id.
+        var rootFull = Path.TrimEndingDirectorySeparator(Path.GetFullPath(_root));
+        var dir = Path.GetFullPath(Path.Combine(rootFull, runId));
+        var cmp = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        if (!dir.StartsWith(rootFull + Path.DirectorySeparatorChar, cmp))
+            throw new ArgumentException($"Run id '{runId}' resolves outside the runs root.", nameof(runId));
+        return dir;
+    }
+
     /// <summary>Persist the run. <c>bundle.json</c> is the canonical, signed artifact (verified on
     /// load/replay); the five split files (<c>intent.graph.json</c> … <c>audit.signed.json</c>) are
     /// <b>derived exports</b> of it for human inspection. Use <see cref="VerifyArtifacts"/> to confirm
@@ -46,7 +73,7 @@ public sealed class FileRunArtifactStore : IRunArtifactStore
     public string Save(TraceBundle bundle)
     {
         var id = RunIdOf(bundle);
-        var dir = Path.Combine(_root, id);
+        var dir = RunDir(id);
         Directory.CreateDirectory(dir);
         File.WriteAllText(Path.Combine(dir, BundleFile), TraceBundleBuilder.ToJson(bundle));
         foreach (var (name, json) in TraceBundleBuilder.SplitFiles(bundle))   // derived exports
@@ -56,7 +83,7 @@ public sealed class FileRunArtifactStore : IRunArtifactStore
 
     public TraceBundle Load(string runId)
     {
-        var path = Path.Combine(_root, runId, BundleFile);
+        var path = Path.Combine(RunDir(runId), BundleFile);
         if (!File.Exists(path))
             throw new FileNotFoundException($"No persisted run '{runId}'.", path);
         return TraceBundleBuilder.FromJson(File.ReadAllText(path));
@@ -68,10 +95,15 @@ public sealed class FileRunArtifactStore : IRunArtifactStore
     /// re-derives. Catches tampering with either the bundle or any split export.
     /// </summary>
     public bool VerifyArtifacts(string runId, byte[]? key = null)
+        => VerifyArtifacts(runId, Load(runId), TraceBundleBuilder.VerifySignature(Load(runId), key));
+
+    public bool VerifyArtifacts(string runId, IAuditKeyProvider provider)
+        => VerifyArtifacts(runId, Load(runId), TraceBundleBuilder.VerifySignature(Load(runId), provider));
+
+    private bool VerifyArtifacts(string runId, TraceBundle bundle, bool signatureValid)
     {
-        var bundle = Load(runId);
-        if (!TraceBundleBuilder.VerifySignature(bundle, key)) return false;
-        var dir = Path.Combine(_root, runId);
+        if (!signatureValid) return false;
+        var dir = RunDir(runId);
         foreach (var (name, expected) in TraceBundleBuilder.SplitFiles(bundle))
         {
             var path = Path.Combine(dir, name);
@@ -82,9 +114,66 @@ public sealed class FileRunArtifactStore : IRunArtifactStore
 
     public IReadOnlyList<string> List()
         => Directory.Exists(_root)
-            ? Directory.GetDirectories(_root).Select(d => Path.GetFileName(d)!).OrderBy(x => x, StringComparer.Ordinal).ToList()
+            ? Directory.GetDirectories(_root)
+                .Select(d => Path.GetFileName(d)!)
+                .Where(name => !name.StartsWith('.'))                 // skip .archive and other dot-dirs
+                .OrderBy(x => x, StringComparer.Ordinal).ToList()
             : Array.Empty<string>();
+
+    /// <summary>Run summaries for an operator history view — loaded from each persisted bundle.json
+    /// (corrupt/unreadable runs are skipped). Newest first by on-disk write time.</summary>
+    public IReadOnlyList<RunSummary> ListSummaries()
+    {
+        var summaries = new List<(DateTime When, RunSummary Summary)>();
+        foreach (var id in List())
+        {
+            try
+            {
+                var b = Load(id);
+                var s = b.Summary;
+                var when = File.GetLastWriteTimeUtc(Path.Combine(_root, id, BundleFile));
+                summaries.Add((when, new RunSummary(id, b.Prompt, s.Total, s.Allowed, s.NeedsConfirmation,
+                    s.Blocked, s.Executed, s.Verified, b.SignedAudit.KeyId, b.Approvals.Count)));
+            }
+            catch { /* skip a corrupt run rather than fail the whole listing */ }
+        }
+        return summaries.OrderByDescending(x => x.When).Select(x => x.Summary).ToList();
+    }
+
+    /// <summary>Move a run's artifacts to a <c>.archive/</c> subdirectory (preserving verifiability),
+    /// so retention doesn't destroy the audit trail.</summary>
+    public void Archive(string runId)
+    {
+        var src = RunDir(runId);
+        if (!Directory.Exists(src)) return;
+        var archiveRoot = Path.Combine(_root, ".archive");
+        Directory.CreateDirectory(archiveRoot);
+        var dest = Path.Combine(archiveRoot, runId);
+        if (Directory.Exists(dest)) Directory.Delete(dest, true);
+        Directory.Move(src, dest);
+    }
+
+    /// <summary>Retention: keep the <paramref name="keepNewest"/> most-recent runs live and archive
+    /// the rest (by on-disk write time). Returns the archived run ids.</summary>
+    public IReadOnlyList<string> Prune(int keepNewest)
+    {
+        if (keepNewest < 0) throw new ArgumentOutOfRangeException(nameof(keepNewest));
+        var ordered = List()
+            .Select(id => (id, when: File.GetLastWriteTimeUtc(Path.Combine(_root, id, BundleFile))))
+            .OrderByDescending(x => x.when)
+            .Select(x => x.id)
+            .ToList();
+        var toArchive = ordered.Skip(keepNewest).ToList();
+        foreach (var id in toArchive) Archive(id);
+        return toArchive;
+    }
 }
+
+/// <summary>A compact, inspectable summary of one persisted run — the row an operator history view
+/// renders. Built from the persisted bundle (prompt, decision counts, signing key id, approvals).</summary>
+public sealed record RunSummary(
+    string RunId, string Prompt, int Total, int Allowed, int NeedsConfirmation,
+    int Blocked, int Executed, int Verified, string KeyId, int ApprovalCount);
 
 /// <summary>The outcome of replaying a persisted run.</summary>
 public sealed record ReplayResult(bool SignatureVerified, bool Reproduced, string RecomputedSignature);
@@ -102,6 +191,21 @@ public static class RunReplay
         bool sigOk = TraceBundleBuilder.VerifySignature(saved, key);
         var approvals = saved.Approvals.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var rerun = TraceBundleBuilder.From(runtime.Run(saved.Prompt, freshWorkspace, approvals), saved.Approvals.ToList(), key);
+        return new ReplayResult(sigOk, rerun.BundleSignature == saved.BundleSignature, rerun.BundleSignature);
+    }
+
+    /// <summary>Rotation-aware replay: verify the saved bundle under the key its recorded id names, then
+    /// re-sign the deterministic re-run under that SAME key — so reproduction stays byte-identical even
+    /// after the current signing key has rotated. An unknown key id can't reproduce (fail-closed).</summary>
+    public static ReplayResult Reproduce(IntentMeshRuntime runtime, Workspace freshWorkspace, TraceBundle saved, IAuditKeyProvider provider)
+    {
+        bool sigOk = TraceBundleBuilder.VerifySignature(saved, provider);
+        var keyId = TraceBundleBuilder.EffectiveKeyId(saved);   // pre-KeyId bundles fall back to SignedAudit.KeyId
+        var key = AuditSigner.ResolveKey(keyId, provider);
+        if (key is null) return new ReplayResult(sigOk, Reproduced: false, RecomputedSignature: "");
+        var approvals = saved.Approvals.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var rerun = TraceBundleBuilder.From(runtime.Run(saved.Prompt, freshWorkspace, approvals),
+            saved.Approvals.ToList(), new FixedKeyProvider(keyId, key));
         return new ReplayResult(sigOk, rerun.BundleSignature == saved.BundleSignature, rerun.BundleSignature);
     }
 }

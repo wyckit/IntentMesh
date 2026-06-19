@@ -10,6 +10,9 @@
     <Project Path="src/IntentMesh.Tlm/IntentMesh.Tlm.csproj" />
     <Project Path="src/IntentMesh.Web/IntentMesh.Web.csproj" />
   </Folder>
+  <Folder Name="/templates/">
+    <Project Path="templates/IntentMesh.Host.Template/IntentMesh.Host.Template.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/IntentMesh.Tests/IntentMesh.Tests.csproj" />
   </Folder>

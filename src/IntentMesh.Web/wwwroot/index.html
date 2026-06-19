@@ -17,6 +17,7 @@
     </div>
     <nav class="modes">
       <button class="mode-btn active" data-mode="control">Control Room</button>
+      <button class="mode-btn" data-mode="ops">Operations</button>
       <button class="mode-btn" data-mode="compare">Compare</button>
     </nav>
   </header>
@@ -96,6 +97,30 @@
     <div class="nd-body" id="ndBody"></div>
   </aside>
   <div id="ndBackdrop" class="nd-backdrop hidden"></div>
+
+  <!-- ── Operations: run history · approval reasoning · replay · audit integrity ── -->
+  <main id="opsView" class="ops hidden">
+    <section class="panel wide">
+      <h2><span class="n">A</span> Why blocked · what would approval do
+        <span class="hint">runs the current prompt and projects granting every pending approval</span>
+        <span class="export"><button id="explainBtn" class="exp-btn" title="Explain the current prompt">⟳ Explain current prompt</button></span>
+      </h2>
+      <div class="panel-body" id="explain"><p class="empty">Enter a prompt above and click “Explain”.</p></div>
+    </section>
+
+    <section class="panel wide">
+      <h2><span class="n">B</span> Run history
+        <span class="hint">persisted, signed, content-addressed</span>
+        <span class="export"><button id="refreshRuns" class="exp-btn" title="Reload run history">⟳ Refresh</button></span>
+      </h2>
+      <div class="panel-body" id="opsRuns"><p class="empty">No runs yet — run a pipeline to populate history.</p></div>
+    </section>
+
+    <section class="panel wide">
+      <h2><span class="n">C</span> Run detail <span class="hint">signed artifacts · replay diff · integrity</span></h2>
+      <div class="panel-body" id="opsDetail"><p class="empty">Select a run above.</p></div>
+    </section>
+  </main>
 
   <!-- ── Comparison mode ──────────────────────────────────────────── -->
   <main id="compareView" class="compare hidden">

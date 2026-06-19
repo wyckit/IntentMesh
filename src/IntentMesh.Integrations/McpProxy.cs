@@ -204,11 +204,24 @@ public sealed class McpProxy
     /// stdio. A blocked/gated call is never forwarded — no bytes reach the server. This is the
     /// production shape: the proxy verifies intent, then the transport runs.
     /// </summary>
-    public McpForwardResult GateAndForward(McpToolCall call, IMcpClient client, IReadOnlySet<string>? approvals = null)
+    /// <param name="progress">Optional progress sink for a control room / CLI: reports the gate
+    /// decision and the forward lifecycle (<c>gate: …</c>, <c>forwarding …</c>, <c>forwarded …</c> or
+    /// <c>blocked …</c>) as the call moves through the proxy. Verification still gates execution; this
+    /// only narrates it.</param>
+    public McpForwardResult GateAndForward(McpToolCall call, IMcpClient client,
+        IReadOnlySet<string>? approvals = null, IProgress<string>? progress = null)
     {
         var gate = Gate(call, approvals);
-        if (!gate.Allowed) return new McpForwardResult(gate, ServerResponse: null);
-        return new McpForwardResult(gate, ServerResponse: ForwardToRealMcpServer(call, client));
+        progress?.Report($"gate: {(gate.Allowed ? "allowed" : "blocked")} — {gate.Reason}");
+        if (!gate.Allowed)
+        {
+            progress?.Report($"blocked {call.Tool} — not forwarded");
+            return new McpForwardResult(gate, ServerResponse: null);
+        }
+        progress?.Report($"forwarding {call.Tool}");
+        var response = ForwardToRealMcpServer(call, client);
+        progress?.Report($"forwarded {call.Tool}");
+        return new McpForwardResult(gate, ServerResponse: response);
     }
 
     /// <summary>

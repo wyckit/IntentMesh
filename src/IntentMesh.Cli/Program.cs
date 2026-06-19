@@ -91,15 +91,81 @@ if (rest[0] == "replay")
     if (rest.Count < 2) { Console.Error.WriteLine("usage: intentmesh replay <bundle.json>"); return 1; }
     if (!File.Exists(rest[1])) { Console.Error.WriteLine($"no such file: {rest[1]}"); return 1; }
     var original = TraceBundleBuilder.FromJson(File.ReadAllText(rest[1]));
-    bool sigOk = TraceBundleBuilder.VerifySignature(original);
-    var approvals = original.Approvals.ToHashSet(StringComparer.OrdinalIgnoreCase);
-    var rerun = TraceBundleBuilder.From(runtime.Run(original.Prompt, Workspace.CreateDemo(), approvals), original.Approvals);
-    bool identical = rerun.BundleSignature == original.BundleSignature;
-    Console.WriteLine($"prompt:    \"{original.Prompt}\"");
-    Console.WriteLine($"signature: {(sigOk ? "VALID (untampered)" : "INVALID (tampered!)")}");
-    Console.WriteLine($"replay:    {(identical ? "DETERMINISTIC — re-run is byte-identical" : "MISMATCH — re-run differs!")}");
-    Console.WriteLine($"  original {original.BundleSignature[..16]}…  rerun {rerun.BundleSignature[..16]}…");
-    return sigOk && identical ? 0 : 1;
+    // Rotation-aware: resolve the key the bundle recorded (current + INTENTMESH_AUDIT_PRIOR_KEYS), so a
+    // bundle signed before a key rotation still verifies AND reproduces byte-for-byte.
+    var keyProvider = AuditKeyProviders.FromEnvironment();
+    var replay = RunReplay.Reproduce(runtime, Workspace.CreateDemo(), original, keyProvider);
+    Console.WriteLine($"prompt:    \"{original.Prompt}\"  (key {original.KeyId})");
+    Console.WriteLine($"signature: {(replay.SignatureVerified ? "VALID (untampered)" : "INVALID (tampered or unknown key!)")}");
+    Console.WriteLine($"replay:    {(replay.Reproduced ? "DETERMINISTIC — re-run is byte-identical" : "MISMATCH — re-run differs!")}");
+    if (replay.RecomputedSignature.Length > 0)
+        Console.WriteLine($"  original {original.BundleSignature[..16]}…  rerun {replay.RecomputedSignature[..16]}…");
+    return replay.SignatureVerified && replay.Reproduced ? 0 : 1;
+}
+
+// verify-run: full tamper-verification of a PERSISTED run in a store directory — checks the signed
+// bundle + every derived split artifact, then replays for byte-identical reproduction.
+//   intentmesh verify-run <runsDir> <runId>
+if (rest[0] == "verify-run")
+{
+    if (rest.Count < 3) { Console.Error.WriteLine("usage: intentmesh verify-run <runsDir> <runId>"); return 1; }
+    var store = new FileRunArtifactStore(rest[1]);
+    TraceBundle bundle;
+    try { bundle = store.Load(rest[2]); }
+    catch (Exception ex) { Console.Error.WriteLine(ex.Message); return 1; }
+    // Rotation-aware: prior keys (INTENTMESH_AUDIT_PRIOR_KEYS) let a run signed under an older key
+    // still verify after the current signing key has rotated.
+    var keyProvider = AuditKeyProviders.FromEnvironment();
+    bool artifactsOk = store.VerifyArtifacts(rest[2], keyProvider);
+    var replay = RunReplay.Reproduce(runtime, Workspace.CreateDemo(), bundle, keyProvider);
+    Console.WriteLine($"run:       {rest[2]}  (key {bundle.KeyId})");
+    Console.WriteLine($"prompt:    \"{bundle.Prompt}\"");
+    Console.WriteLine($"artifacts: {(artifactsOk ? "INTACT (bundle + 5 split files match the signature)" : "TAMPERED")}");
+    Console.WriteLine($"signature: {(replay.SignatureVerified ? "VALID" : "INVALID")}");
+    Console.WriteLine($"replay:    {(replay.Reproduced ? "DETERMINISTIC — byte-identical" : "MISMATCH")}");
+    return artifactsOk && replay.SignatureVerified && replay.Reproduced ? 0 : 1;
+}
+
+// policy: review the rule catalog, run policy fixtures, or diff two bundles' rule tables.
+//   intentmesh policy list
+//   intentmesh policy fixtures [file]            (default: dataset/policy-fixtures.json)
+//   intentmesh policy diff <compiledDirA> <compiledDirB>
+if (rest[0] == "policy")
+{
+    switch (rest.Count > 1 ? rest[1] : "")
+    {
+        case "list":
+            foreach (var r in PolicyCatalog.Rules(runtime.Bundle))
+                Console.WriteLine($"  {r.Id,-30} {r.Rule}\n  {new string(' ', 32)}-> {r.Action}\n");
+            return 0;
+
+        case "fixtures":
+        {
+            var path = rest.Count > 2 ? rest[2] : PolicyFixtures.DefaultPath();
+            if (!File.Exists(path)) { Console.Error.WriteLine($"no fixtures file: {path}"); return 1; }
+            var results = PolicyFixtures.RunAll(runtime, PolicyFixtures.Load(path));
+            foreach (var r in results) Console.WriteLine($"  [{(r.Pass ? "PASS" : "FAIL")}] {r.Fixture.Id,-30} {r.Detail}");
+            int passed = results.Count(r => r.Pass);
+            Console.WriteLine($"\n{passed}/{results.Count} policy fixtures pass.");
+            return passed == results.Count ? 0 : 1;
+        }
+
+        case "diff":
+        {
+            if (rest.Count < 4) { Console.Error.WriteLine("usage: intentmesh policy diff <compiledDirA> <compiledDirB>"); return 1; }
+            var diff = PolicyCatalog.Diff(SymbolicBundle.Load(rest[2]).Rules, SymbolicBundle.Load(rest[3]).Rules);
+            if (diff.IsEmpty) { Console.WriteLine("no policy rule changes."); return 0; }
+            foreach (var r in diff.Added) Console.WriteLine($"  + {r.Id}: {r.Rule} -> {r.Action}");
+            foreach (var r in diff.Removed) Console.WriteLine($"  - {r.Id}: {r.Rule} -> {r.Action}");
+            foreach (var (before, after) in diff.Changed)
+                Console.WriteLine($"  ~ {after.Id}:\n      was: {before.Rule} -> {before.Action}\n      now: {after.Rule} -> {after.Action}");
+            return 0;
+        }
+
+        default:
+            Console.Error.WriteLine("usage: intentmesh policy [list | fixtures [file] | diff <compiledDirA> <compiledDirB>]");
+            return 1;
+    }
 }
 
 // bare prompt

@@ -20,13 +20,19 @@ namespace IntentMesh.Core;
 /// </summary>
 public sealed class LlmIntentProposer : IIntentProposer
 {
+    /// <summary>Default cap on actions per proposal; more than this is treated as overbroad and the
+    /// whole plan is rejected fail-closed (a runaway/over-eager model can't smuggle a huge batch).</summary>
+    public const int DefaultMaxActions = 12;
+
     private readonly SymbolicBundle _bundle;
     private readonly ILlmClient _llm;
+    private readonly int _maxActions;
 
-    public LlmIntentProposer(SymbolicBundle bundle, ILlmClient llm)
+    public LlmIntentProposer(SymbolicBundle bundle, ILlmClient llm, int maxActions = DefaultMaxActions)
     {
         _bundle = bundle;
         _llm = llm;
+        _maxActions = maxActions;
     }
 
     public ProposedPlan Propose(string prompt, Workspace ws)
@@ -49,9 +55,23 @@ public sealed class LlmIntentProposer : IIntentProposer
             return new ProposedPlan(nodes, fired, unsupported);
         }
 
+        // Overbroad guard: a proposal far larger than any real request is suspicious — reject the
+        // WHOLE plan fail-closed rather than cherry-pick (a runaway model can't smuggle a huge batch).
+        if (proposed.Count > _maxActions)
+        {
+            unsupported.Add($"LLM proposed {proposed.Count} actions, over the per-call cap of {_maxActions} — rejecting the whole plan (overbroad, fail-closed).");
+            return new ProposedPlan(nodes, fired, unsupported);
+        }
+
         int n = 0;
         foreach (var (kind, paramFields) in proposed)
         {
+            // Ambiguous: an action with no usable kind can't become typed intent.
+            if (string.IsNullOrWhiteSpace(kind))
+            {
+                unsupported.Add("LLM proposed an action with no kind — refusing (ambiguous, fail-closed).");
+                continue;
+            }
             // Translation-Drift guard: refuse any kind the registry doesn't define.
             if (!_bundle.IsRegistered(kind))
             {
@@ -81,7 +101,7 @@ public sealed class LlmIntentProposer : IIntentProposer
                 Type = kind,
                 Label = $"LLM-proposed {kind}",
                 Action = action,
-                SourceText = "llm-proposer",
+                SourceText = $"llm:{_llm.Provenance}",   // provenance: which model proposed this node
                 TrustSource = TrustSource.User,   // the planner proposes AS the user — still gated
                 Status = NodeStatus.Resolved,
             });

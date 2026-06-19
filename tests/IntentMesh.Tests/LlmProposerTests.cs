@@ -24,6 +24,7 @@ public sealed class LlmProposerTests
         public ScriptedLlm(Exception toThrow) => _throw = toThrow;
         public string Complete(string systemPrompt, string userPrompt)
             => _throw is not null ? throw _throw : _response!;
+        public string Provenance { get; init; } = "llm";
     }
 
     [Fact]
@@ -147,6 +148,38 @@ public sealed class LlmProposerTests
         var node = Assert.Single(plan.Nodes);
         var action = Assert.IsType<SummarizeDocumentAction>(node.Action);
         Assert.Equal(new[] { "n1", "n2" }, action.DocRefs);
+    }
+
+    [Fact]
+    public void An_overbroad_proposal_is_rejected_whole_fail_closed()
+    {
+        var bundle = Bundle();
+        var actions = string.Join(",", Enumerable.Repeat("""{"kind":"act-read-calendar","fields":{"range":"Friday"}}""", 13));
+        var plan = new LlmIntentProposer(bundle, new ScriptedLlm($"{{\"actions\":[{actions}]}}")).Propose("do everything", Workspace.CreateDemo());
+
+        Assert.Empty(plan.Nodes);   // the WHOLE plan is dropped, not cherry-picked
+        Assert.Contains(plan.Unsupported, u => u.Contains("overbroad", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void An_action_with_no_kind_is_rejected_as_ambiguous()
+    {
+        var bundle = Bundle();
+        var plan = new LlmIntentProposer(bundle, new ScriptedLlm("""{"actions":[{"kind":"","fields":{}}]}""")).Propose("???", Workspace.CreateDemo());
+
+        Assert.Empty(plan.Nodes);
+        Assert.Contains(plan.Unsupported, u => u.Contains("ambiguous", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Emitted_nodes_carry_model_provenance()
+    {
+        var bundle = Bundle();
+        var llm = new ScriptedLlm("""{"actions":[{"kind":"act-read-calendar","fields":{"range":"Friday"}}]}""") { Provenance = "anthropic:test-model" };
+        var plan = new LlmIntentProposer(bundle, llm).Propose("read calendar", Workspace.CreateDemo());
+
+        var node = Assert.Single(plan.Nodes);
+        Assert.Equal("llm:anthropic:test-model", node.SourceText);   // provenance preserved on the node + into the audit
     }
 
     /// <summary>
