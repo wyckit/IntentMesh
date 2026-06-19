@@ -4,3 +4,6 @@ obj/
 .playwright-mcp/
 *.user
 .fs-sandbox/
+
+# IntentMesh.E2E demo output
+runs/
