@@ -125,16 +125,14 @@ public sealed class EmailAdapter : IToolAdapter
         if (!approved)
             return ToolHost.Halt(id, $"Send to {se.Recipient} requires confirmation — NOT sent.", "0 messages transmitted");
 
-        // Enforce "draft before send" (the act-draft-email Precedes act-send-email relation): the send
-        // must reference an existing draft (by draftRef or recipient). A bogus draftRef with no backing
-        // draft halts. The transmitted recipient is taken FROM the resolved draft — so a send can't be
-        // redirected to a different recipient than the one that was drafted and approved.
-        var draft = ws.Drafts.FirstOrDefault(x =>
-            x.Recipient.Equals(se.DraftRef, StringComparison.OrdinalIgnoreCase) ||
-            x.Recipient.Equals(se.Recipient, StringComparison.OrdinalIgnoreCase));
+        // Enforce "draft before send" (act-draft-email Precedes act-send-email): the send must
+        // reference an existing draft by its EXACT id. draftRef is authoritative — a wrong id does not
+        // transmit even if the recipient happens to match another draft. The transmitted recipient is
+        // taken FROM the resolved draft, so a send can't be redirected away from the approved draft.
+        var draft = ws.Drafts.FirstOrDefault(x => x.Ref.Equals(se.DraftRef, StringComparison.OrdinalIgnoreCase));
         if (draft is null)
             return ToolHost.Halt(id,
-                $"Send halted: no draft matches draftRef '{se.DraftRef}' / recipient '{se.Recipient}' — a draft must precede a send.",
+                $"Send halted: no draft with id '{se.DraftRef}' — a send must reference an existing draft by its exact draftRef.",
                 "0 messages transmitted");
 
         ws.SentEmails.Add(draft.Recipient);
@@ -148,9 +146,10 @@ public sealed class EmailAdapter : IToolAdapter
         var contact = ws.FindContact(d.Recipient);
         var body = "Summary:\n" + string.Join("\n", d.BodySourceRefs.Select(r =>
             "- " + (ws.Notes.FirstOrDefault(nt => nt.Id == r)?.Body ?? r)));
-        ws.Drafts.Add(new EmailDraft(d.Recipient, contact?.Email ?? "?", d.Subject, body, d.BodySourceRefs, Sent: false));
-        return ToolHost.Ok(id, $"Created draft to {d.Recipient} ({contact?.Email}) — '{d.Subject}'.",
-            "draft created, NOT sent", $"recipient = {d.Recipient}");
+        var draftRef = "draft-" + (ws.Drafts.Count + 1);   // deterministic per run; the handle a send references
+        ws.Drafts.Add(new EmailDraft(draftRef, d.Recipient, contact?.Email ?? "?", d.Subject, body, d.BodySourceRefs, Sent: false));
+        return ToolHost.Ok(id, $"Created draft {draftRef} to {d.Recipient} ({contact?.Email}) — '{d.Subject}'.",
+            "draft created, NOT sent", $"draftRef = {draftRef}; recipient = {d.Recipient}");
     }
 }
 

@@ -54,11 +54,28 @@ public sealed class SendEnforcementTests
         var adapter = new EmailAdapter();
 
         adapter.Execute(DraftNode(known), Confirm(), ws, approved: false);                 // draft first
-        var sent = adapter.Execute(SendNode(known, draftRef: known), Confirm(), ws, approved: true);
+        var draftRef = ws.Drafts.Single().Ref;                                             // the draft's real id
+        var sent = adapter.Execute(SendNode(known, draftRef), Confirm(), ws, approved: true);
 
         Assert.True(sent.Ran && !sent.Halted);
         Assert.Contains(known, ws.SentEmails);
         Assert.Contains(ws.Drafts, d => d.Recipient == known && d.Sent);
+    }
+
+    [Fact]
+    public void A_wrong_draftRef_does_not_transmit_even_if_a_recipient_matches()
+    {
+        // draftRef is authoritative: an approved send to the SAME recipient but with a bogus draftRef
+        // must NOT continue the existing draft (the reviewer's multiple-drafts-same-recipient concern).
+        var ws = Workspace.CreateDemo();
+        var known = ws.Contacts.First(c => c.Known && !c.External).Name;
+        var adapter = new EmailAdapter();
+
+        adapter.Execute(DraftNode(known), Confirm(), ws, approved: false);                 // real draft to `known`
+        var sent = adapter.Execute(SendNode(known, draftRef: "bogus-id"), Confirm(), ws, approved: true);
+
+        Assert.True(sent.Halted);
+        Assert.Empty(ws.SentEmails);
     }
 
     [Fact]
@@ -82,7 +99,7 @@ public sealed class SendEnforcementTests
         var known = ws.Contacts.First(c => c.Known && !c.External);
 
         // A draft + send addressed by the contact's EMAIL (not name) must still count as "known".
-        ws.Drafts.Add(new EmailDraft(known.Email, known.Email, "Notes", "body", Array.Empty<string>(), Sent: true));
+        ws.Drafts.Add(new EmailDraft("d1", known.Email, known.Email, "Notes", "body", Array.Empty<string>(), Sent: true));
         ws.SentEmails.Add(known.Email);
         var graph = new IntentGraph();
         graph.Add(new IntentNode
@@ -105,7 +122,7 @@ public sealed class SendEnforcementTests
         var json = """
             {"actions":[
               {"kind":"act-draft-email","fields":{"recipient":"__R__","subject":"Notes"}},
-              {"kind":"act-send-email","fields":{"draftRef":"__R__","recipient":"__R__"}}
+              {"kind":"act-send-email","fields":{"draftRef":"draft-1","recipient":"__R__"}}
             ]}
             """.Replace("__R__", known);
         var rt = new IntentMeshRuntime(bundle, new LlmIntentProposer(bundle, new ScriptedLlm(json)));

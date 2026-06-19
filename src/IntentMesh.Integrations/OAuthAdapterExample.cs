@@ -121,17 +121,14 @@ public sealed class GmailSendAdapter : IToolAdapter
                 $"send to {send.Recipient} requires explicit user approval — NOT transmitted.",
                 "0 messages transmitted");
 
-        // Draft-before-send — the SAME invariant the built-in EmailAdapter enforces. A real send must
-        // continue an existing draft; recipient/subject/body come FROM that draft, so this adapter
-        // never transmits raw intent fields, and a bogus draftRef with no backing draft is halted.
-        var draft = ws.Drafts.FirstOrDefault(d =>
-            d.Recipient.Equals(send.DraftRef, StringComparison.OrdinalIgnoreCase) ||
-            d.Recipient.Equals(send.Recipient, StringComparison.OrdinalIgnoreCase) ||
-            d.RecipientEmail.Equals(send.Recipient, StringComparison.OrdinalIgnoreCase) ||
-            d.RecipientEmail.Equals(send.DraftRef, StringComparison.OrdinalIgnoreCase));
+        // Draft-before-send — the SAME invariant the built-in EmailAdapter enforces, with draftRef as
+        // the AUTHORITATIVE handle: the send must reference an existing draft by its exact id (a wrong
+        // id does not transmit even if a recipient matches). recipient/subject/body come FROM that
+        // draft, so this real-transport adapter never transmits raw intent fields.
+        var draft = ws.Drafts.FirstOrDefault(d => d.Ref.Equals(send.DraftRef, StringComparison.OrdinalIgnoreCase));
         if (draft is null)
             return ToolHost.Halt(node.Id,
-                $"Send halted: no draft matches draftRef '{send.DraftRef}' / recipient '{send.Recipient}' — a draft must precede a send.",
+                $"Send halted: no draft with id '{send.DraftRef}' — a send must reference an existing draft by its exact draftRef.",
                 "0 messages transmitted");
         var to = string.IsNullOrEmpty(draft.RecipientEmail) || draft.RecipientEmail == "?" ? draft.Recipient : draft.RecipientEmail;
 

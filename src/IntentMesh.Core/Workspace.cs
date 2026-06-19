@@ -162,4 +162,4 @@ public sealed record FileItem(string Id, string Name, JunkClass Class, string Re
 
 // Adapter-produced artifacts (sandboxed).
 public sealed record CalendarBlock(string Title, string Start, string DurationMinutes, bool Committed);
-public sealed record EmailDraft(string Recipient, string RecipientEmail, string Subject, string Body, IReadOnlyList<string> SourceNoteIds, bool Sent);
+public sealed record EmailDraft(string Ref, string Recipient, string RecipientEmail, string Subject, string Body, IReadOnlyList<string> SourceNoteIds, bool Sent);
