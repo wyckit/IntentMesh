@@ -177,11 +177,12 @@ public static class RunReplay
     public static ReplayResult Reproduce(IntentMeshRuntime runtime, Workspace freshWorkspace, TraceBundle saved, IAuditKeyProvider provider)
     {
         bool sigOk = TraceBundleBuilder.VerifySignature(saved, provider);
-        var key = AuditSigner.ResolveKey(saved.KeyId, provider);
+        var keyId = TraceBundleBuilder.EffectiveKeyId(saved);   // pre-KeyId bundles fall back to SignedAudit.KeyId
+        var key = AuditSigner.ResolveKey(keyId, provider);
         if (key is null) return new ReplayResult(sigOk, Reproduced: false, RecomputedSignature: "");
         var approvals = saved.Approvals.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var rerun = TraceBundleBuilder.From(runtime.Run(saved.Prompt, freshWorkspace, approvals),
-            saved.Approvals.ToList(), new FixedKeyProvider(saved.KeyId, key));
+            saved.Approvals.ToList(), new FixedKeyProvider(keyId, key));
         return new ReplayResult(sigOk, rerun.BundleSignature == saved.BundleSignature, rerun.BundleSignature);
     }
 }

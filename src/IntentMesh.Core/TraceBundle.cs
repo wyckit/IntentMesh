@@ -29,7 +29,8 @@ public sealed record TraceBundle(
     string BundleSignature,
     // The id of the key that produced BundleSignature, so verification resolves the SAME key (even
     // after rotation) instead of always re-signing with the current key. Defaults to the demo key id
-    // so bundles persisted before this field existed still deserialize.
+    // so bundles persisted before this field existed still deserialize; in that case verification
+    // falls back to SignedAudit.KeyId (the real signing key) — see TraceBundleBuilder.EffectiveKeyId.
     string KeyId = AuditSigner.DemoKeyId);
 
 public static class TraceBundleBuilder
@@ -103,7 +104,17 @@ public static class TraceBundleBuilder
     /// unknown key id fails closed.</summary>
     public static bool VerifySignature(TraceBundle b, IAuditKeyProvider provider)
     {
-        var key = AuditSigner.ResolveKey(b.KeyId, provider);
+        var key = AuditSigner.ResolveKey(EffectiveKeyId(b), provider);
         return key is not null && AuditSigner.SignString(Canonicalize(b), key) == b.BundleSignature;
     }
+
+    /// <summary>The key id the bundle was actually signed under. The bundle-level <c>KeyId</c> field was
+    /// added later; a bundle persisted before it existed deserializes with the demo default even when it
+    /// was signed with a real env key — so fall back to <c>SignedAudit.KeyId</c>, which every bundle has
+    /// recorded and which always matches the bundle's signing key (both are signed together in
+    /// <see cref="From(RunResult, IReadOnlyList{string}?, byte[]?)"/>). Tampering it can't help an
+    /// attacker: <c>SignedAudit.KeyId</c> is inside the canonical the signature covers, so changing it
+    /// breaks verification.</summary>
+    internal static string EffectiveKeyId(TraceBundle b)
+        => string.IsNullOrEmpty(b.KeyId) || b.KeyId == AuditSigner.DemoKeyId ? b.SignedAudit.KeyId : b.KeyId;
 }
