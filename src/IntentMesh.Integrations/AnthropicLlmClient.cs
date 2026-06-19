@@ -46,6 +46,9 @@ public sealed class AnthropicLlmClient : ILlmClient, IDisposable
         return new AnthropicLlmClient(key!, Environment.GetEnvironmentVariable("ANTHROPIC_MODEL"), http: http);
     }
 
+    /// <summary>Provenance tag recording which model proposed (e.g. <c>anthropic:claude-haiku-4-5</c>).</summary>
+    public string Provenance => $"anthropic:{_model}";
+
     public string Complete(string systemPrompt, string userPrompt)
     {
         var body = JsonSerializer.Serialize(new
