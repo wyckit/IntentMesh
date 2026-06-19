@@ -43,6 +43,27 @@ public sealed class FileRunArtifactStore : IRunArtifactStore
     public static string RunIdOf(TraceBundle bundle)
         => bundle.BundleSignature[..Math.Min(16, bundle.BundleSignature.Length)];
 
+    /// <summary>A run id is 1–64 hex characters — exactly the shape <see cref="RunIdOf"/> produces. By
+    /// construction it has no path separator, drive, or <c>..</c>, so it can never escape the runs root.</summary>
+    public static bool IsValidRunId(string runId)
+        => !string.IsNullOrEmpty(runId) && runId.Length <= 64 && runId.All(Uri.IsHexDigit);
+
+    /// <summary>Validate a (possibly untrusted, e.g. route-supplied) run id and resolve it to its
+    /// on-disk directory. Rejects anything that isn't a hex content-address — a path-traversal id can't
+    /// reach <see cref="Path.Combine(string,string)"/>. Defense-in-depth: the resolved path must also
+    /// stay directly under the runs root.</summary>
+    private string RunDir(string runId)
+    {
+        if (!IsValidRunId(runId))
+            throw new ArgumentException($"Invalid run id '{runId}' — expected a hex content-address.", nameof(runId));
+        var rootFull = Path.GetFullPath(_root);
+        var dir = Path.GetFullPath(Path.Combine(rootFull, runId));
+        var cmp = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        if (!dir.StartsWith(rootFull + Path.DirectorySeparatorChar, cmp))
+            throw new ArgumentException($"Run id '{runId}' resolves outside the runs root.", nameof(runId));
+        return dir;
+    }
+
     /// <summary>Persist the run. <c>bundle.json</c> is the canonical, signed artifact (verified on
     /// load/replay); the five split files (<c>intent.graph.json</c> … <c>audit.signed.json</c>) are
     /// <b>derived exports</b> of it for human inspection. Use <see cref="VerifyArtifacts"/> to confirm
@@ -50,7 +71,7 @@ public sealed class FileRunArtifactStore : IRunArtifactStore
     public string Save(TraceBundle bundle)
     {
         var id = RunIdOf(bundle);
-        var dir = Path.Combine(_root, id);
+        var dir = RunDir(id);
         Directory.CreateDirectory(dir);
         File.WriteAllText(Path.Combine(dir, BundleFile), TraceBundleBuilder.ToJson(bundle));
         foreach (var (name, json) in TraceBundleBuilder.SplitFiles(bundle))   // derived exports
@@ -60,7 +81,7 @@ public sealed class FileRunArtifactStore : IRunArtifactStore
 
     public TraceBundle Load(string runId)
     {
-        var path = Path.Combine(_root, runId, BundleFile);
+        var path = Path.Combine(RunDir(runId), BundleFile);
         if (!File.Exists(path))
             throw new FileNotFoundException($"No persisted run '{runId}'.", path);
         return TraceBundleBuilder.FromJson(File.ReadAllText(path));
@@ -80,7 +101,7 @@ public sealed class FileRunArtifactStore : IRunArtifactStore
     private bool VerifyArtifacts(string runId, TraceBundle bundle, bool signatureValid)
     {
         if (!signatureValid) return false;
-        var dir = Path.Combine(_root, runId);
+        var dir = RunDir(runId);
         foreach (var (name, expected) in TraceBundleBuilder.SplitFiles(bundle))
         {
             var path = Path.Combine(dir, name);
@@ -121,7 +142,7 @@ public sealed class FileRunArtifactStore : IRunArtifactStore
     /// so retention doesn't destroy the audit trail.</summary>
     public void Archive(string runId)
     {
-        var src = Path.Combine(_root, runId);
+        var src = RunDir(runId);
         if (!Directory.Exists(src)) return;
         var archiveRoot = Path.Combine(_root, ".archive");
         Directory.CreateDirectory(archiveRoot);

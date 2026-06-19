@@ -76,7 +76,7 @@ app.MapGet("/api/runs", () => Results.Json(store.ListSummaries()));
 app.MapGet("/api/runs/{id}", (string id) =>
 {
     try { return Results.Json(store.Load(id)); }
-    catch (FileNotFoundException) { return Results.NotFound(new { error = $"no run '{id}'" }); }
+    catch (Exception ex) when (ex is FileNotFoundException or ArgumentException) { return Results.NotFound(new { error = $"no run '{id}'" }); }
 });
 
 /// One inspectable split artifact (intent.graph.json … audit.signed.json) — the signed-artifact viewer.
@@ -89,7 +89,7 @@ app.MapGet("/api/runs/{id}/artifact/{name}", (string id, string name) =>
             ? Results.Text(json, "application/json")
             : Results.NotFound(new { error = $"no artifact '{name}'", available = files.Keys });
     }
-    catch (FileNotFoundException) { return Results.NotFound(new { error = $"no run '{id}'" }); }
+    catch (Exception ex) when (ex is FileNotFoundException or ArgumentException) { return Results.NotFound(new { error = $"no run '{id}'" }); }
 });
 
 /// Integrity check: the signed bundle verifies AND every derived split artifact byte-matches.
@@ -106,7 +106,7 @@ app.MapGet("/api/runs/{id}/verify", (string id) =>
             keyId = bundle.KeyId,
         });
     }
-    catch (FileNotFoundException) { return Results.NotFound(new { error = $"no run '{id}'" }); }
+    catch (Exception ex) when (ex is FileNotFoundException or ArgumentException) { return Results.NotFound(new { error = $"no run '{id}'" }); }
 });
 
 /// Replay: re-verify the signature, re-run deterministically, and report whether it reproduced
@@ -126,7 +126,7 @@ app.MapPost("/api/runs/{id}/replay", (string id) =>
             recomputedSignature = replay.RecomputedSignature,
         });
     }
-    catch (FileNotFoundException) { return Results.NotFound(new { error = $"no run '{id}'" }); }
+    catch (Exception ex) when (ex is FileNotFoundException or ArgumentException) { return Results.NotFound(new { error = $"no run '{id}'" }); }
 });
 
 /// "Why blocked / what would approval do" — the approval-queue reasoning view. Runs the prompt and
