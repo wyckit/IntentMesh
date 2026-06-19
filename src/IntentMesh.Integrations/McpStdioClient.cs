@@ -11,21 +11,35 @@ namespace IntentMesh.Integrations;
 /// </summary>
 public sealed class McpStdioClient : IMcpClient
 {
+    /// <summary>How long to wait for a response line before giving up — bounds a hung/silent server
+    /// so a forwarded tool call can't block the runtime forever (fail-closed against a dead transport).</summary>
+    public static readonly TimeSpan DefaultReadTimeout = TimeSpan.FromSeconds(30);
+
+    /// <summary>Hard cap on a single JSON-RPC line; a server streaming an unbounded line can't
+    /// exhaust memory. 8 MiB is far above any legitimate tools/list or tools/call response.</summary>
+    public const int MaxLineBytes = 8 * 1024 * 1024;
+
     private readonly Process _proc;
     private readonly StreamWriter _stdin;
     private readonly StreamReader _stdout;
+    private readonly TimeSpan _readTimeout;
     private int _id;
 
-    private McpStdioClient(Process proc)
+    private McpStdioClient(Process proc, TimeSpan readTimeout)
     {
         _proc = proc;
         _stdin = proc.StandardInput;
         _stdout = proc.StandardOutput;
+        _readTimeout = readTimeout;
     }
 
     /// <summary>Spawn the server (<paramref name="command"/> + <paramref name="args"/>) and run the
     /// MCP initialize handshake. Throws if the server fails to respond to initialize.</summary>
     public static McpStdioClient Connect(string command, params string[] args)
+        => Connect(command, DefaultReadTimeout, args);
+
+    /// <summary>Spawn the server with an explicit per-response read timeout (see DefaultReadTimeout).</summary>
+    public static McpStdioClient Connect(string command, TimeSpan readTimeout, params string[] args)
     {
         var psi = new ProcessStartInfo
         {
@@ -38,7 +52,7 @@ public sealed class McpStdioClient : IMcpClient
         foreach (var a in args) psi.ArgumentList.Add(a);
 
         var proc = Process.Start(psi) ?? throw new InvalidOperationException($"Could not start MCP server: {command}");
-        var client = new McpStdioClient(proc);
+        var client = new McpStdioClient(proc, readTimeout);
 
         client.Request("initialize", new
         {
@@ -74,11 +88,19 @@ public sealed class McpStdioClient : IMcpClient
         _stdin.WriteLine(JsonSerializer.Serialize(new { jsonrpc = "2.0", id, method, @params }));
         _stdin.Flush();
 
+        using var deadline = new CancellationTokenSource(_readTimeout);
         while (true)
         {
-            var line = _stdout.ReadLine();
+            string? line;
+            try { line = _stdout.ReadLineAsync(deadline.Token).AsTask().GetAwaiter().GetResult(); }
+            catch (OperationCanceledException)
+            {
+                throw new TimeoutException($"MCP server did not answer '{method}' within {_readTimeout.TotalSeconds:0}s — abandoning the call (fail-closed).");
+            }
             if (line is null) throw new IOException("MCP server closed the connection.");
             if (line.Length == 0) continue;
+            if (line.Length > MaxLineBytes)
+                throw new IOException($"MCP server response line exceeded {MaxLineBytes} bytes — refusing to buffer it.");
             using var doc = JsonDocument.Parse(line);
             var root = doc.RootElement;
             if (!root.TryGetProperty("id", out var idEl) || idEl.ValueKind != JsonValueKind.Number || idEl.GetInt32() != id)

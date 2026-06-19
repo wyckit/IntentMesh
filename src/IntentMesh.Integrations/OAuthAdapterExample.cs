@@ -91,8 +91,10 @@ public sealed class SmtpEmailTransport : IEmailTransport
     }
 }
 
-/// <summary>The token returned by the (configured) Gmail OAuth path.</summary>
-public sealed record OAuthToken(string AccessToken, DateTimeOffset ExpiresAt);
+/// <summary>The token returned by the (configured) Gmail OAuth path. <see cref="Scope"/> is the
+/// space-delimited scope the server actually GRANTED (may be narrower than requested); empty when the
+/// server did not echo a scope.</summary>
+public sealed record OAuthToken(string AccessToken, DateTimeOffset ExpiresAt, string Scope = "");
 
 /// <summary>
 /// A real email adapter on the IntentMesh <see cref="IToolAdapter"/> seam. It declares the
@@ -212,7 +214,29 @@ public sealed class GoogleDeviceCodeFlow
     {
         var device = await RequestDeviceCodeAsync(clientId, scope, ct);
         prompt?.Invoke(device);
-        return await PollForTokenAsync(clientId, clientSecret, device, delay, ct);
+        var token = await PollForTokenAsync(clientId, clientSecret, device, delay, ct);
+
+        // Token-scope enforcement (fail-closed): if the server told us which scopes it GRANTED, refuse
+        // a token narrower than we asked for. A downgraded grant means later API calls would fail in an
+        // opaque way (or, worse, the token is reused for something it can't actually authorize) — better
+        // to surface it here than to hand the adapter a token that doesn't cover its capability.
+        if (!string.IsNullOrWhiteSpace(token.Scope))
+        {
+            var missing = MissingScopes(requested: scope, granted: token.Scope);
+            if (missing.Count > 0)
+                throw new InvalidOperationException(
+                    $"OAuth granted a narrower scope than required — missing: {string.Join(", ", missing)}. " +
+                    $"Requested '{scope}', granted '{token.Scope}'. Refusing the token (fail-closed).");
+        }
+        return token;
+    }
+
+    /// <summary>Scopes in <paramref name="requested"/> (space-delimited) that are NOT present in
+    /// <paramref name="granted"/>. Empty when the grant fully covers the request.</summary>
+    public static List<string> MissingScopes(string requested, string granted)
+    {
+        var have = new HashSet<string>(granted.Split(' ', StringSplitOptions.RemoveEmptyEntries), StringComparer.Ordinal);
+        return requested.Split(' ', StringSplitOptions.RemoveEmptyEntries).Where(s => !have.Contains(s)).ToList();
     }
 
     /// <summary>Step 1 — request a device + user code (RFC 8628 §3.1–3.2).</summary>
@@ -267,7 +291,7 @@ public sealed class GoogleDeviceCodeFlow
             var root = doc.RootElement;
 
             if (Str(root, "access_token") is { } access)
-                return new OAuthToken(access, DateTimeOffset.UtcNow.AddSeconds(Int(root, "expires_in", 3600)));
+                return new OAuthToken(access, DateTimeOffset.UtcNow.AddSeconds(Int(root, "expires_in", 3600)), Str(root, "scope") ?? "");
 
             var error = Str(root, "error");
             switch (error)
