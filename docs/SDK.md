@@ -62,9 +62,27 @@ a send to an attacker is gated (Confirm), never auto-sent.
 |---|---|---|
 | `Propose(prompt, ws)` | propose | `ProposedPlan` (typed candidates) |
 | `Run(prompt, ws, approvals?)` | compile + policy + execute + verify | `RunResult` |
-| `Bundle(prompt, ws, approvals?)` | export | `TraceBundle` (5 signed artifacts) |
+| `Bundle(prompt, ws, approvals?)` / `Bundle(run, approvals?)` | export | `TraceBundle` (5 signed artifacts) |
 | `SignAudit(run)` | export | `SignedAudit` (tamper-evident) |
-| `IsRegistered(kind)` | — | `bool` (Translation-Drift bound) |
+| `Save(store, run, approvals?)` | persist | `string` run id (signed, content-addressed) |
+| `Replay(savedBundle, freshWs, key?)` | replay | `ReplayResult` (signature + byte-for-byte reproduction) |
+| `Explain(prompt, freshWs, approvals?)` | operate | `RunExplanation` (why blocked / what approval would do) |
+| `IsRegistered(kind)` / `RegisteredKinds` | — | the closed Translation-Drift-bounded kind set |
 
-`WithProposer(proposer)` swaps the proposal layer; everything downstream is unchanged. See
-[INTEGRATIONS.md](INTEGRATIONS.md) for the MCP proxy, OpenAPI import, and real-adapter examples.
+`WithProposer(proposer)` swaps the proposal layer; everything downstream is unchanged.
+
+## Full lifecycle, one surface
+
+```csharp
+var sdk = IntentMeshSdk.WithProposer(new MyAgentProposer());
+var run = sdk.Run(request, ws);                                  // gate · execute · verify
+var id  = sdk.Save(store, run);                                  // persist (replayable)
+var rep = sdk.Replay(store.Load(id), Workspace.CreateDemo);      // re-verify + reproduce
+var why = sdk.Explain(request, Workspace.CreateDemo);            // operator reasoning view
+```
+
+## Where to go next
+
+- **[Minimal host template](../templates/IntentMesh.Host.Template/)** — a runnable starting point; copy it and replace the proposer.
+- **[EXTENSION-POINTS.md](EXTENSION-POINTS.md)** — every seam (proposer, contract, policy, adapter, verifier, audit, replay) and the invariant each must hold.
+- **[INTEGRATIONS.md](INTEGRATIONS.md)** — the MCP proxy, OpenAPI import, and real-adapter examples.

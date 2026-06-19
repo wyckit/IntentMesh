@@ -52,4 +52,42 @@ public sealed class SdkTests
         Assert.Equal("Confirm", run.Policy.Single(p => p.NodeId == "n1").Decision);
         Assert.Empty(ws.SentEmails);
     }
+
+    [Fact]
+    public void Sdk_persists_and_replays_a_run_through_one_surface()
+    {
+        var sdk = IntentMeshSdk.Load();
+        var dir = Path.Combine(Path.GetTempPath(), "im-sdk-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new FileRunArtifactStore(dir);
+            var run = sdk.Run(Prompt, Workspace.CreateDemo());
+
+            var runId = sdk.Save(store, run);                 // step 7 — persist
+            Assert.True(store.VerifyArtifacts(runId));         // tamper-evident on disk
+
+            var replay = sdk.Replay(store.Load(runId), Workspace.CreateDemo);
+            Assert.True(replay.SignatureVerified);
+            Assert.True(replay.Reproduced);                    // deterministic byte-for-byte
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public void Sdk_explains_what_approval_would_do()
+    {
+        var sdk = IntentMeshSdk.Load();
+        var ex = sdk.Explain("Clean up my downloads and delete anything that looks like junk.", Workspace.CreateDemo);
+
+        Assert.NotEmpty(ex.AwaitingApproval);                  // the destructive delete is queued
+        Assert.All(ex.IfApproved, d => Assert.True(d.Changed)); // approval would let it proceed
+    }
+
+    [Fact]
+    public void RegisteredKinds_is_the_closed_proposable_set()
+    {
+        var sdk = IntentMeshSdk.Load();
+        Assert.All(sdk.RegisteredKinds, k => Assert.True(sdk.IsRegistered(k)));
+        Assert.DoesNotContain("act-launch-missiles", sdk.RegisteredKinds);
+    }
 }
