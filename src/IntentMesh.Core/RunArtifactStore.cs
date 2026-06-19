@@ -36,13 +36,17 @@ public sealed class FileRunArtifactStore : IRunArtifactStore
     public static string RunIdOf(TraceBundle bundle)
         => bundle.BundleSignature[..Math.Min(16, bundle.BundleSignature.Length)];
 
+    /// <summary>Persist the run. <c>bundle.json</c> is the canonical, signed artifact (verified on
+    /// load/replay); the five split files (<c>intent.graph.json</c> … <c>audit.signed.json</c>) are
+    /// <b>derived exports</b> of it for human inspection. Use <see cref="VerifyArtifacts"/> to confirm
+    /// the split files still match the signed bundle.</summary>
     public string Save(TraceBundle bundle)
     {
         var id = RunIdOf(bundle);
         var dir = Path.Combine(_root, id);
         Directory.CreateDirectory(dir);
         File.WriteAllText(Path.Combine(dir, BundleFile), TraceBundleBuilder.ToJson(bundle));
-        foreach (var (name, json) in TraceBundleBuilder.SplitFiles(bundle))
+        foreach (var (name, json) in TraceBundleBuilder.SplitFiles(bundle))   // derived exports
             File.WriteAllText(Path.Combine(dir, name), json);
         return id;
     }
@@ -53,6 +57,24 @@ public sealed class FileRunArtifactStore : IRunArtifactStore
         if (!File.Exists(path))
             throw new FileNotFoundException($"No persisted run '{runId}'.", path);
         return TraceBundleBuilder.FromJson(File.ReadAllText(path));
+    }
+
+    /// <summary>
+    /// Full on-disk integrity check for a persisted run: the canonical <c>bundle.json</c> must
+    /// signature-verify, AND each derived split file must byte-match what the signed bundle
+    /// re-derives. Catches tampering with either the bundle or any split export.
+    /// </summary>
+    public bool VerifyArtifacts(string runId, byte[]? key = null)
+    {
+        var bundle = Load(runId);
+        if (!TraceBundleBuilder.VerifySignature(bundle, key)) return false;
+        var dir = Path.Combine(_root, runId);
+        foreach (var (name, expected) in TraceBundleBuilder.SplitFiles(bundle))
+        {
+            var path = Path.Combine(dir, name);
+            if (!File.Exists(path) || File.ReadAllText(path) != expected) return false;
+        }
+        return true;
     }
 
     public IReadOnlyList<string> List()

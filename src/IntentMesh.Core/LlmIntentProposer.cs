@@ -58,6 +58,15 @@ public sealed class LlmIntentProposer : IIntentProposer
                 unsupported.Add($"LLM proposed unregistered kind '{kind}' — refusing to emit (Translation-Drift).");
                 continue;
             }
+            // Fail-closed on malformed/ambiguous intent: a side-effecting action missing a
+            // target/safety field (recipient, path, command, table) is dropped — never defaulted into
+            // a gated executable node.
+            var missing = TypedActionFactory.RequiredFields(kind).Where(rf => !TypedActionFactory.HasValue(paramFields, rf)).ToList();
+            if (missing.Count > 0)
+            {
+                unsupported.Add($"LLM proposed '{kind}' missing required field(s): {string.Join(", ", missing)} — refusing to emit (fail-closed).");
+                continue;
+            }
             var action = TypedActionFactory.Build(kind, paramFields);
             if (action is null)
             {

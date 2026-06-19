@@ -97,6 +97,26 @@ public sealed class PersistenceTests
     }
 
     [Fact]
+    public void Verify_artifacts_detects_tampering_with_a_derived_split_file()
+    {
+        var root = TempRoot();
+        try
+        {
+            var bundle = TraceBundleBuilder.From(Runtime().Run(Prompt, Workspace.CreateDemo()));
+            var store = new FileRunArtifactStore(root);
+            var id = store.Save(bundle);
+
+            Assert.True(store.VerifyArtifacts(id), "intact run should verify (bundle + all split files)");
+
+            // Tamper a DERIVED split file (not bundle.json) — full integrity check must catch it.
+            var split = Path.Combine(root, id, "intent.graph.json");
+            File.WriteAllText(split, File.ReadAllText(split).Replace("NeedsConfirmation", "Executed"));
+            Assert.False(store.VerifyArtifacts(id), "a tampered split export must fail the integrity check");
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
     public void Run_id_is_deterministic_from_the_signature()
     {
         var a = TraceBundleBuilder.From(Runtime().Run(Prompt, Workspace.CreateDemo()));

@@ -40,6 +40,34 @@ public static class TypedActionFactory
         };
     }
 
+    /// <summary>
+    /// The fields a kind must carry for the action to be well-formed and unambiguous — the ones that
+    /// determine its target or safety (a recipient, a path, a command, a table). A proposer must
+    /// reject a proposal missing any of these rather than synthesize a default, so a malformed LLM
+    /// action (send with no recipient, fs-write with no path) never becomes an executable intent.
+    /// Benign read/default-bearing kinds have none.
+    /// </summary>
+    public static IReadOnlyList<string> RequiredFields(string kind) => kind switch
+    {
+        Kinds.SendEmail        => new[] { "recipient" },
+        Kinds.DraftEmail       => new[] { "recipient" },
+        Kinds.FsRead           => new[] { "path" },
+        Kinds.FsWrite          => new[] { "path" },
+        Kinds.DeleteFiles      => new[] { "fileRefs" },
+        Kinds.RunCommand       => new[] { "command" },
+        Kinds.ModifyCode       => new[] { "path" },
+        Kinds.OpenPullRequest  => new[] { "title" },
+        Kinds.BuildQueryPlan   => new[] { "operation", "table" },
+        Kinds.RunQuery         => new[] { "table" },
+        _                      => Array.Empty<string>(),
+    };
+
+    /// <summary>True when <paramref name="fields"/> carries a usable value for <paramref name="key"/>
+    /// — present, non-blank, and not an empty JSON collection.</summary>
+    public static bool HasValue(IReadOnlyDictionary<string, string> fields, string key)
+        => fields.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v)
+           && v.Trim() is not ("[]" or "{}" or "\"\"" or "''");
+
     /// <summary>Parse a list-valued field that may arrive as a JSON array (<c>["a","b"]</c>) or a
     /// comma-separated string.</summary>
     private static IReadOnlyList<string> ParseList(string raw)

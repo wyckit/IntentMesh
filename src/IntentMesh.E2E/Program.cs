@@ -7,9 +7,10 @@ using IntentMesh.Integrations;
 //   LLM proposer → typed intent → policy gate → real tool (gated) → approval
 //                → signed, persisted audit → replay
 //
-// Runs offline by default (a scripted LLM + an in-process MCP tool), so it's
-// deterministic and needs no credentials. Set ANTHROPIC_API_KEY to use a real
-// model as the proposer; the rest of the path is identical.
+// Runs with no credentials by default (a scripted LLM proposer). The tool leg uses
+// a REAL MCP server over stdio when node is available, else a labeled in-process
+// fake. Set ANTHROPIC_API_KEY to use a real model as the proposer — the rest of the
+// path is identical.
 // ──────────────────────────────────────────────────────────────────────────────
 
 Console.WriteLine("IntentMesh — verified-intent runtime, full path demo\n");
@@ -42,11 +43,24 @@ if (result.Unsupported.Count > 0)
     Console.WriteLine($"  (dropped: {string.Join("; ", result.Unsupported)})");
 Console.WriteLine($"Verification: {(result.Verification.All(v => v.Pass) ? "PASS" : "FAIL")} ({result.Verification.Count} checks)\n");
 
-// 6. REAL TOOL LEG — gate an external MCP tool call before it runs. A benign call is forwarded;
-//    a malicious one (injected exfil) is blocked and NEVER reaches the server.
+// 6. TOOL LEG — gate an external MCP tool call before it runs. A benign call is forwarded; a
+//    malicious one (injected exfil) is blocked and NEVER reaches the server. Uses a REAL MCP server
+//    over stdio JSON-RPC (the bundled mcp-echo-server.js) when node is available; otherwise an
+//    in-process fake — labeled, so the demo never overclaims.
 var proxy = new McpProxy(runtime, Workspace.CreateDemo());
-var tool = new InProcessMcpServer();
-Console.WriteLine("MCP tool gating (IntentMesh in front of the tool):");
+IMcpClient tool;
+string toolLabel;
+try
+{
+    tool = McpStdioClient.Connect("node", McpStdioClient.EchoServerScript());
+    toolLabel = "REAL MCP server over stdio JSON-RPC (mcp-echo-server.js)";
+}
+catch
+{
+    tool = new InProcessMcpServer();
+    toolLabel = "in-process fake (node not available — install node for the real stdio server)";
+}
+Console.WriteLine($"MCP tool gating — transport: {toolLabel}");
 foreach (var call in new[]
 {
     new McpToolCall("read_calendar", new Dictionary<string, string> { ["range"] = "Friday" }),
@@ -56,7 +70,10 @@ foreach (var call in new[]
     var fwd = proxy.GateAndForward(call, tool);
     Console.WriteLine($"  {call.Tool,-16} → {(fwd.Gate.Allowed ? "FORWARDED" : "BLOCKED  ")}  {(fwd.ServerResponse is null ? "(not sent)" : "server replied")}");
 }
-Console.WriteLine($"  tools the server actually saw: [{string.Join(", ", tool.Received)}]\n");
+if (tool is InProcessMcpServer fake)
+    Console.WriteLine($"  tools the server actually saw: [{string.Join(", ", fake.Received)}]");
+tool.Dispose();
+Console.WriteLine();
 
 // 7. PERSIST the signed audit, then REPLAY it (verify signature + reproduce byte-identically).
 var store = new FileRunArtifactStore(Path.Combine(Directory.GetCurrentDirectory(), "runs"));

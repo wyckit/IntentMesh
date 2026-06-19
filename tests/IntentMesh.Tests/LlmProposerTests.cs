@@ -104,6 +104,20 @@ public sealed class LlmProposerTests
         Assert.Empty(ws.SentEmails);                   // nothing transmitted
     }
 
+    [Theory]
+    [InlineData("act-send-email", "{\"actions\":[{\"kind\":\"act-send-email\",\"fields\":{\"draftRef\":\"d\"}}]}", "recipient")]
+    [InlineData("act-fs-write",   "{\"actions\":[{\"kind\":\"act-fs-write\",\"fields\":{\"content\":\"x\"}}]}", "path")]
+    [InlineData("act-run-command","{\"actions\":[{\"kind\":\"act-run-command\",\"fields\":{}}]}", "command")]
+    [InlineData("act-delete-files","{\"actions\":[{\"kind\":\"act-delete-files\",\"fields\":{\"fileRefs\":\"[]\"}}]}", "fileRefs")]
+    public void A_side_effecting_action_missing_a_required_field_is_dropped_fail_closed(string kind, string json, string missing)
+    {
+        var bundle = Bundle();
+        var plan = new LlmIntentProposer(bundle, new ScriptedLlm(json)).Propose("do it", Workspace.CreateDemo());
+
+        Assert.Empty(plan.Nodes);   // never becomes a gated executable intent
+        Assert.Contains(plan.Unsupported, u => u.Contains(kind) && u.Contains(missing) && u.Contains("required", StringComparison.OrdinalIgnoreCase));
+    }
+
     [Fact]
     public void List_valued_fields_parse_from_a_json_array()
     {
