@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/wyckit/IntentMesh/actions/workflows/ci.yml/badge.svg)](https://github.com/wyckit/IntentMesh/actions/workflows/ci.yml)
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4.svg)](https://dotnet.microsoft.com/)
-[![tests](https://img.shields.io/badge/tests-83%2F83-34d399.svg)](#status)
+[![tests](https://img.shields.io/badge/tests-111%2F111-34d399.svg)](#status)
 [![IntentBench](https://img.shields.io/badge/IntentBench-25%2F25-34d399.svg)](docs/WHITEPAPER.md)
 
 Before an AI agent sends an email, edits code, queries data, books a meeting, deletes a file, or
@@ -174,10 +174,10 @@ calls; IntentMesh governs intent before it becomes a tool call.* The product is 
   [SDK.md](docs/SDK.md) · [ADAPTER-GUIDE.md](docs/ADAPTER-GUIDE.md) · [compare.html](docs/compare.html) ·
   [landing](docs/index.html) · IntentBench scoreboard: `bench/scoreboard.html`
 
-**Progress against the plan — all six phases complete (v1.3.0):** Phase 1 (clarity) ✓ · Phase 2
+**Progress against the plan — all six phases complete, shipped through v1.5.0:** Phase 1 (clarity) ✓ · Phase 2
 (signed artifacts, replay, contract-boundary) ✓ · Phase 3 (Control Room v1) ✓ · Phase 4 (IntentBench
 25/25) ✓ · Phase 5 (SDK + MCP proxy / OpenAPI import / real-adapter example) ✓ · Phase 6 (manifesto,
-whitepaper, landing) ✓. **77/77 tests · IntentBench 25/25 · TLM 7/7.**
+whitepaper, landing) ✓. **111/111 tests · IntentBench 25/25 · TLM 7/7.**
 
 ## Core principles
 
@@ -187,8 +187,8 @@ whitepaper, landing) ✓. **77/77 tests · IntentBench 25/25 · TLM 7/7.**
 
 ## Status
 
-v1.0 prototype. Symbolic layer: 7 TLMs, ~125 concepts, 7/7 round-trip verify; 16 typed action
-contracts across four domains. **xUnit 38/38.** Five demo scenarios. Delivered beyond v0.1:
+Research prototype, v1.5.0. Symbolic layer: 7 TLMs, ~125 concepts, 7/7 round-trip verify; typed action
+contracts across four domains. **xUnit 111/111.** Five demo scenarios. Delivered beyond v0.1:
 
 - **v0.2** — interactive confirmation flow (Approve/Undo gated nodes; a blocked zero-trust node can
   never be approved), deterministic audit-trace export (JSON/Markdown), and an emergent **skill
@@ -202,10 +202,20 @@ contracts across four domains. **xUnit 38/38.** Five demo scenarios. Delivered b
 - **v1.0** — framework seams: a **swappable proposer** (`IIntentProposer` — an LLM drops in, the gate
   still governs), **capability scoping** (`pol-capability-not-granted`), and **tamper-evident signed
   audit logs** (`AuditSigner`, exposed as the "⬇ Signed" download).
+- **v1.4** — real, dependency-free integrations: MCP **stdio** + **Streamable HTTP/SSE** transports
+  behind one `IMcpClient` seam (wired in front of `@modelcontextprotocol/server-filesystem`), OpenAPI
+  import (**JSON + YAML**, local `$ref` resolution + semantic side-effect/risk/capability inference),
+  and a real **SMTP** transport plus an **OAuth 2.0 device flow** (RFC 8628). See [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
+- **v1.5** — **kernel hardening**: audit key sourced from env/KMS (`IAuditKeyProvider`; demo key
+  labelled INSECURE), **fail-closed** parsing (remote/unresolvable `$ref` and over-deep/tab-indented
+  YAML rejected), symlink/UNC-aware **path safety**, an **SSRF-guarded** HTTP transport with read +
+  size/event caps, and **provable consent** (the approval set is folded into the signed audit, with a
+  blanket-approval cap). Each defense is exercised by **IntentBench-Red**, an adversarial suite that
+  attacks the kernel itself. See [docs/SECURITY_MODEL.md](docs/SECURITY_MODEL.md).
 
 Conventions follow PassGen: .NET 10, nullable + implicit usings, file-scoped namespaces,
 `sealed record` contracts, xUnit. Self-contained git repo. See [docs/ROADMAP.md](docs/ROADMAP.md)
-for what's deliberately left as future (real OAuth adapters, RSRM hot-load, policy DSL).
+for what's deliberately left as future (RSRM hot-load, a declarative policy DSL, audit-log persistence).
 
 ## License
 
