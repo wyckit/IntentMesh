@@ -62,6 +62,41 @@ public sealed class SendEnforcementTests
     }
 
     [Fact]
+    public void The_real_gmail_adapter_also_requires_a_prior_draft()
+    {
+        var transport = new NullEmailTransport();
+        var adapter = OAuthAdapterWiringExample.CreateAdapter(transport);
+        var ws = Workspace.CreateDemo();   // no draft
+
+        var exec = adapter.Execute(SendNode("sarah@company.com", "bogus-ref"), Confirm(), ws, approved: true);
+
+        Assert.True(exec.Halted);          // same draft-before-send rule as the in-memory adapter
+        Assert.Empty(ws.SentEmails);
+        Assert.Empty(transport.Sent);      // nothing transmitted over the (real) transport
+    }
+
+    [Fact]
+    public void No_attacker_verification_recognizes_a_known_contact_by_email()
+    {
+        var ws = Workspace.CreateDemo();
+        var known = ws.Contacts.First(c => c.Known && !c.External);
+
+        // A draft + send addressed by the contact's EMAIL (not name) must still count as "known".
+        ws.Drafts.Add(new EmailDraft(known.Email, known.Email, "Notes", "body", Array.Empty<string>(), Sent: true));
+        ws.SentEmails.Add(known.Email);
+        var graph = new IntentGraph();
+        graph.Add(new IntentNode
+        {
+            Id = "s1", Type = Kinds.SendEmail, Label = "send", TrustSource = TrustSource.User, Status = NodeStatus.Executed,
+            Action = new SendEmailAction("ref", known.Email, Array.Empty<string>()),
+        });
+
+        var v = new PostconditionVerifier().Verify(graph, ws, new HashSet<string> { known.Email });
+        var noAttacker = v.First(x => x.Id == "pc-no-attacker-recipient");
+        Assert.True(noAttacker.Pass, $"a known contact addressed by email must not read as an attacker; evidence: {noAttacker.Evidence}");
+    }
+
+    [Fact]
     public void An_approved_send_to_a_known_requested_recipient_passes_no_attacker_verification()
     {
         var bundle = Bundle();
