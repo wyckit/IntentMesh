@@ -1,0 +1,86 @@
+using IntentMesh.Core;
+using Xunit;
+
+namespace IntentMesh.Tests;
+
+/// <summary>
+/// Audit operations: key rotation (a key change must not invalidate already-signed audits), run
+/// retention/archival, and the operator history summary. The tamper-verification path itself
+/// (VerifyArtifacts, RunReplay) is covered in PersistenceTests.
+/// </summary>
+public sealed class AuditOperationsTests
+{
+    private const string Prompt =
+        "Plan my Friday, move anything flexible, book an hour for the gym, and draft Sarah the meeting notes.";
+
+    private static IntentMeshRuntime Runtime() => IntentMeshRuntime.Load();
+    private static byte[] Key(byte fill) => Enumerable.Repeat(fill, 32).ToArray();
+
+    private static string TempRoot()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "im-auditops-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        return root;
+    }
+
+    [Fact]
+    public void Rotating_the_signing_key_does_not_invalidate_audits_signed_under_the_old_key()
+    {
+        var result = Runtime().Run(Prompt, Workspace.CreateDemo());
+        var keyA = Key(0xA1);
+
+        var signed = AuditSigner.Sign(result, new RotatingAuditKeyProvider("k-2026a", keyA));
+        Assert.Equal("k-2026a", signed.KeyId);
+
+        // Rotate: new current key k-2026b, with k-2026a retained as a prior key.
+        var rotated = new RotatingAuditKeyProvider("k-2026b", Key(0xB2),
+            new Dictionary<string, byte[]> { ["k-2026a"] = keyA });
+        Assert.True(AuditSigner.Verify(signed, rotated), "audit signed under the prior key must still verify after rotation");
+
+        // A provider that no longer holds the old key fails closed (can't forge, can't silently pass).
+        var lostOldKey = new RotatingAuditKeyProvider("k-2026b", Key(0xB2));
+        Assert.False(AuditSigner.Verify(signed, lostOldKey));
+    }
+
+    [Fact]
+    public void A_weak_rotation_key_is_rejected_at_construction()
+        => Assert.Throws<InvalidOperationException>(() => new RotatingAuditKeyProvider("k", new byte[] { 1, 2, 3 }));
+
+    [Fact]
+    public void Retention_prune_archives_older_runs_and_keeps_the_newest()
+    {
+        var root = TempRoot();
+        try
+        {
+            var rt = Runtime();
+            var store = new FileRunArtifactStore(root);
+            foreach (var p in new[] { "Read my calendar for Friday.", "Clean up my downloads.", Prompt })
+                store.Save(TraceBundleBuilder.From(rt.Run(p, Workspace.CreateDemo())));
+
+            Assert.Equal(3, store.List().Count);
+
+            var archived = store.Prune(keepNewest: 1);
+            Assert.Equal(2, archived.Count);
+            Assert.Single(store.List());                                  // .archive is not listed
+            Assert.True(Directory.Exists(Path.Combine(root, ".archive"))); // archived runs preserved on disk
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void Run_summaries_carry_prompt_decision_counts_and_signing_key()
+    {
+        var root = TempRoot();
+        try
+        {
+            var store = new FileRunArtifactStore(root);
+            store.Save(TraceBundleBuilder.From(Runtime().Run(Prompt, Workspace.CreateDemo())));
+
+            var summary = Assert.Single(store.ListSummaries());
+            Assert.Equal(Prompt, summary.Prompt);
+            Assert.True(summary.Total > 0);
+            Assert.Contains("INSECURE", summary.KeyId);   // demo key in tests; production records its real id
+        }
+        finally { Directory.Delete(root, true); }
+    }
+}

@@ -102,6 +102,26 @@ if (rest[0] == "replay")
     return sigOk && identical ? 0 : 1;
 }
 
+// verify-run: full tamper-verification of a PERSISTED run in a store directory — checks the signed
+// bundle + every derived split artifact, then replays for byte-identical reproduction.
+//   intentmesh verify-run <runsDir> <runId>
+if (rest[0] == "verify-run")
+{
+    if (rest.Count < 3) { Console.Error.WriteLine("usage: intentmesh verify-run <runsDir> <runId>"); return 1; }
+    var store = new FileRunArtifactStore(rest[1]);
+    TraceBundle bundle;
+    try { bundle = store.Load(rest[2]); }
+    catch (Exception ex) { Console.Error.WriteLine(ex.Message); return 1; }
+    bool artifactsOk = store.VerifyArtifacts(rest[2]);
+    var replay = RunReplay.Reproduce(runtime, Workspace.CreateDemo(), bundle);
+    Console.WriteLine($"run:       {rest[2]}  (key {bundle.SignedAudit.KeyId})");
+    Console.WriteLine($"prompt:    \"{bundle.Prompt}\"");
+    Console.WriteLine($"artifacts: {(artifactsOk ? "INTACT (bundle + 5 split files match the signature)" : "TAMPERED")}");
+    Console.WriteLine($"signature: {(replay.SignatureVerified ? "VALID" : "INVALID")}");
+    Console.WriteLine($"replay:    {(replay.Reproduced ? "DETERMINISTIC — byte-identical" : "MISMATCH")}");
+    return artifactsOk && replay.SignatureVerified && replay.Reproduced ? 0 : 1;
+}
+
 // bare prompt
 Trace.Render(runtime.Run(string.Join(" ", rest), Workspace.CreateDemo()), "trace");
 return 0;

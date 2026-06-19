@@ -62,6 +62,37 @@ public sealed class EnvironmentAuditKeyProvider : IAuditKeyProvider
         => Convert.ToHexString(SHA256.HashData(key)).ToLowerInvariant()[..8];
 }
 
+/// <summary>An audit key provider that can resolve a key by its id — needed to verify an audit that
+/// was signed under a previous key after the signing key has been rotated.</summary>
+public interface IRotatableAuditKeyProvider : IAuditKeyProvider
+{
+    bool TryGetKey(string keyId, out byte[] key);
+}
+
+/// <summary>
+/// Holds a current signing key plus any prior keys, each addressed by its <c>KeyId</c>. Signs with
+/// the current key; verifies a stored audit with the key its recorded <c>KeyId</c> names — so
+/// rotating the signing key never invalidates already-signed audits. Fail-closed: an unknown KeyId
+/// does not verify, and a key shorter than 128-bit is rejected at construction.
+/// </summary>
+public sealed class RotatingAuditKeyProvider : IRotatableAuditKeyProvider
+{
+    private readonly Dictionary<string, byte[]> _keys = new(StringComparer.Ordinal);
+    public string KeyId { get; }
+
+    public RotatingAuditKeyProvider(string currentKeyId, byte[] currentKey, IReadOnlyDictionary<string, byte[]>? priorKeys = null)
+    {
+        if (string.IsNullOrWhiteSpace(currentKeyId)) throw new ArgumentException("currentKeyId is required.", nameof(currentKeyId));
+        if (currentKey.Length < 16) throw new InvalidOperationException("Audit signing key must be at least 16 bytes (128-bit).");
+        if (priorKeys is not null) foreach (var kv in priorKeys) _keys[kv.Key] = kv.Value;
+        _keys[currentKeyId] = currentKey;
+        KeyId = currentKeyId;
+    }
+
+    public byte[] GetKey() => _keys[KeyId];
+    public bool TryGetKey(string keyId, out byte[] key) => _keys.TryGetValue(keyId, out key!);
+}
+
 /// <summary>
 /// Signs an audit trail. Each audit event is folded into a SHA-256 hash chain
 /// (h_i = SHA256(h_(i-1) || event_i)); the chain head is then HMAC-signed with a key from an
@@ -106,6 +137,22 @@ public static class AuditSigner
         var expected = Hmac(ChainHash(result), provider.GetKey());
         return CryptographicOperations.FixedTimeEquals(
             Encoding.UTF8.GetBytes(expected), Encoding.UTF8.GetBytes(signature ?? ""));
+    }
+
+    /// <summary>Verify a PERSISTED audit using the key its own <c>KeyId</c> names (rotation-aware):
+    /// the signature is checked against the audit's recorded chain head. A rotatable provider resolves
+    /// the historical key by id; otherwise the provider's single key is used only if its id matches.
+    /// An unknown KeyId fails closed.</summary>
+    public static bool Verify(SignedAudit signed, IAuditKeyProvider provider)
+    {
+        byte[]? key =
+            provider is IRotatableAuditKeyProvider rot && rot.TryGetKey(signed.KeyId, out var k) ? k
+            : string.Equals(signed.KeyId, provider.KeyId, StringComparison.Ordinal) ? provider.GetKey()
+            : null;
+        if (key is null) return false;
+        return CryptographicOperations.FixedTimeEquals(
+            Encoding.UTF8.GetBytes(Hmac(signed.ChainHash, key)),
+            Encoding.UTF8.GetBytes(signed.Signature ?? ""));
     }
 
     private static IAuditKeyProvider Resolve(byte[]? key) => key is null ? Default : new RawKeyProvider(key);

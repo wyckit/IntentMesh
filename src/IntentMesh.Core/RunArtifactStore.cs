@@ -82,9 +82,66 @@ public sealed class FileRunArtifactStore : IRunArtifactStore
 
     public IReadOnlyList<string> List()
         => Directory.Exists(_root)
-            ? Directory.GetDirectories(_root).Select(d => Path.GetFileName(d)!).OrderBy(x => x, StringComparer.Ordinal).ToList()
+            ? Directory.GetDirectories(_root)
+                .Select(d => Path.GetFileName(d)!)
+                .Where(name => !name.StartsWith('.'))                 // skip .archive and other dot-dirs
+                .OrderBy(x => x, StringComparer.Ordinal).ToList()
             : Array.Empty<string>();
+
+    /// <summary>Run summaries for an operator history view — loaded from each persisted bundle.json
+    /// (corrupt/unreadable runs are skipped). Newest first by on-disk write time.</summary>
+    public IReadOnlyList<RunSummary> ListSummaries()
+    {
+        var summaries = new List<(DateTime When, RunSummary Summary)>();
+        foreach (var id in List())
+        {
+            try
+            {
+                var b = Load(id);
+                var s = b.Summary;
+                var when = File.GetLastWriteTimeUtc(Path.Combine(_root, id, BundleFile));
+                summaries.Add((when, new RunSummary(id, b.Prompt, s.Total, s.Allowed, s.NeedsConfirmation,
+                    s.Blocked, s.Executed, s.Verified, b.SignedAudit.KeyId, b.Approvals.Count)));
+            }
+            catch { /* skip a corrupt run rather than fail the whole listing */ }
+        }
+        return summaries.OrderByDescending(x => x.When).Select(x => x.Summary).ToList();
+    }
+
+    /// <summary>Move a run's artifacts to a <c>.archive/</c> subdirectory (preserving verifiability),
+    /// so retention doesn't destroy the audit trail.</summary>
+    public void Archive(string runId)
+    {
+        var src = Path.Combine(_root, runId);
+        if (!Directory.Exists(src)) return;
+        var archiveRoot = Path.Combine(_root, ".archive");
+        Directory.CreateDirectory(archiveRoot);
+        var dest = Path.Combine(archiveRoot, runId);
+        if (Directory.Exists(dest)) Directory.Delete(dest, true);
+        Directory.Move(src, dest);
+    }
+
+    /// <summary>Retention: keep the <paramref name="keepNewest"/> most-recent runs live and archive
+    /// the rest (by on-disk write time). Returns the archived run ids.</summary>
+    public IReadOnlyList<string> Prune(int keepNewest)
+    {
+        if (keepNewest < 0) throw new ArgumentOutOfRangeException(nameof(keepNewest));
+        var ordered = List()
+            .Select(id => (id, when: File.GetLastWriteTimeUtc(Path.Combine(_root, id, BundleFile))))
+            .OrderByDescending(x => x.when)
+            .Select(x => x.id)
+            .ToList();
+        var toArchive = ordered.Skip(keepNewest).ToList();
+        foreach (var id in toArchive) Archive(id);
+        return toArchive;
+    }
 }
+
+/// <summary>A compact, inspectable summary of one persisted run — the row an operator history view
+/// renders. Built from the persisted bundle (prompt, decision counts, signing key id, approvals).</summary>
+public sealed record RunSummary(
+    string RunId, string Prompt, int Total, int Allowed, int NeedsConfirmation,
+    int Blocked, int Executed, int Verified, string KeyId, int ApprovalCount);
 
 /// <summary>The outcome of replaying a persisted run.</summary>
 public sealed record ReplayResult(bool SignatureVerified, bool Reproduced, string RecomputedSignature);
