@@ -82,8 +82,10 @@ var runId = store.Save(savedBundle);
 Console.WriteLine($"Persisted run {runId} → runs/{runId}/ (5 artifacts + bundle.json)");
 
 var replay = RunReplay.Reproduce(runtime, Workspace.CreateDemo(), store.Load(runId));
+bool artifactsOk = store.VerifyArtifacts(runId);
 Console.WriteLine($"Replay: signature {(replay.SignatureVerified ? "VERIFIED" : "FAILED")}, " +
-                  $"reproduced {(replay.Reproduced ? "byte-identical" : "DIVERGED")}");
+                  $"reproduced {(replay.Reproduced ? "byte-identical" : "DIVERGED")}, " +
+                  $"artifacts {(artifactsOk ? "INTACT (bundle + 5 split files)" : "TAMPERED")}");
 
 if (llm is IDisposable d) d.Dispose();
 

@@ -165,6 +165,7 @@
         "SideEffect": "none",
         "RequiresConfirmation": "false",
         "Fields": "range",
+        "RequiredFields": "",
         "Postconditions": "pc-calendar-read-only"
       }
     },
@@ -179,6 +180,7 @@
         "SideEffect": "none",
         "RequiresConfirmation": "false",
         "Fields": "events",
+        "RequiredFields": "",
         "Postconditions": ""
       }
     },
@@ -193,6 +195,7 @@
         "SideEffect": "local-write",
         "RequiresConfirmation": "true",
         "Fields": "title,start,durationMinutes",
+        "RequiredFields": "title,start,durationMinutes",
         "Postconditions": "pc-block-proposed-not-committed"
       }
     },
@@ -207,6 +210,7 @@
         "SideEffect": "none",
         "RequiresConfirmation": "false",
         "Fields": "topic",
+        "RequiredFields": "",
         "Postconditions": ""
       }
     },
@@ -221,6 +225,7 @@
         "SideEffect": "none",
         "RequiresConfirmation": "false",
         "Fields": "docRefs",
+        "RequiredFields": "",
         "Postconditions": "pc-summary-cites-allowed-only"
       }
     },
@@ -235,6 +240,7 @@
         "SideEffect": "local-write",
         "RequiresConfirmation": "false",
         "Fields": "recipient,subject,bodySourceRefs",
+        "RequiredFields": "recipient",
         "Postconditions": "pc-draft-not-sent,pc-recipient-matches-request"
       }
     },
@@ -242,13 +248,14 @@
       "Id": "act-send-email",
       "Label": "SendEmailIntent",
       "Category": "ActionContract",
-      "Description": "Transmit an email. High-risk external side effect; always requires confirmation.",
+      "Description": "Transmit an email. High-risk external side effect; always requires confirmation. recipient is checked against the user\u0027s request (pc-recipient-matches-request / pc-no-attacker-recipient).",
       "Aliases": [],
       "Properties": {
         "Risk": "high",
         "SideEffect": "external-comm",
         "RequiresConfirmation": "true",
-        "Fields": "draftRef",
+        "Fields": "draftRef,recipient,bodySourceRefs",
+        "RequiredFields": "draftRef,recipient",
         "Postconditions": "pc-no-attacker-recipient,pc-no-private-exfil"
       }
     },
@@ -263,6 +270,7 @@
         "SideEffect": "none",
         "RequiresConfirmation": "false",
         "Fields": "folder",
+        "RequiredFields": "",
         "Postconditions": ""
       }
     },
@@ -277,6 +285,7 @@
         "SideEffect": "none",
         "RequiresConfirmation": "false",
         "Fields": "files",
+        "RequiredFields": "",
         "Postconditions": ""
       }
     },
@@ -291,6 +300,7 @@
         "SideEffect": "destructive",
         "RequiresConfirmation": "true",
         "Fields": "fileRefs",
+        "RequiredFields": "fileRefs",
         "Postconditions": "pc-zero-deletions-without-approval"
       }
     },
@@ -305,6 +315,7 @@
         "SideEffect": "none",
         "RequiresConfirmation": "false",
         "Fields": "",
+        "RequiredFields": "",
         "Postconditions": ""
       }
     },
@@ -319,6 +330,7 @@
         "SideEffect": "local-write",
         "RequiresConfirmation": "true",
         "Fields": "path,summary,newContent",
+        "RequiredFields": "path,summary,newContent",
         "Postconditions": "pc-edit-staged-not-pushed,pc-no-secret-in-diff"
       }
     },
@@ -333,6 +345,7 @@
         "SideEffect": "command",
         "RequiresConfirmation": "true",
         "Fields": "command",
+        "RequiredFields": "command",
         "Postconditions": "pc-shell-blocked-by-default"
       }
     },
@@ -347,6 +360,7 @@
         "SideEffect": "local-write",
         "RequiresConfirmation": "true",
         "Fields": "title,body",
+        "RequiredFields": "title,body",
         "Postconditions": "pc-pr-drafted-not-pushed,pc-no-secret-in-diff"
       }
     },
@@ -361,6 +375,7 @@
         "SideEffect": "none",
         "RequiresConfirmation": "false",
         "Fields": "operation,table,summary,rowLimit",
+        "RequiredFields": "operation,table",
         "Postconditions": "pc-readonly-no-mutation"
       }
     },
@@ -375,6 +390,7 @@
         "SideEffect": "none",
         "RequiresConfirmation": "false",
         "Fields": "table,summary",
+        "RequiredFields": "table",
         "Postconditions": "pc-query-within-caps,pc-no-sensitive-exposure"
       }
     },
@@ -389,6 +405,7 @@
         "SideEffect": "none",
         "RequiresConfirmation": "false",
         "Fields": "path",
+        "RequiredFields": "path",
         "Postconditions": ""
       }
     },
@@ -403,6 +420,7 @@
         "SideEffect": "local-write",
         "RequiresConfirmation": "true",
         "Fields": "path,content",
+        "RequiredFields": "path",
         "Postconditions": ""
       }
     }
@@ -858,5 +876,5 @@
   "Cues": [],
   "FitSignals": [],
   "Generators": [],
-  "ParameterCount": 127
+  "ParameterCount": 145
 }

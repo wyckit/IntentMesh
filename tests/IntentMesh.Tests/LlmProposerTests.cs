@@ -119,6 +119,25 @@ public sealed class LlmProposerTests
     }
 
     [Fact]
+    public void Required_fields_are_contract_declared_not_hand_coded()
+    {
+        var bundle = Bundle();
+        // Finding 1: act-send-email's contract now declares (and requires) recipient — it agrees with
+        // the SendEmailAction record, the prompt, and the adapter instead of disagreeing.
+        Assert.Contains("recipient", bundle.Contracts[Kinds.SendEmail].Fields);
+        Assert.Contains("recipient", bundle.Contracts[Kinds.SendEmail].RequiredFields);
+        // Finding 2: a write contract's declared fields are required (no silent defaulting of title/start/duration).
+        Assert.Contains("start", bundle.Contracts[Kinds.CreateCalendarBlock].RequiredFields);
+
+        // ...and the proposer enforces that contract-declared set: a calendar block missing 'start'
+        // is dropped fail-closed (it is no longer synthesized to "16:30").
+        var llm = new ScriptedLlm("""{"actions":[{"kind":"act-create-calendar-block","fields":{"title":"Gym","durationMinutes":"60"}}]}""");
+        var plan = new LlmIntentProposer(bundle, llm).Propose("book the gym", Workspace.CreateDemo());
+        Assert.Empty(plan.Nodes);
+        Assert.Contains(plan.Unsupported, u => u.Contains("act-create-calendar-block") && u.Contains("start"));
+    }
+
+    [Fact]
     public void List_valued_fields_parse_from_a_json_array()
     {
         var bundle = Bundle();

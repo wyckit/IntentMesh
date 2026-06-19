@@ -13,6 +13,9 @@ public interface IRunArtifactStore
     TraceBundle Load(string runId);
     /// <summary>The run ids currently stored.</summary>
     IReadOnlyList<string> List();
+    /// <summary>Full on-disk integrity check: the signed bundle verifies AND every derived split
+    /// artifact byte-matches the re-derived bundle (catches tampering with any inspectable export).</summary>
+    bool VerifyArtifacts(string runId, byte[]? key = null);
 }
 
 /// <summary>

@@ -59,9 +59,10 @@ public sealed class LlmIntentProposer : IIntentProposer
                 continue;
             }
             // Fail-closed on malformed/ambiguous intent: a side-effecting action missing a
-            // target/safety field (recipient, path, command, table) is dropped — never defaulted into
-            // a gated executable node.
-            var missing = TypedActionFactory.RequiredFields(kind).Where(rf => !TypedActionFactory.HasValue(paramFields, rf)).ToList();
+            // CONTRACT-DECLARED required field (recipient, path, command, table, …) is dropped — never
+            // defaulted into a gated executable node. The required set comes from the registry, so the
+            // check tracks the contract instead of a hand-coded list.
+            var missing = _bundle.Contracts[kind].RequiredFields.Where(rf => !TypedActionFactory.HasValue(paramFields, rf)).ToList();
             if (missing.Count > 0)
             {
                 unsupported.Add($"LLM proposed '{kind}' missing required field(s): {string.Join(", ", missing)} — refusing to emit (fail-closed).");
