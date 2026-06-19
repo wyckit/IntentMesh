@@ -69,6 +69,12 @@ public sealed class IntentMeshSdk
     public ReplayResult Replay(TraceBundle saved, Func<Workspace> freshWorkspace, byte[]? key = null)
         => RunReplay.Reproduce(_runtime, freshWorkspace(), saved, key);
 
+    /// <summary>Rotation-aware replay: resolve the key the bundle recorded via <paramref name="keyProvider"/>
+    /// (current + prior keys), so a run signed before a key rotation still verifies and reproduces
+    /// byte-for-byte. Prefer this over the raw-key overload once keys may have rotated.</summary>
+    public ReplayResult Replay(TraceBundle saved, Func<Workspace> freshWorkspace, IAuditKeyProvider keyProvider)
+        => RunReplay.Reproduce(_runtime, freshWorkspace(), saved, keyProvider);
+
     /// <summary>The operator reasoning view: why a node is blocked, what awaits approval, and what
     /// granting every pending approval would change (a blocked node provably stays blocked).</summary>
     public RunExplanation Explain(string prompt, Func<Workspace> freshWorkspace, IReadOnlySet<string>? approvals = null)

@@ -74,6 +74,23 @@ public sealed class SdkTests
     }
 
     [Fact]
+    public void Sdk_replay_is_rotation_aware()
+    {
+        var sdk = IntentMeshSdk.Load();
+        var keyA = Enumerable.Repeat((byte)0xA1, 32).ToArray();
+        // A bundle signed under key A...
+        var saved = TraceBundleBuilder.From(sdk.Run(Prompt, Workspace.CreateDemo()),
+            System.Array.Empty<string>(), new RotatingAuditKeyProvider("k-a", keyA));
+        // ...replays through the SDK facade after rotating to key B (A retained as prior).
+        var rotated = new RotatingAuditKeyProvider("k-b", Enumerable.Repeat((byte)0xB2, 32).ToArray(),
+            new Dictionary<string, byte[]> { ["k-a"] = keyA });
+
+        var replay = sdk.Replay(saved, Workspace.CreateDemo, rotated);
+        Assert.True(replay.SignatureVerified);
+        Assert.True(replay.Reproduced);
+    }
+
+    [Fact]
     public void Sdk_explains_what_approval_would_do()
     {
         var sdk = IntentMeshSdk.Load();

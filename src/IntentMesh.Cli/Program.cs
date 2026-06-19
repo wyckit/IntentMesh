@@ -91,15 +91,16 @@ if (rest[0] == "replay")
     if (rest.Count < 2) { Console.Error.WriteLine("usage: intentmesh replay <bundle.json>"); return 1; }
     if (!File.Exists(rest[1])) { Console.Error.WriteLine($"no such file: {rest[1]}"); return 1; }
     var original = TraceBundleBuilder.FromJson(File.ReadAllText(rest[1]));
-    bool sigOk = TraceBundleBuilder.VerifySignature(original);
-    var approvals = original.Approvals.ToHashSet(StringComparer.OrdinalIgnoreCase);
-    var rerun = TraceBundleBuilder.From(runtime.Run(original.Prompt, Workspace.CreateDemo(), approvals), original.Approvals);
-    bool identical = rerun.BundleSignature == original.BundleSignature;
-    Console.WriteLine($"prompt:    \"{original.Prompt}\"");
-    Console.WriteLine($"signature: {(sigOk ? "VALID (untampered)" : "INVALID (tampered!)")}");
-    Console.WriteLine($"replay:    {(identical ? "DETERMINISTIC — re-run is byte-identical" : "MISMATCH — re-run differs!")}");
-    Console.WriteLine($"  original {original.BundleSignature[..16]}…  rerun {rerun.BundleSignature[..16]}…");
-    return sigOk && identical ? 0 : 1;
+    // Rotation-aware: resolve the key the bundle recorded (current + INTENTMESH_AUDIT_PRIOR_KEYS), so a
+    // bundle signed before a key rotation still verifies AND reproduces byte-for-byte.
+    var keyProvider = AuditKeyProviders.FromEnvironment();
+    var replay = RunReplay.Reproduce(runtime, Workspace.CreateDemo(), original, keyProvider);
+    Console.WriteLine($"prompt:    \"{original.Prompt}\"  (key {original.KeyId})");
+    Console.WriteLine($"signature: {(replay.SignatureVerified ? "VALID (untampered)" : "INVALID (tampered or unknown key!)")}");
+    Console.WriteLine($"replay:    {(replay.Reproduced ? "DETERMINISTIC — re-run is byte-identical" : "MISMATCH — re-run differs!")}");
+    if (replay.RecomputedSignature.Length > 0)
+        Console.WriteLine($"  original {original.BundleSignature[..16]}…  rerun {replay.RecomputedSignature[..16]}…");
+    return replay.SignatureVerified && replay.Reproduced ? 0 : 1;
 }
 
 // verify-run: full tamper-verification of a PERSISTED run in a store directory — checks the signed
