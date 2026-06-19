@@ -50,6 +50,20 @@ public sealed class PersistenceTests
         => Assert.True(FileRunArtifactStore.IsValidRunId("6df0037087a8c7f9"));
 
     [Fact]
+    public void A_runs_root_with_a_trailing_separator_still_saves_and_loads()
+    {
+        var root = TempRoot() + Path.DirectorySeparatorChar;   // e.g. "…\im-runs-xxxx\"
+        try
+        {
+            var store = new FileRunArtifactStore(root);
+            var runId = store.Save(TraceBundleBuilder.From(Runtime().Run(Prompt, Workspace.CreateDemo())));
+            Assert.NotNull(store.Load(runId));                  // path guard must not reject the valid id
+            Assert.True(store.VerifyArtifacts(runId));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
     public void Save_then_load_round_trips_and_verifies()
     {
         var root = TempRoot();

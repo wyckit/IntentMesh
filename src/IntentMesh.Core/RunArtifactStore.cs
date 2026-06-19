@@ -56,7 +56,9 @@ public sealed class FileRunArtifactStore : IRunArtifactStore
     {
         if (!IsValidRunId(runId))
             throw new ArgumentException($"Invalid run id '{runId}' — expected a hex content-address.", nameof(runId));
-        var rootFull = Path.GetFullPath(_root);
+        // Trim any trailing separator the root carried (GetFullPath preserves it, e.g. "C:\runs\") so the
+        // containment prefix is "<root><sep>" — not "<root><sep><sep>", which would reject every valid id.
+        var rootFull = Path.TrimEndingDirectorySeparator(Path.GetFullPath(_root));
         var dir = Path.GetFullPath(Path.Combine(rootFull, runId));
         var cmp = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
         if (!dir.StartsWith(rootFull + Path.DirectorySeparatorChar, cmp))
