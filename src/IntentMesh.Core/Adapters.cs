@@ -124,10 +124,23 @@ public sealed class EmailAdapter : IToolAdapter
     {
         if (!approved)
             return ToolHost.Halt(id, $"Send to {se.Recipient} requires confirmation — NOT sent.", "0 messages transmitted");
-        ws.SentEmails.Add(se.Recipient);
-        var d = ws.Drafts.FirstOrDefault(x => x.Recipient.Equals(se.Recipient, StringComparison.OrdinalIgnoreCase));
-        if (d is not null) { ws.Drafts.Remove(d); ws.Drafts.Add(d with { Sent = true }); }
-        return ToolHost.Ok(id, $"Sent to {se.Recipient} (approved).", "1 message transmitted after user approval");
+
+        // Enforce "draft before send" (the act-draft-email Precedes act-send-email relation): the send
+        // must reference an existing draft (by draftRef or recipient). A bogus draftRef with no backing
+        // draft halts. The transmitted recipient is taken FROM the resolved draft — so a send can't be
+        // redirected to a different recipient than the one that was drafted and approved.
+        var draft = ws.Drafts.FirstOrDefault(x =>
+            x.Recipient.Equals(se.DraftRef, StringComparison.OrdinalIgnoreCase) ||
+            x.Recipient.Equals(se.Recipient, StringComparison.OrdinalIgnoreCase));
+        if (draft is null)
+            return ToolHost.Halt(id,
+                $"Send halted: no draft matches draftRef '{se.DraftRef}' / recipient '{se.Recipient}' — a draft must precede a send.",
+                "0 messages transmitted");
+
+        ws.SentEmails.Add(draft.Recipient);
+        ws.Drafts.Remove(draft); ws.Drafts.Add(draft with { Sent = true });
+        return ToolHost.Ok(id, $"Sent to {draft.Recipient} (approved; draftRef={se.DraftRef}).",
+            "1 message transmitted after user approval", $"recipient = {draft.Recipient}");
     }
 
     private static ExecutionResult Draft(string id, DraftEmailAction d, Workspace ws)
