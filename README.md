@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/wyckit/IntentMesh/actions/workflows/ci.yml/badge.svg)](https://github.com/wyckit/IntentMesh/actions/workflows/ci.yml)
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4.svg)](https://dotnet.microsoft.com/)
-[![tests](https://img.shields.io/badge/tests-126%2F126-34d399.svg)](#status)
+[![tests](https://img.shields.io/badge/tests-138%2F138-34d399.svg)](#status)
 [![IntentBench](https://img.shields.io/badge/IntentBench-25%2F25-34d399.svg)](docs/WHITEPAPER.md)
 
 Before an AI agent sends an email, edits code, queries data, books a meeting, deletes a file, or
@@ -174,10 +174,10 @@ calls; IntentMesh governs intent before it becomes a tool call.* The product is 
   [SDK.md](docs/SDK.md) · [ADAPTER-GUIDE.md](docs/ADAPTER-GUIDE.md) · [compare.html](docs/compare.html) ·
   [landing](docs/index.html) · IntentBench scoreboard: `bench/scoreboard.html`
 
-**Progress against the plan — all six phases complete, shipped through v1.5.0:** Phase 1 (clarity) ✓ · Phase 2
+**Progress against the plan — all six phases complete, shipped through v1.6.0:** Phase 1 (clarity) ✓ · Phase 2
 (signed artifacts, replay, contract-boundary) ✓ · Phase 3 (Control Room v1) ✓ · Phase 4 (IntentBench
 25/25) ✓ · Phase 5 (SDK + MCP proxy / OpenAPI import / real-adapter example) ✓ · Phase 6 (manifesto,
-whitepaper, landing) ✓. **126/126 tests · IntentBench 25/25 · TLM 7/7.**
+whitepaper, landing) ✓. **138/138 tests · IntentBench 25/25 · TLM 7/7.**
 
 **Proven vs. future (claims discipline).** Everything in the list below has a passing test that would
 fail if the claim stopped being true. What is *not* yet built is named as such — see
@@ -193,7 +193,7 @@ fail if the claim stopped being true. What is *not* yet built is named as such �
 ## Status
 
 Research prototype, v1.6.0. Symbolic layer: 7 TLMs, ~125 concepts, 7/7 round-trip verify; typed action
-contracts across four domains. **xUnit 126/126.** Five demo scenarios. Delivered beyond v0.1:
+contracts across four domains. **xUnit 138/138.** Five demo scenarios. Delivered beyond v0.1:
 
 - **v0.2** — interactive confirmation flow (Approve/Undo gated nodes; a blocked zero-trust node can
   never be approved), deterministic audit-trace export (JSON/Markdown), and an emergent **skill
