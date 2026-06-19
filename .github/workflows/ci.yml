@@ -17,6 +17,10 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      # Release hygiene: formatting must be clean (gates the dotnet format pass).
+      - name: Format (verify no changes)
+        run: dotnet format IntentMesh.slnx --verify-no-changes
+
       - name: Build (Release)
         run: dotnet build IntentMesh.slnx -c Release --nologo
 
@@ -25,3 +29,29 @@ jobs:
 
       - name: Test
         run: dotnet test IntentMesh.slnx -c Release --no-build --nologo
+
+      - name: Policy fixtures
+        run: dotnet run --project src/IntentMesh.Cli -c Release --no-build -- policy fixtures
+
+      - name: E2E smoke (full path: propose → gate → tool → persist → replay)
+        run: dotnet run --project src/IntentMesh.E2E -c Release --no-build
+
+      - name: IntentBench (IntentMesh must score perfect)
+        run: dotnet run --project src/IntentMesh.Bench -c Release --no-build -- --out artifacts/bench
+
+      - name: Vulnerability scan (fail on any vulnerable package)
+        run: |
+          dotnet restore IntentMesh.slnx
+          output=$(dotnet list IntentMesh.slnx package --vulnerable --include-transitive 2>&1)
+          echo "$output"
+          if echo "$output" | grep -q "has the following vulnerable"; then
+            echo "::error::Vulnerable packages detected"; exit 1
+          fi
+
+      - name: Pack (release libraries) + validate
+        run: |
+          dotnet pack IntentMesh.slnx -c Release --no-build -o artifacts/pack
+          ls -1 artifacts/pack/*.nupkg
+          for pkg in IntentMesh.Tlm IntentMesh.Core IntentMesh.Integrations; do
+            test -f "artifacts/pack/$pkg.1.7.0.nupkg" || { echo "::error::missing $pkg.1.7.0.nupkg"; exit 1; }
+          done
