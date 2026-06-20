@@ -55,5 +55,5 @@ jobs:
           dotnet pack IntentMesh.slnx -c Release --no-build -o artifacts/pack
           ls -1 artifacts/pack/*.nupkg
           for pkg in IntentMesh.Tlm IntentMesh.Core IntentMesh.Integrations; do
-            test -f "artifacts/pack/$pkg.1.7.0.nupkg" || { echo "::error::missing $pkg.1.7.0.nupkg"; exit 1; }
+            ls artifacts/pack/$pkg.*.nupkg >/dev/null 2>&1 || { echo "::error::missing package $pkg"; exit 1; }
           done
