@@ -213,6 +213,21 @@ public sealed class IntegrationTests
         Assert.Empty(ws.SentEmails);
     }
 
+    /// <summary>
+    /// A stdio server that starts but never answers the handshake must fail FAST (not hang) and clean
+    /// up the child process rather than leak it — Connect disposes on a failed handshake.
+    /// </summary>
+    [Fact]
+    public void Connecting_to_a_silent_stdio_server_fails_fast_without_hanging()
+    {
+        if (!NodeAvailable()) return;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        Assert.ThrowsAny<Exception>(() =>
+            McpStdioClient.Connect("node", TimeSpan.FromMilliseconds(800), "-e", "setInterval(()=>{}, 1000)"));
+        sw.Stop();
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(10), $"Connect should fail fast on a silent server; took {sw.Elapsed}");
+    }
+
     // ── Filesystem MCP gating (path policy + read/write gating; no real server) ──
     private static string TempRoot()
     {

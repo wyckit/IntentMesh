@@ -61,16 +61,34 @@ public sealed class McpStdioClient : IMcpClient
 
         var proc = Process.Start(psi) ?? throw new InvalidOperationException($"Could not start MCP server: {command}");
         var client = new McpStdioClient(proc, readTimeout);
+        client.StartDrainingStderr();   // a noisy server can't fill (and block on) the stderr pipe
 
-        client.Request("initialize", new
+        // If the handshake fails (server silent / crashes / times out), DISPOSE — which kills the child
+        // process — instead of leaking it. Connect is the only place the process exists before the caller
+        // gets a disposable handle, so it must clean up on its own failure.
+        try
         {
-            protocolVersion = "2024-11-05",
-            capabilities = new { },
-            clientInfo = new { name = "intentmesh", version = "1.0.0" }
-        });
-        client.Notify("notifications/initialized");
+            client.Request("initialize", new
+            {
+                protocolVersion = "2024-11-05",
+                capabilities = new { },
+                clientInfo = new { name = "intentmesh", version = "1.0.0" }
+            });
+            client.Notify("notifications/initialized");
+        }
+        catch
+        {
+            client.Dispose();
+            throw;
+        }
         return client;
     }
+
+    /// <summary>Drain the child's stderr to EOF on a background task and discard it — redirected stderr
+    /// that is never read fills its pipe buffer and blocks a chatty server. Ends when the process exits
+    /// (or is killed by <see cref="Dispose"/>).</summary>
+    private void StartDrainingStderr()
+        => _ = Task.Run(() => { try { while (_proc.StandardError.ReadLine() is not null) { } } catch { /* process gone */ } });
 
     /// <summary>tools/list — the names of the tools the server exposes.</summary>
     public IReadOnlyList<string> ListTools()
