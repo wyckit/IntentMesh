@@ -7,3 +7,6 @@ obj/
 
 # IntentMesh.E2E demo output
 runs/
+
+# NuGet pack output
+artifacts/

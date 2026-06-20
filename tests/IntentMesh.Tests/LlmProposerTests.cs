@@ -107,9 +107,9 @@ public sealed class LlmProposerTests
 
     [Theory]
     [InlineData("act-send-email", "{\"actions\":[{\"kind\":\"act-send-email\",\"fields\":{\"draftRef\":\"d\"}}]}", "recipient")]
-    [InlineData("act-fs-write",   "{\"actions\":[{\"kind\":\"act-fs-write\",\"fields\":{\"content\":\"x\"}}]}", "path")]
-    [InlineData("act-run-command","{\"actions\":[{\"kind\":\"act-run-command\",\"fields\":{}}]}", "command")]
-    [InlineData("act-delete-files","{\"actions\":[{\"kind\":\"act-delete-files\",\"fields\":{\"fileRefs\":\"[]\"}}]}", "fileRefs")]
+    [InlineData("act-fs-write", "{\"actions\":[{\"kind\":\"act-fs-write\",\"fields\":{\"content\":\"x\"}}]}", "path")]
+    [InlineData("act-run-command", "{\"actions\":[{\"kind\":\"act-run-command\",\"fields\":{}}]}", "command")]
+    [InlineData("act-delete-files", "{\"actions\":[{\"kind\":\"act-delete-files\",\"fields\":{\"fileRefs\":\"[]\"}}]}", "fileRefs")]
     public void A_side_effecting_action_missing_a_required_field_is_dropped_fail_closed(string kind, string json, string missing)
     {
         var bundle = Bundle();

@@ -24,13 +24,21 @@ public sealed class SendEnforcementTests
 
     private static IntentNode SendNode(string recipient, string draftRef) => new()
     {
-        Id = "s1", Type = Kinds.SendEmail, Label = "send", TrustSource = TrustSource.User, Status = NodeStatus.Resolved,
+        Id = "s1",
+        Type = Kinds.SendEmail,
+        Label = "send",
+        TrustSource = TrustSource.User,
+        Status = NodeStatus.Resolved,
         Action = new SendEmailAction(draftRef, recipient, Array.Empty<string>()),
     };
 
     private static IntentNode DraftNode(string recipient) => new()
     {
-        Id = "d1", Type = Kinds.DraftEmail, Label = "draft", TrustSource = TrustSource.User, Status = NodeStatus.Resolved,
+        Id = "d1",
+        Type = Kinds.DraftEmail,
+        Label = "draft",
+        TrustSource = TrustSource.User,
+        Status = NodeStatus.Resolved,
         Action = new DraftEmailAction(recipient, "Notes", Array.Empty<string>()),
     };
 
@@ -104,7 +112,11 @@ public sealed class SendEnforcementTests
         var graph = new IntentGraph();
         graph.Add(new IntentNode
         {
-            Id = "s1", Type = Kinds.SendEmail, Label = "send", TrustSource = TrustSource.User, Status = NodeStatus.Executed,
+            Id = "s1",
+            Type = Kinds.SendEmail,
+            Label = "send",
+            TrustSource = TrustSource.User,
+            Status = NodeStatus.Executed,
             Action = new SendEmailAction("ref", known.Email, Array.Empty<string>()),
         });
 

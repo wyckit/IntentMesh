@@ -37,14 +37,24 @@ public static class BundleAuthor
             {
                 Metadata = new TlmMetadata
                 {
-                    TlmId = id, IsMutable = false, Role = role, Priority = prio, Version = "1.0.0",
-                    Checksum = "", HotSwapPolicy = HotSwapPolicy.Safe, StabilityScore = stability
+                    TlmId = id,
+                    IsMutable = false,
+                    Role = role,
+                    Priority = prio,
+                    Version = "1.0.0",
+                    Checksum = "",
+                    HotSwapPolicy = HotSwapPolicy.Safe,
+                    StabilityScore = stability
                 },
                 Imports = (imports ?? Array.Empty<string>()).ToList(),
-                Derives = new(), CreatedUtc = Created, SchemaVersion = "1.0"
+                Derives = new(),
+                CreatedUtc = Created,
+                SchemaVersion = "1.0"
             },
-            Concepts = concepts, Relations = relations,
-            Policies = pols ?? new(), Cues = cues ?? new()
+            Concepts = concepts,
+            Relations = relations,
+            Policies = pols ?? new(),
+            Cues = cues ?? new()
         };
 
     public static void Author(string sourceDir)
@@ -178,16 +188,16 @@ public static class BundleAuthor
         var required = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["act-create-calendar-block"] = "title,start,durationMinutes",
-            ["act-draft-email"]           = "recipient",
-            ["act-send-email"]            = "draftRef,recipient",
-            ["act-delete-files"]          = "fileRefs",
-            ["act-modify-code"]           = "path,summary,newContent",
-            ["act-run-command"]           = "command",
-            ["act-open-pull-request"]     = "title,body",
-            ["act-build-query-plan"]      = "operation,table",
-            ["act-run-query"]             = "table",
-            ["act-fs-read"]               = "path",
-            ["act-fs-write"]              = "path",
+            ["act-draft-email"] = "recipient",
+            ["act-send-email"] = "draftRef,recipient",
+            ["act-delete-files"] = "fileRefs",
+            ["act-modify-code"] = "path,summary,newContent",
+            ["act-run-command"] = "command",
+            ["act-open-pull-request"] = "title,body",
+            ["act-build-query-plan"] = "operation,table",
+            ["act-run-query"] = "table",
+            ["act-fs-read"] = "path",
+            ["act-fs-write"] = "path",
         };
         foreach (var (id, label, risk, side, conf, fields, posts, desc) in contracts)
         {

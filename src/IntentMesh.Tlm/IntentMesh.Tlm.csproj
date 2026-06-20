@@ -11,6 +11,15 @@
     <Nullable>enable</Nullable>
     <RootNamespace>IntentMesh.Tlm</RootNamespace>
     <AssemblyName>IntentMesh.Tlm</AssemblyName>
+
+    <IsPackable>true</IsPackable>
+    <PackageId>IntentMesh.Tlm</PackageId>
+    <Description>IntentMesh TLM bundle codec: the self-contained, dependency-free reader/writer for the symbolic im-*.tlmz knowledge bundles, byte-compatible with the RSRM / sage-rsrm runtime. The symbolic layer IntentMesh.Core loads.</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
 </Project>

@@ -8,6 +8,15 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+
+    <IsPackable>true</IsPackable>
+    <PackageId>IntentMesh.Core</PackageId>
+    <Description>IntentMesh verified-intent runtime kernel: the fail-closed pipeline (proposer → intent graph → policy gate → typed adapters → postcondition verifier → signed audit) plus the IntentMeshSdk facade, run persistence, and replay. The safety kernel an AI agent runs through before it touches a real tool.</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
 </Project>

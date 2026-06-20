@@ -61,6 +61,7 @@ catch
     toolLabel = "in-process fake (node not available — install node for the real stdio server)";
 }
 Console.WriteLine($"MCP tool gating — transport: {toolLabel}");
+bool exfilBlocked = false;
 foreach (var call in new[]
 {
     new McpToolCall("read_calendar", new Dictionary<string, string> { ["range"] = "Friday" }),
@@ -69,6 +70,7 @@ foreach (var call in new[]
 {
     var fwd = proxy.GateAndForward(call, tool);
     Console.WriteLine($"  {call.Tool,-16} → {(fwd.Gate.Allowed ? "FORWARDED" : "BLOCKED  ")}  {(fwd.ServerResponse is null ? "(not sent)" : "server replied")}");
+    if (call.Tool == "send_email" && !fwd.Gate.Allowed && fwd.ServerResponse is null) exfilBlocked = true;
 }
 if (tool is InProcessMcpServer fake)
     Console.WriteLine($"  tools the server actually saw: [{string.Join(", ", fake.Received)}]");
@@ -88,6 +90,13 @@ Console.WriteLine($"Replay: signature {(replay.SignatureVerified ? "VERIFIED" : 
                   $"artifacts {(artifactsOk ? "INTACT (bundle + 5 split files)" : "TAMPERED")}");
 
 if (llm is IDisposable d) d.Dispose();
+
+// Exit code so this doubles as a CI smoke gate: the legit task verified, the injected exfil was
+// blocked (never forwarded), and the persisted audit re-verified + reproduced byte-for-byte.
+bool ok = result.Verification.All(v => v.Pass) && exfilBlocked
+    && replay.SignatureVerified && replay.Reproduced && artifactsOk;
+Console.WriteLine($"\nE2E: {(ok ? "PASS" : "FAIL")}");
+return ok ? 0 : 1;
 
 // ── In-process helpers (keep the demo self-contained + deterministic) ─────────
 

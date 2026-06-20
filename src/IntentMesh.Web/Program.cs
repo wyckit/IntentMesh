@@ -34,6 +34,21 @@ var store = new FileRunArtifactStore(runsDir);
 // recorded key id always resolves to the key that produced it.
 var keyProvider = AuditKeyProviders.FromEnvironment();
 
+// Production safety: refuse to start in the Production environment with only the INSECURE demo audit
+// key — signed audits would be forgeable by anyone who knows the (public) demo key. Configure a real
+// INTENTMESH_AUDIT_KEY (>=128-bit), or set INTENTMESH_ALLOW_INSECURE_KEY=1 to acknowledge a deliberately
+// local/non-production host. Auth, rate-limiting, and multi-tenant isolation remain preview-out-of-scope
+// (see docs/MATURITY.md) — run the Control Room behind your own boundary, not exposed publicly.
+if (app.Environment.IsProduction()
+    && keyProvider.KeyId == AuditSigner.DemoKeyId
+    && Environment.GetEnvironmentVariable("INTENTMESH_ALLOW_INSECURE_KEY") != "1")
+{
+    Console.Error.WriteLine(
+        "FATAL: refusing to start in Production with the INSECURE demo audit key — signed audits would be forgeable. " +
+        "Set INTENTMESH_AUDIT_KEY (>=128-bit; base64 or utf8), or set INTENTMESH_ALLOW_INSECURE_KEY=1 for a deliberately local-only host.");
+    return;
+}
+
 var demos = new[]
 {
     new { id = 1, title = "Friday planning", prompt = "Plan my Friday, move anything flexible, book an hour for the gym, and draft Sarah the meeting notes." },
@@ -149,8 +164,10 @@ app.MapPost("/api/export", (ExportRequest req) =>
     return (req.Format ?? "json").ToLowerInvariant() switch
     {
         "md" or "markdown" => Results.Text(AuditExporter.ToMarkdown(result), "text/markdown"),
-        "signed" => Results.Json(AuditSigner.Sign(result)),   // tamper-evident audit envelope
-        "bundle" => Results.Json(TraceBundleBuilder.From(result, approvals.ToList())),  // all 5 signed artifacts
+        // Sign through the SAME configured (rotation-aware) provider as /api/run — never the static
+        // default — so an exported audit/bundle is signed with, and verifiable under, the host's key.
+        "signed" => Results.Json(AuditSigner.Sign(result, keyProvider)),   // tamper-evident audit envelope
+        "bundle" => Results.Json(TraceBundleBuilder.From(result, approvals.ToList(), keyProvider)),  // all 5 signed artifacts
         _ => Results.Text(AuditExporter.ToJson(result), "application/json"),
     };
 });

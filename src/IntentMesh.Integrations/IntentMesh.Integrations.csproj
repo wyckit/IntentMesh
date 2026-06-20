@@ -9,6 +9,15 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+
+    <IsPackable>true</IsPackable>
+    <PackageId>IntentMesh.Integrations</PackageId>
+    <Description>IntentMesh real, dependency-free integrations: the MCP proxy (stdio + Streamable HTTP/SSE behind IMcpClient, with transient-retry and read bounds), OpenAPI import, the Anthropic LLM proposer client, and SMTP + OAuth 2.0 device-flow adapters — all gated by the IntentMesh verified-intent kernel.</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
 </Project>

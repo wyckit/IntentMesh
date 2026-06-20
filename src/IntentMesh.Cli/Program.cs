@@ -140,27 +140,27 @@ if (rest[0] == "policy")
             return 0;
 
         case "fixtures":
-        {
-            var path = rest.Count > 2 ? rest[2] : PolicyFixtures.DefaultPath();
-            if (!File.Exists(path)) { Console.Error.WriteLine($"no fixtures file: {path}"); return 1; }
-            var results = PolicyFixtures.RunAll(runtime, PolicyFixtures.Load(path));
-            foreach (var r in results) Console.WriteLine($"  [{(r.Pass ? "PASS" : "FAIL")}] {r.Fixture.Id,-30} {r.Detail}");
-            int passed = results.Count(r => r.Pass);
-            Console.WriteLine($"\n{passed}/{results.Count} policy fixtures pass.");
-            return passed == results.Count ? 0 : 1;
-        }
+            {
+                var path = rest.Count > 2 ? rest[2] : PolicyFixtures.DefaultPath();
+                if (!File.Exists(path)) { Console.Error.WriteLine($"no fixtures file: {path}"); return 1; }
+                var results = PolicyFixtures.RunAll(runtime, PolicyFixtures.Load(path));
+                foreach (var r in results) Console.WriteLine($"  [{(r.Pass ? "PASS" : "FAIL")}] {r.Fixture.Id,-30} {r.Detail}");
+                int passed = results.Count(r => r.Pass);
+                Console.WriteLine($"\n{passed}/{results.Count} policy fixtures pass.");
+                return passed == results.Count ? 0 : 1;
+            }
 
         case "diff":
-        {
-            if (rest.Count < 4) { Console.Error.WriteLine("usage: intentmesh policy diff <compiledDirA> <compiledDirB>"); return 1; }
-            var diff = PolicyCatalog.Diff(SymbolicBundle.Load(rest[2]).Rules, SymbolicBundle.Load(rest[3]).Rules);
-            if (diff.IsEmpty) { Console.WriteLine("no policy rule changes."); return 0; }
-            foreach (var r in diff.Added) Console.WriteLine($"  + {r.Id}: {r.Rule} -> {r.Action}");
-            foreach (var r in diff.Removed) Console.WriteLine($"  - {r.Id}: {r.Rule} -> {r.Action}");
-            foreach (var (before, after) in diff.Changed)
-                Console.WriteLine($"  ~ {after.Id}:\n      was: {before.Rule} -> {before.Action}\n      now: {after.Rule} -> {after.Action}");
-            return 0;
-        }
+            {
+                if (rest.Count < 4) { Console.Error.WriteLine("usage: intentmesh policy diff <compiledDirA> <compiledDirB>"); return 1; }
+                var diff = PolicyCatalog.Diff(SymbolicBundle.Load(rest[2]).Rules, SymbolicBundle.Load(rest[3]).Rules);
+                if (diff.IsEmpty) { Console.WriteLine("no policy rule changes."); return 0; }
+                foreach (var r in diff.Added) Console.WriteLine($"  + {r.Id}: {r.Rule} -> {r.Action}");
+                foreach (var r in diff.Removed) Console.WriteLine($"  - {r.Id}: {r.Rule} -> {r.Action}");
+                foreach (var (before, after) in diff.Changed)
+                    Console.WriteLine($"  ~ {after.Id}:\n      was: {before.Rule} -> {before.Action}\n      now: {after.Rule} -> {after.Action}");
+                return 0;
+            }
 
         default:
             Console.Error.WriteLine("usage: intentmesh policy [list | fixtures [file] | diff <compiledDirA> <compiledDirB>]");
