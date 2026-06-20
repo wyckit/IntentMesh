@@ -38,6 +38,11 @@ public sealed class IntentNode
     public string? ParentId { get; init; }
     public List<string> ChildrenIds { get; } = new();
     public string? BlockedReason { get; set; }
+
+    /// <summary>For per-item approval (e.g. per-file deletion): the specific item refs the operator
+    /// approved for THIS node. Empty unless the runtime populated it from per-file approval tokens; an
+    /// adapter must act only on these refs, never the whole batch on a single node approval.</summary>
+    public IReadOnlySet<string> ApprovedRefs { get; set; } = new HashSet<string>();
 }
 
 /// <summary>The mesh: an ordered, inspectable graph of typed intent nodes.</summary>

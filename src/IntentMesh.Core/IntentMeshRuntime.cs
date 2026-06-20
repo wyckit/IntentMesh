@@ -132,9 +132,24 @@ public sealed class IntentMeshRuntime
 
             // An approval applies ONLY to a full-authority node that the gate gated for
             // confirmation. A Block never reaches here, so injected/zero-trust nodes can't be approved.
-            bool approved = decision.Decision == Decision.Confirm
-                            && node.Authority == Authority.Full
-                            && effectiveApprovals.Contains(node.Id);
+            bool approved = false;
+            if (decision.Decision == Decision.Confirm && node.Authority == Authority.Full)
+            {
+                if (node.Action is DeleteFilesAction del)
+                {
+                    // True PER-FILE approval: approve a whole node (node.Id) OR specific files
+                    // (node.Id#fileRef). The adapter deletes only these refs — one node approval can't
+                    // delete the whole batch.
+                    node.ApprovedRefs = del.FileRefs
+                        .Where(r => effectiveApprovals.Contains(node.Id) || effectiveApprovals.Contains($"{node.Id}#{r}"))
+                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    approved = node.ApprovedRefs.Count > 0;
+                }
+                else
+                {
+                    approved = effectiveApprovals.Contains(node.Id);
+                }
+            }
 
             // Transitive-allow guard: a node proposed dynamically by an adapter (ParentId set) must
             // never auto-execute a side effect on a bare Allow — emergent side-effecting intent is
