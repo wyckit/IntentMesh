@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using IntentMesh.Core;
 using Xunit;
 
@@ -40,6 +41,23 @@ public sealed class AuditOperationsTests
         // A provider that no longer holds the old key fails closed (can't forge, can't silently pass).
         var lostOldKey = new RotatingAuditKeyProvider("k-2026b", Key(0xB2));
         Assert.False(AuditSigner.Verify(signed, lostOldKey));
+    }
+
+    [Fact]
+    public void A_signed_audit_with_a_tampered_transcript_fails_verification()
+    {
+        var result = Runtime().Run(Prompt, Workspace.CreateDemo());
+        var provider = new RotatingAuditKeyProvider("k1", Key(0x5A));
+        var signed = AuditSigner.Sign(result, provider);
+        Assert.True(AuditSigner.Verify(signed, provider));   // intact transcript verifies
+
+        // Edit the exported transcript (an audit event message) while leaving chainHash/signature/keyId
+        // untouched — verification must now FAIL because the chain is recomputed from AuditJson.
+        var node = JsonNode.Parse(signed.AuditJson)!;
+        var events = node["audit"]!.AsArray();
+        events[0]!["message"] = events[0]!["message"]!.GetValue<string>() + " FORGED";
+        var tampered = signed with { AuditJson = node.ToJsonString() };
+        Assert.False(AuditSigner.Verify(tampered, provider), "a tampered transcript must not verify");
     }
 
     [Fact]

@@ -155,9 +155,40 @@ public static class AuditSigner
     {
         var key = ResolveKey(signed.KeyId, provider);
         if (key is null) return false;
+
+        // Bind the signature to the TRANSCRIPT, not just the stored chain head: recompute the chain
+        // from the events in signed.AuditJson and require it equals signed.ChainHash. Without this, an
+        // attacker could edit AuditJson while leaving chainHash/signature/keyId intact and still verify.
+        var events = ParseAuditEvents(signed.AuditJson);
+        if (events is null || ChainHash(events) != signed.ChainHash) return false;
+
         return CryptographicOperations.FixedTimeEquals(
             Encoding.UTF8.GetBytes(Hmac(signed.ChainHash, key)),
             Encoding.UTF8.GetBytes(signed.Signature ?? ""));
+    }
+
+    /// <summary>Parse the <c>audit</c> event array out of an exported RunResult JSON (the
+    /// <see cref="SignedAudit.AuditJson"/> transcript), so the chain can be recomputed and the
+    /// transcript bound to the signature. Returns null if the JSON has no readable audit array.</summary>
+    private static IReadOnlyList<AuditView>? ParseAuditEvents(string auditJson)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(auditJson);
+            if (!doc.RootElement.TryGetProperty("audit", out var arr)
+                || arr.ValueKind != System.Text.Json.JsonValueKind.Array) return null;
+            var list = new List<AuditView>();
+            foreach (var e in arr.EnumerateArray())
+            {
+                int seq = e.TryGetProperty("seq", out var s) && s.ValueKind == System.Text.Json.JsonValueKind.Number ? s.GetInt32() : 0;
+                string nodeId = e.TryGetProperty("nodeId", out var n) ? n.GetString() ?? "" : "";
+                string phase = e.TryGetProperty("phase", out var p) ? p.GetString() ?? "" : "";
+                string message = e.TryGetProperty("message", out var m) ? m.GetString() ?? "" : "";
+                list.Add(new AuditView(seq, nodeId, phase, message));
+            }
+            return list;
+        }
+        catch (System.Text.Json.JsonException) { return null; }
     }
 
     /// <summary>Resolve the key a stored artifact was signed under, by its recorded <paramref name="keyId"/>:
@@ -175,10 +206,12 @@ public static class AuditSigner
     private static string Hmac(string canonical, byte[] key)
         => Convert.ToHexString(new HMACSHA256(key).ComputeHash(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
 
-    private static string ChainHash(RunResult result)
+    private static string ChainHash(RunResult result) => ChainHash(result.Audit);
+
+    private static string ChainHash(IReadOnlyList<AuditView> audit)
     {
         byte[] h = SHA256.HashData(Encoding.UTF8.GetBytes("intentmesh-audit-v2"));
-        foreach (var e in result.Audit)
+        foreach (var e in audit)
         {
             // Length-prefixed, unambiguous encoding: each field is written as <utf8-byte-length>:<bytes>
             // so no two distinct (Seq, Phase, NodeId, Message) tuples can collide by shifting
