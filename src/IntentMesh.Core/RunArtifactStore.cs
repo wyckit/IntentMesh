@@ -95,10 +95,16 @@ public sealed class FileRunArtifactStore : IRunArtifactStore
     /// re-derives. Catches tampering with either the bundle or any split export.
     /// </summary>
     public bool VerifyArtifacts(string runId, byte[]? key = null)
-        => VerifyArtifacts(runId, Load(runId), TraceBundleBuilder.VerifySignature(Load(runId), key));
+    {
+        var bundle = Load(runId);   // load ONCE: signature + split-file comparison must judge the same bundle
+        return VerifyArtifacts(runId, bundle, TraceBundleBuilder.VerifySignature(bundle, key));
+    }
 
     public bool VerifyArtifacts(string runId, IAuditKeyProvider provider)
-        => VerifyArtifacts(runId, Load(runId), TraceBundleBuilder.VerifySignature(Load(runId), provider));
+    {
+        var bundle = Load(runId);   // load ONCE (see above) — avoids a racing modification splitting the checks
+        return VerifyArtifacts(runId, bundle, TraceBundleBuilder.VerifySignature(bundle, provider));
+    }
 
     private bool VerifyArtifacts(string runId, TraceBundle bundle, bool signatureValid)
     {
