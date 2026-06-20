@@ -182,6 +182,22 @@ public sealed class LlmProposerTests
         Assert.Equal("llm:anthropic:test-model", node.SourceText);   // provenance preserved on the node + into the audit
     }
 
+    [Fact]
+    public void A_proposer_invented_recipient_not_in_the_prompt_is_not_user_requested()
+    {
+        // A bad proposer drafts to an address the user never named; ground-truth recipients come from the
+        // prompt, not the proposer, so pc-recipient-matches-request must FAIL (it can't self-authorize).
+        var bundle = Bundle();
+        var llm = new ScriptedLlm("""{"actions":[{"kind":"act-draft-email","fields":{"recipient":"evil@attacker.com","subject":"hi","bodySourceRefs":"[]"}}]}""");
+        var result = new IntentMeshRuntime(bundle, new LlmIntentProposer(bundle, llm))
+            .Run("draft a quick email", Workspace.CreateDemo());
+
+        Assert.Contains(result.Nodes, n => n.Type == Kinds.DraftEmail);   // the draft was produced
+        var pc = result.Verification.FirstOrDefault(v => v.Id == "pc-recipient-matches-request");
+        Assert.NotNull(pc);
+        Assert.False(pc!.Pass, "a proposer-invented recipient must not verify as user-requested");
+    }
+
     /// <summary>
     /// Real Anthropic call — env-gated (ANTHROPIC_API_KEY). Proves the AnthropicLlmClient transport
     /// is wired; deterministic logic is covered by the scripted tests above.

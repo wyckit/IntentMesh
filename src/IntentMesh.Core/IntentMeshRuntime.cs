@@ -84,12 +84,12 @@ public sealed class IntentMeshRuntime
         foreach (var u in resolved.Unsupported)
             audit.Add("-", "resolve", $"unsupported: {u}");
 
-        // Recipients the USER explicitly named (used to detect substitution from untrusted content).
-        var userRecipients = resolved.Nodes
-            .Select(n => n.Action)
-            .OfType<DraftEmailAction>().Select(a => a.Recipient)
-            .Concat(resolved.Nodes.Select(n => n.Action).OfType<SendEmailAction>().Select(a => a.Recipient))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        // Recipients the USER actually requested — derived as GROUND TRUTH from the prompt + workspace
+        // contacts, NOT from the proposer's own nodes. Trusting proposer output here is circular: a bad
+        // (e.g. LLM) proposer could invent a recipient and make pc-recipient-matches-request believe the
+        // user asked for it. A proposer-invented recipient that the prompt never names is therefore not
+        // treated as user-requested, and fails the postcondition / triggers substitution rules.
+        var userRecipients = DeriveUserRecipients(prompt, ws);
         var ctx = new PolicyContext(ws, userRecipients, _granted, _bundle.Capabilities);
 
         // Consent is part of the signed record: fold the operator's approvals into the audit chain so
@@ -243,5 +243,30 @@ public sealed class IntentMeshRuntime
         var skills = new SkillsView(lifecycle.Select(s => s.Label).ToList(), skillItems);
 
         return new RunResult(prompt, resolved.Fired, resolved.Unsupported, nodes, policy, exec, verify, auditViews, summary, skills);
+    }
+
+    /// <summary>Ground-truth recipients the USER requested, derived from the prompt + workspace contacts
+    /// (independent of any proposer output): a known contact whose first name appears in the prompt, the
+    /// external "client" when the prompt says "client", and any literal email address typed in the
+    /// prompt. Mirrors the trusted resolver binding so a proposer cannot smuggle in a recipient.</summary>
+    private static HashSet<string> DeriveUserRecipients(string prompt, Workspace ws)
+    {
+        var lowered = " " + (prompt ?? "").ToLowerInvariant() + " ";
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        bool clientContext = lowered.Contains(" client");
+        foreach (var c in ws.Contacts)
+        {
+            if (!c.Known) continue;
+            var first = c.Name.Split(' ')[0].ToLowerInvariant();
+            if (lowered.Contains(" " + first) || (clientContext && c.External))
+            {
+                set.Add(c.Name);
+                if (!string.IsNullOrEmpty(c.Email)) set.Add(c.Email);
+            }
+        }
+        foreach (System.Text.RegularExpressions.Match m in
+                 System.Text.RegularExpressions.Regex.Matches(prompt ?? "", @"[\w.+-]+@[\w.-]+\.\w+"))
+            set.Add(m.Value);
+        return set;
     }
 }
