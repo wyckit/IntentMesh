@@ -129,6 +129,26 @@ public sealed class PolicyGate
                 new[] { "pol-read-allowed" }, false, trust, false, false, false);
         }
 
+        // A DIRECT run-query is validated by the SAME data policy as a plan — it must not fall through
+        // to generic allow. Crucially, untrusted retrieved content may not originate a query even though
+        // a read is side-effect "none" (so the zero-trust side-effect rule wouldn't catch it), and the
+        // table must exist.
+        if (node.Action is RunQueryAction rq)
+        {
+            var db = ctx.Workspace.Db;
+            if (untrusted)
+                return new PolicyDecision(node.Id, Decision.Block, risk,
+                    "Untrusted retrieved content may not originate a database query.",
+                    new[] { "pol-query-untrusted" }, false, trust, false, false, false);
+            if (!db.HasTable(rq.Table))
+                return new PolicyDecision(node.Id, Decision.Block, risk,
+                    $"Query references table '{rq.Table}', which does not exist.",
+                    new[] { "pol-query-table-missing" }, false, trust, false, false, false);
+            return new PolicyDecision(node.Id, Decision.Allow, risk,
+                $"Read-only query on '{rq.Table}'.",
+                new[] { "pol-read-allowed" }, false, trust, false, false, false);
+        }
+
         // ── Confirmation / allow rules (trusted user intent) ────────────────
         if (destructive)
             return new PolicyDecision(node.Id, Decision.Confirm, risk,
