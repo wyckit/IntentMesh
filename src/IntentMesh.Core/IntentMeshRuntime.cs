@@ -181,7 +181,14 @@ public sealed class IntentMeshRuntime
             node.Execution = exec;
             audit.Add(node.Id, "execute",
                 (approved ? "[APPROVED] " : "") + (exec.Halted ? $"HALTED — {exec.Summary}" : exec.Summary));
-            if (exec.Ran && !exec.Halted && (decision.Decision == Decision.Allow || approved))
+            if (exec.Halted)
+            {
+                // An ALLOWED/approved action that still halted is a real failure — don't leave it looking
+                // "Allowed" in the signed run (approval consumed but the action never happened). A node
+                // merely awaiting confirmation halts by design, so keep that as NeedsConfirmation.
+                if (node.Status == NodeStatus.Allowed) node.Status = NodeStatus.Halted;
+            }
+            else if (exec.Ran && (decision.Decision == Decision.Allow || approved))
                 node.Status = NodeStatus.Executed;
 
             // Ingest proposed nodes as ZERO-TRUST (State-Poisoning guard) and re-queue them.

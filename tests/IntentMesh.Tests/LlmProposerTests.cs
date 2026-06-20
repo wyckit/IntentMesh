@@ -183,6 +183,21 @@ public sealed class LlmProposerTests
     }
 
     [Fact]
+    public void An_approved_action_that_halts_is_marked_Halted_not_Allowed()
+    {
+        // Approve a send whose draft doesn't exist: the adapter halts (draft-before-send). The node must
+        // NOT remain "Allowed" — a signed run can't claim approval-consumed-but-action-done.
+        var bundle = Bundle();
+        var llm = new ScriptedLlm("""{"actions":[{"kind":"act-send-email","fields":{"recipient":"Sarah Chen","draftRef":"does-not-exist"}}]}""");
+        var rt = new IntentMeshRuntime(bundle, new LlmIntentProposer(bundle, llm));
+        var result = rt.Run("email Sarah the notes", Workspace.CreateDemo(), new HashSet<string> { "n1" });
+
+        var node = result.Nodes.Single(n => n.Type == Kinds.SendEmail);
+        Assert.Equal("Halted", node.Status);
+        Assert.NotEqual("Allowed", node.Status);
+    }
+
+    [Fact]
     public void A_proposer_invented_recipient_not_in_the_prompt_is_not_user_requested()
     {
         // A bad proposer drafts to an address the user never named; ground-truth recipients come from the

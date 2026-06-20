@@ -7,7 +7,7 @@ public enum TrustSource { User, System, RetrievedContent, ToolOutput }
 public enum Authority { Full, None }
 
 /// <summary>Lifecycle status of a node through the pipeline (used by the Control Room).</summary>
-public enum NodeStatus { Pending, Resolved, Allowed, NeedsConfirmation, Blocked, Executed, Verified }
+public enum NodeStatus { Pending, Resolved, Allowed, NeedsConfirmation, Blocked, Halted, Executed, Verified }
 
 public static class Trust
 {
