@@ -132,14 +132,16 @@ app.MapGet("/api/runs/{id}", (string id) =>
 });
 
 /// One inspectable split artifact (intent.graph.json … audit.signed.json) — the signed-artifact viewer.
+/// Serves the file AS STORED ON DISK (not re-derived), so a tampered artifact is shown verbatim and the
+/// viewer agrees with /verify rather than masking tampering with a clean regenerated copy.
 app.MapGet("/api/runs/{id}/artifact/{name}", (string id, string name) =>
 {
     try
     {
-        var files = TraceBundleBuilder.SplitFiles(store.Load(id));
-        return files.TryGetValue(name, out var json)
+        var json = store.ReadArtifact(id, name);
+        return json is not null
             ? Results.Text(json, "application/json")
-            : Results.NotFound(new { error = $"no artifact '{name}'", available = files.Keys });
+            : Results.NotFound(new { error = $"no artifact '{name}'", available = TraceBundleBuilder.ArtifactNames });
     }
     catch (Exception ex) when (ex is FileNotFoundException or ArgumentException) { return Results.NotFound(new { error = $"no run '{id}'" }); }
 });

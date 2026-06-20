@@ -68,6 +68,14 @@ public static class TraceBundleBuilder
         JsonSerializer.Deserialize<TraceBundle>(json, Pretty)
         ?? throw new InvalidDataException("Not a valid IntentMesh trace bundle.");
 
+    /// <summary>The canonical names of the five split artifacts — the allowlist a viewer validates a
+    /// requested artifact name against (so a name can't be a path-traversal segment).</summary>
+    public static readonly IReadOnlyList<string> ArtifactNames = new[]
+    {
+        "intent.graph.json", "policy.decisions.json", "execution.trace.json",
+        "verification.report.json", "audit.signed.json",
+    };
+
     /// <summary>The five artifacts as separately-named JSON documents (for split export).</summary>
     public static IReadOnlyDictionary<string, string> SplitFiles(TraceBundle b) => new Dictionary<string, string>
     {

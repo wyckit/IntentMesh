@@ -50,6 +50,29 @@ public sealed class PersistenceTests
         => Assert.True(FileRunArtifactStore.IsValidRunId("6df0037087a8c7f9"));
 
     [Fact]
+    public void ReadArtifact_serves_the_on_disk_file_and_reflects_tampering()
+    {
+        var root = TempRoot();
+        try
+        {
+            var store = new FileRunArtifactStore(root);
+            var runId = store.Save(TraceBundleBuilder.From(Runtime().Run(Prompt, Workspace.CreateDemo())));
+
+            // Tamper a persisted split file on disk.
+            var path = Path.Combine(root, runId, "policy.decisions.json");
+            File.WriteAllText(path, File.ReadAllText(path).Replace("Confirm", "TAMPERED"));
+
+            // The viewer reflects the tampered bytes (not a clean re-derivation) and /verify catches it.
+            Assert.Contains("TAMPERED", store.ReadArtifact(runId, "policy.decisions.json"));
+            Assert.False(store.VerifyArtifacts(runId));
+
+            // A non-allowlisted artifact name (traversal attempt) is refused.
+            Assert.Null(store.ReadArtifact(runId, "../bundle.json"));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
     public void A_runs_root_with_a_trailing_separator_still_saves_and_loads()
     {
         var root = TempRoot() + Path.DirectorySeparatorChar;   // e.g. "…\im-runs-xxxx\"
