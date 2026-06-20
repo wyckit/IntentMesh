@@ -32,7 +32,7 @@ public sealed class IntentMeshSdk
     /// proposed actions still become typed intent that the gate validates — it never gains authority.</summary>
     public static IntentMeshSdk WithProposer(IIntentProposer proposer, string? compiledDir = null)
     {
-        var bundle = SymbolicBundle.Load(compiledDir ?? DatasetLocator.FindCompiledDir());
+        var bundle = SymbolicBundle.LoadDefault(compiledDir);
         return new IntentMeshSdk(new IntentMeshRuntime(bundle, proposer), proposer);
     }
 

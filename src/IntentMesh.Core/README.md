@@ -24,6 +24,9 @@ authority and the model never gains it. Full surface and seams: see the
 [SDK guide](https://github.com/wyckit/IntentMesh/blob/master/docs/SDK.md) and
 [EXTENSION-POINTS](https://github.com/wyckit/IntentMesh/blob/master/docs/EXTENSION-POINTS.md).
 
-> v1.7.0 — verified-intent platform **preview**. Research/SDK preview, not production infrastructure;
+The compiled TLM bundle ships **embedded in this package** — `IntentMeshSdk.Load()` works with only
+the DLL, no `dataset/compiled` on disk. (Point `IntentMeshSdk.Load(dir)` at your own compiled bundle to override.)
+
+> Verified-intent platform **preview**. Research/SDK preview, not production infrastructure;
 > see [MATURITY.md](https://github.com/wyckit/IntentMesh/blob/master/docs/MATURITY.md) for the
 > production-ready / experimental / future split.

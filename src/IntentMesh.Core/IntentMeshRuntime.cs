@@ -55,7 +55,7 @@ public sealed class IntentMeshRuntime
     }
 
     public static IntentMeshRuntime Load(string? compiledDir = null)
-        => new(SymbolicBundle.Load(compiledDir ?? DatasetLocator.FindCompiledDir()));
+        => new(SymbolicBundle.LoadDefault(compiledDir));   // dataset dir if present, else the embedded bundle
 
     public RunResult Run(string prompt, Workspace ws) => Run(prompt, ws, new HashSet<string>());
 
