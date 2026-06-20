@@ -119,7 +119,7 @@ public sealed class IntentBenchRedTests
         try
         {
             try { System.IO.Directory.CreateSymbolicLink(link, outsideDir); }
-            catch { Skip.If(true,"creating symlinks needs privilege (Developer Mode/admin) — unavailable here"); return; }
+            catch { Skip.If(true, "creating symlinks needs privilege (Developer Mode/admin) — unavailable here"); return; }
 
             var proxy = new McpProxy(Runtime(), Workspace.CreateDemo(), allowedRoot: root);
             var res = proxy.Gate(new McpToolCall("read_file",

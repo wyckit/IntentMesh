@@ -177,7 +177,7 @@ public sealed class IntegrationTests
     [SkippableFact]
     public void McpProxy_forwards_an_allowed_call_to_a_real_mcp_server()
     {
-        if (!NodeAvailable()) { Skip.If(true,"node not available — the real stdio MCP server requires it"); return; }
+        if (!NodeAvailable()) { Skip.If(true, "node not available — the real stdio MCP server requires it"); return; }
         using var client = McpStdioClient.Connect("node", McpStdioClient.EchoServerScript());
 
         var tools = client.ListTools();
@@ -200,7 +200,7 @@ public sealed class IntegrationTests
     [SkippableFact]
     public void McpProxy_does_not_forward_a_blocked_send_email()
     {
-        if (!NodeAvailable()) { Skip.If(true,"node not available — the real stdio MCP server requires it"); return; }
+        if (!NodeAvailable()) { Skip.If(true, "node not available — the real stdio MCP server requires it"); return; }
         using var client = McpStdioClient.Connect("node", McpStdioClient.EchoServerScript());
 
         var ws = Workspace.CreateDemo();
@@ -220,7 +220,7 @@ public sealed class IntegrationTests
     [SkippableFact]
     public void Connecting_to_a_silent_stdio_server_fails_fast_without_hanging()
     {
-        if (!NodeAvailable()) { Skip.If(true,"node not available — the real stdio MCP server requires it"); return; }
+        if (!NodeAvailable()) { Skip.If(true, "node not available — the real stdio MCP server requires it"); return; }
         var sw = System.Diagnostics.Stopwatch.StartNew();
         Assert.ThrowsAny<Exception>(() =>
             McpStdioClient.Connect("node", TimeSpan.FromMilliseconds(800), "-e", "setInterval(()=>{}, 1000)"));
@@ -287,8 +287,8 @@ public sealed class IntegrationTests
     [SkippableFact]
     public void McpProxy_wires_a_real_filesystem_mcp_server_end_to_end()
     {
-        if (Environment.GetEnvironmentVariable("INTENTMESH_FS_E2E") != "1") { Skip.If(true,"set INTENTMESH_FS_E2E=1 to run the real @modelcontextprotocol/server-filesystem E2E"); return; }
-        if (!NodeAvailable()) { Skip.If(true,"node not available — the real stdio MCP server requires it"); return; }
+        if (Environment.GetEnvironmentVariable("INTENTMESH_FS_E2E") != "1") { Skip.If(true, "set INTENTMESH_FS_E2E=1 to run the real @modelcontextprotocol/server-filesystem E2E"); return; }
+        if (!NodeAvailable()) { Skip.If(true, "node not available — the real stdio MCP server requires it"); return; }
 
         var root = TempRoot();
         File.WriteAllText(Path.Combine(root, "note.txt"), "hello from the sandbox");
@@ -296,9 +296,9 @@ public sealed class IntegrationTests
         try
         {
             try { client = McpStdioClient.ConnectNpx("@modelcontextprotocol/server-filesystem", root); }
-            catch { Skip.If(true,"could not launch @modelcontextprotocol/server-filesystem via npx"); return; }
+            catch { Skip.If(true, "could not launch @modelcontextprotocol/server-filesystem via npx"); return; }
             var tools = client.ListTools();
-            if (tools.Count == 0) { Skip.If(true,"filesystem MCP server exposed no tools"); return; }
+            if (tools.Count == 0) { Skip.If(true, "filesystem MCP server exposed no tools"); return; }
             Assert.Contains("read_file", tools);
             Assert.Contains("write_file", tools);
 
@@ -690,7 +690,7 @@ public sealed class IntegrationTests
     public void McpHttpClient_lists_and_forwards_over_json_transport()
     {
         using var server = McpHttpTestServer.Start(useSse: false);
-        if (server is null) { Skip.If(true,"HttpListener unavailable in this environment"); return; }
+        if (server is null) { Skip.If(true, "HttpListener unavailable in this environment"); return; }
         using var client = McpHttpClient.Connect(server.Url);
 
         var tools = client.ListTools();
@@ -715,7 +715,7 @@ public sealed class IntegrationTests
     public void McpHttpClient_forwards_over_sse_transport()
     {
         using var server = McpHttpTestServer.Start(useSse: true);
-        if (server is null) { Skip.If(true,"HttpListener unavailable in this environment"); return; }
+        if (server is null) { Skip.If(true, "HttpListener unavailable in this environment"); return; }
         using var client = McpHttpClient.Connect(server.Url);
 
         Assert.Contains("read_calendar", client.ListTools());
@@ -737,7 +737,7 @@ public sealed class IntegrationTests
     public void McpHttpClient_caps_and_truncates_a_hostile_error_body()
     {
         using var server = McpHttpTestServer.Start(useSse: false, errorOnCall: true);
-        if (server is null) { Skip.If(true,"HttpListener unavailable in this environment"); return; }
+        if (server is null) { Skip.If(true, "HttpListener unavailable in this environment"); return; }
         using var client = McpHttpClient.Connect(server.Url);
 
         var ex = Assert.Throws<InvalidOperationException>(
@@ -754,7 +754,7 @@ public sealed class IntegrationTests
     public void McpHttpClient_does_not_follow_a_redirect_to_an_internal_target()
     {
         using var server = McpHttpTestServer.Start(useSse: false, redirectOnCall: true);
-        if (server is null) { Skip.If(true,"HttpListener unavailable in this environment"); return; }
+        if (server is null) { Skip.If(true, "HttpListener unavailable in this environment"); return; }
         using var client = McpHttpClient.Connect(server.Url);   // internal guarded client (no caller HttpClient)
 
         var ex = Assert.Throws<InvalidOperationException>(
@@ -770,7 +770,7 @@ public sealed class IntegrationTests
     public void McpHttpClient_does_not_forward_a_blocked_send_email()
     {
         using var server = McpHttpTestServer.Start(useSse: false);
-        if (server is null) { Skip.If(true,"HttpListener unavailable in this environment"); return; }
+        if (server is null) { Skip.If(true, "HttpListener unavailable in this environment"); return; }
         using var client = McpHttpClient.Connect(server.Url);
 
         var ws = Workspace.CreateDemo();

@@ -78,9 +78,12 @@ public sealed class DataAgentTests
         // the zero-trust side-effect rule alone wouldn't catch it — this branch must).
         var injected = new IntentNode
         {
-            Id = "q", Type = Kinds.RunQuery, Label = "run query",
+            Id = "q",
+            Type = Kinds.RunQuery,
+            Label = "run query",
             Action = new RunQueryAction("signups", "dump signups"),
-            TrustSource = TrustSource.RetrievedContent, Status = NodeStatus.Resolved,
+            TrustSource = TrustSource.RetrievedContent,
+            Status = NodeStatus.Resolved,
         };
         var d = gate.Evaluate(injected, ctx);
         Assert.Equal(Decision.Block, d.Decision);
@@ -89,9 +92,12 @@ public sealed class DataAgentTests
         // A direct user query to a nonexistent table is blocked too (validated like a plan, not allowed).
         var missing = new IntentNode
         {
-            Id = "q2", Type = Kinds.RunQuery, Label = "run query",
+            Id = "q2",
+            Type = Kinds.RunQuery,
+            Label = "run query",
             Action = new RunQueryAction("nope_table", "x"),
-            TrustSource = TrustSource.User, Status = NodeStatus.Resolved,
+            TrustSource = TrustSource.User,
+            Status = NodeStatus.Resolved,
         };
         Assert.Equal(Decision.Block, gate.Evaluate(missing, ctx).Decision);
     }

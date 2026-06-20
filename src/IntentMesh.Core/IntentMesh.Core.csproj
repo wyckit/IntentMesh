@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\" />
+    <None Include="..\..\LICENSE.txt" Pack="true" PackagePath="\" />
   </ItemGroup>
 
   <!-- Embed the compiled TLM bundle so the package is self-contained: IntentMeshSdk.Load() /

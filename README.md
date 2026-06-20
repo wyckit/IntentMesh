@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/wyckit/IntentMesh/actions/workflows/ci.yml/badge.svg)](https://github.com/wyckit/IntentMesh/actions/workflows/ci.yml)
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4.svg)](https://dotnet.microsoft.com/)
-[![tests](https://img.shields.io/badge/tests-177%2F177-34d399.svg)](#status)
+[![tests](https://img.shields.io/badge/tests-183%20passing-34d399.svg)](#status)
 [![IntentBench](https://img.shields.io/badge/IntentBench-25%2F25-34d399.svg)](docs/WHITEPAPER.md)
 
 Before an AI agent sends an email, edits code, queries data, books a meeting, deletes a file, or
@@ -104,7 +104,7 @@ dotnet run --project src/IntentMesh.Cli -- --trace "plan my Friday and draft Sar
 dotnet run --project src/IntentMesh.Web                       # then open the printed localhost URL
 
 # tests
-dotnet test IntentMesh.slnx                                   # 177/177
+dotnet test IntentMesh.slnx                                   # 183 passing (+3 env-gated skipped)
 ```
 
 ### Wrap your own agent (the SDK on-ramp)
@@ -190,7 +190,7 @@ v1.7 platform:** Phase 1 (clarity) ✓ · Phase 2 (signed artifacts, replay, con
 Phase 3 (Control Room v1) ✓ · Phase 4 (IntentBench 25/25) ✓ · Phase 5 (SDK + MCP proxy / OpenAPI
 import / real-adapter example) ✓ · Phase 6 (manifesto, whitepaper, landing) ✓. **v1.7** adds the
 adoptable platform surface (full-lifecycle SDK + host template, real-LLM-proposer hardening,
-operator workflow, audit operations). **177/177 tests · IntentBench 25/25 · TLM 7/7.**
+operator workflow, audit operations). **183 passing (+3 env-gated skipped) tests · IntentBench 25/25 · TLM 7/7.**
 
 **Proven vs. experimental vs. future (claims discipline).** [docs/MATURITY.md](docs/MATURITY.md) is
 the canonical statement: every *proven* claim has a passing test that would fail if it stopped being
@@ -206,8 +206,8 @@ and the [CHANGELOG](CHANGELOG.md).
 
 ## Status
 
-Research prototype with a production-shaped core, **v1.7.0**. Symbolic layer: 7 TLMs, ~125 concepts,
-7/7 round-trip verify; typed action contracts across four domains. **xUnit 177/177.** Five demo
+Research prototype with a production-shaped core, **v1.8.0**. Symbolic layer: 7 TLMs, ~125 concepts,
+7/7 round-trip verify; typed action contracts across four domains. **xUnit 183 passing (+3 env-gated skipped).** Five demo
 scenarios. See [docs/MATURITY.md](docs/MATURITY.md) for the proven / experimental / future breakdown.
 Delivered beyond v0.1:
 
@@ -261,7 +261,7 @@ Conventions follow PassGen: .NET 10, nullable + implicit usings, file-scoped nam
 **Build & SDK.** Requires the **.NET 10 SDK** (10.0.2xx), pinned via [`global.json`](global.json)
 (`rollForward: latestFeature`) for reproducible builds. The three libraries —
 `IntentMesh.Tlm`, `IntentMesh.Core`, `IntentMesh.Integrations` — are packable (`dotnet pack -c Release`,
-versioned at 1.7.0 with NuGet READMEs); demos, the web host, tools, and tests are not. Publishing to
+versioned at 1.8.0 with NuGet READMEs); demos, the web host, tools, and tests are not. Publishing to
 nuget.org is a future decision — `dotnet pack` produces valid local packages today.
 
 ## License

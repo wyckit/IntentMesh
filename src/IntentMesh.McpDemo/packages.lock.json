@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net10.0": {
+      "intentmesh.core": {
+        "type": "Project",
+        "dependencies": {
+          "IntentMesh.Tlm": "[1.0.0, )"
+        }
+      },
+      "intentmesh.integrations": {
+        "type": "Project",
+        "dependencies": {
+          "IntentMesh.Core": "[1.0.0, )",
+          "IntentMesh.Tlm": "[1.0.0, )"
+        }
+      },
+      "intentmesh.tlm": {
+        "type": "Project"
+      }
+    }
+  }
+}
