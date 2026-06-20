@@ -2,7 +2,7 @@
 
 The single source of truth for **what is production-ready, what is experimental, and what is future
 work.** Every "proven" claim below is backed by a test that would fail if the claim stopped being
-true (`dotnet test IntentMesh.slnx` — **176/176**). Nothing here is aspirational unless it says so.
+true (`dotnet test IntentMesh.slnx` — **177/177**). Nothing here is aspirational unless it says so.
 
 > IntentMesh is a **research prototype with a production-shaped core**: the security kernel and its
 > guarantees are proven and stable; the *operational backends* around it (KMS, DB persistence,

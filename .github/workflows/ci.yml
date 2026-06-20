@@ -34,6 +34,8 @@ jobs:
         run: dotnet run --project src/IntentMesh.Cli -c Release --no-build -- policy fixtures
 
       - name: "E2E smoke (full path: propose -> gate -> tool -> persist -> replay)"
+        env:
+          INTENTMESH_REQUIRE_REAL_MCP: '1'   # fail if the real stdio MCP leg isn't exercised (node is present on the runner)
         run: dotnet run --project src/IntentMesh.E2E -c Release --no-build
 
       - name: IntentBench (IntentMesh must score perfect)
@@ -53,5 +55,5 @@ jobs:
           dotnet pack IntentMesh.slnx -c Release --no-build -o artifacts/pack
           ls -1 artifacts/pack/*.nupkg
           for pkg in IntentMesh.Tlm IntentMesh.Core IntentMesh.Integrations; do
-            test -f "artifacts/pack/$pkg.1.7.0.nupkg" || { echo "::error::missing $pkg.1.7.0.nupkg"; exit 1; }
+            ls artifacts/pack/$pkg.*.nupkg >/dev/null 2>&1 || { echo "::error::missing package $pkg"; exit 1; }
           done

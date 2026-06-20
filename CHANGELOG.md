@@ -3,6 +3,21 @@
 All notable changes to IntentMesh. Claims are test-backed; see [docs/MATURITY.md](docs/MATURITY.md)
 for the production-ready / experimental / future breakdown.
 
+## v1.7.1 — Post-release hardening
+
+Review fixes after the v1.7.0 tag (no API changes):
+- **Audit verification loads the bundle once.** `FileRunArtifactStore.VerifyArtifacts` previously read
+  `bundle.json` twice (once for the signature, once for the split-file comparison); a racing
+  modification could make the two checks judge different bundles. It now loads once and verifies that
+  single in-memory bundle.
+- **Prior rotation keys are validated.** `RotatingAuditKeyProvider` now enforces the 128-bit floor on
+  every PRIOR key (not just the current one), and `AuditKeyProviders.FromEnvironment` fails loudly on a
+  malformed `INTENTMESH_AUDIT_PRIOR_KEYS` entry (bad base64 / missing `id=`) instead of silently
+  dropping it — a sub-128-bit or malformed prior key can no longer be accepted for verification.
+- **E2E strict mode.** `INTENTMESH_REQUIRE_REAL_MCP=1` makes the full-path E2E fail (instead of
+  silently using the in-process fake) when the real stdio MCP leg is unavailable; CI sets it so the
+  release gate genuinely exercises real stdio MCP.
+
 ## v1.7.0 — Verified-intent **platform** (adoptable by outside builders)
 
 The transition from research-grade prototype to an adoptable runtime platform: usable by outside

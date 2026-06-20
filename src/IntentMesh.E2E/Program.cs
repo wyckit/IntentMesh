@@ -48,6 +48,10 @@ Console.WriteLine($"Verification: {(result.Verification.All(v => v.Pass) ? "PASS
 //    over stdio JSON-RPC (the bundled mcp-echo-server.js) when node is available; otherwise an
 //    in-process fake — labeled, so the demo never overclaims.
 var proxy = new McpProxy(runtime, Workspace.CreateDemo());
+// Strict mode for release/CI: require the REAL stdio MCP leg so the "full path" gate can't pass on
+// the in-process fake. Set INTENTMESH_REQUIRE_REAL_MCP=1 (CI does) to fail when node/echo-server is
+// unavailable instead of silently falling back.
+bool requireRealMcp = Environment.GetEnvironmentVariable("INTENTMESH_REQUIRE_REAL_MCP") == "1";
 IMcpClient tool;
 string toolLabel;
 try
@@ -55,8 +59,13 @@ try
     tool = McpStdioClient.Connect("node", McpStdioClient.EchoServerScript());
     toolLabel = "REAL MCP server over stdio JSON-RPC (mcp-echo-server.js)";
 }
-catch
+catch (Exception ex)
 {
+    if (requireRealMcp)
+    {
+        Console.Error.WriteLine($"FATAL: INTENTMESH_REQUIRE_REAL_MCP=1 but the real stdio MCP server is unavailable: {ex.Message}");
+        return 1;
+    }
     tool = new InProcessMcpServer();
     toolLabel = "in-process fake (node not available — install node for the real stdio server)";
 }

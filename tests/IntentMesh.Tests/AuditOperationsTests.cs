@@ -47,6 +47,16 @@ public sealed class AuditOperationsTests
         => Assert.Throws<InvalidOperationException>(() => new RotatingAuditKeyProvider("k", new byte[] { 1, 2, 3 }));
 
     [Fact]
+    public void A_weak_PRIOR_rotation_key_is_also_rejected()
+    {
+        // A sub-128-bit prior key must not slip in via rotation config — prior keys still verify audits.
+        var ex = Assert.Throws<InvalidOperationException>(() => new RotatingAuditKeyProvider(
+            "k-current", Key(0xA1),
+            new Dictionary<string, byte[]> { ["k-old"] = new byte[] { 1, 2, 3 } }));
+        Assert.Contains("k-old", ex.Message);
+    }
+
+    [Fact]
     public void A_persisted_run_still_verifies_and_replays_after_the_signing_key_rotates()
     {
         var root = TempRoot();

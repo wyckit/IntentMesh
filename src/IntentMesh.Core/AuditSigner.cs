@@ -84,7 +84,15 @@ public sealed class RotatingAuditKeyProvider : IRotatableAuditKeyProvider
     {
         if (string.IsNullOrWhiteSpace(currentKeyId)) throw new ArgumentException("currentKeyId is required.", nameof(currentKeyId));
         if (currentKey.Length < 16) throw new InvalidOperationException("Audit signing key must be at least 16 bytes (128-bit).");
-        if (priorKeys is not null) foreach (var kv in priorKeys) _keys[kv.Key] = kv.Value;
+        if (priorKeys is not null)
+            foreach (var kv in priorKeys)
+            {
+                // Prior keys are still trusted for VERIFICATION, so they must meet the same 128-bit floor
+                // as the current key — a sub-128-bit prior key can't be smuggled in via rotation config.
+                if (kv.Value.Length < 16)
+                    throw new InvalidOperationException($"Prior audit key '{kv.Key}' must be at least 16 bytes (128-bit); got {kv.Value.Length}.");
+                _keys[kv.Key] = kv.Value;
+            }
         _keys[currentKeyId] = currentKey;
         KeyId = currentKeyId;
     }
@@ -252,10 +260,12 @@ public static class AuditKeyProviders
         foreach (var pair in raw.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             var eq = pair.IndexOf('=');
-            if (eq <= 0) continue;
+            if (eq <= 0) throw new InvalidOperationException($"{PriorKeysEnv}: entry '{pair}' must be of the form id=base64.");
             var id = pair[..eq].Trim();
+            // Fail loudly on a malformed entry rather than silently dropping a key the operator
+            // believes is configured (a dropped prior key would make old runs fail to verify later).
             try { map[id] = Convert.FromBase64String(pair[(eq + 1)..].Trim()); }
-            catch (FormatException) { /* skip a malformed prior-key entry rather than fail startup */ }
+            catch (FormatException) { throw new InvalidOperationException($"{PriorKeysEnv}: prior key '{id}' is not valid base64."); }
         }
         return map;
     }
