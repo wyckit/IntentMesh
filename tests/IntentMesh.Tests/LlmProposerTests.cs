@@ -217,11 +217,11 @@ public sealed class LlmProposerTests
     /// Real Anthropic call — env-gated (ANTHROPIC_API_KEY). Proves the AnthropicLlmClient transport
     /// is wired; deterministic logic is covered by the scripted tests above.
     /// </summary>
-    [Fact]
+    [SkippableFact]
     public void LlmProposer_against_the_real_api_when_configured()
     {
         using var client = AnthropicLlmClient.FromEnvironment();
-        if (client is null) return;   // no ANTHROPIC_API_KEY — skip
+        if (client is null) { Skip.If(true,"ANTHROPIC_API_KEY not set — real-API test skipped"); return; }
         var bundle = Bundle();
         var plan = new LlmIntentProposer(bundle, client).Propose("Read my calendar for Friday.", Workspace.CreateDemo());
         Assert.NotNull(plan);   // a real model should propose something registry-bounded (or nothing) without throwing

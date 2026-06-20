@@ -174,10 +174,10 @@ public sealed class IntegrationTests
     /// list its tools, and forward an APPROVED call (read_calendar — low risk). The proxy gates the
     /// intent, then the real server responds.
     /// </summary>
-    [Fact]
+    [SkippableFact]
     public void McpProxy_forwards_an_allowed_call_to_a_real_mcp_server()
     {
-        if (!NodeAvailable()) return;   // node runs the real MCP server; required for this test
+        if (!NodeAvailable()) { Skip.If(true,"node not available — the real stdio MCP server requires it"); return; }
         using var client = McpStdioClient.Connect("node", McpStdioClient.EchoServerScript());
 
         var tools = client.ListTools();
@@ -197,10 +197,10 @@ public sealed class IntegrationTests
     /// REAL MCP transport: a blocked send_email to an attacker is NEVER forwarded — the gate stops
     /// it before any bytes reach the server (ServerResponse is null).
     /// </summary>
-    [Fact]
+    [SkippableFact]
     public void McpProxy_does_not_forward_a_blocked_send_email()
     {
-        if (!NodeAvailable()) return;
+        if (!NodeAvailable()) { Skip.If(true,"node not available — the real stdio MCP server requires it"); return; }
         using var client = McpStdioClient.Connect("node", McpStdioClient.EchoServerScript());
 
         var ws = Workspace.CreateDemo();
@@ -217,10 +217,10 @@ public sealed class IntegrationTests
     /// A stdio server that starts but never answers the handshake must fail FAST (not hang) and clean
     /// up the child process rather than leak it — Connect disposes on a failed handshake.
     /// </summary>
-    [Fact]
+    [SkippableFact]
     public void Connecting_to_a_silent_stdio_server_fails_fast_without_hanging()
     {
-        if (!NodeAvailable()) return;
+        if (!NodeAvailable()) { Skip.If(true,"node not available — the real stdio MCP server requires it"); return; }
         var sw = System.Diagnostics.Stopwatch.StartNew();
         Assert.ThrowsAny<Exception>(() =>
             McpStdioClient.Connect("node", TimeSpan.FromMilliseconds(800), "-e", "setInterval(()=>{}, 1000)"));
@@ -284,11 +284,11 @@ public sealed class IntegrationTests
     /// INTENTMESH_FS_E2E=1 because it downloads the npm package (kept off the default CI run); the
     /// path-policy + gating logic above is fully covered without it.
     /// </summary>
-    [Fact]
+    [SkippableFact]
     public void McpProxy_wires_a_real_filesystem_mcp_server_end_to_end()
     {
-        if (Environment.GetEnvironmentVariable("INTENTMESH_FS_E2E") != "1") return;
-        if (!NodeAvailable()) return;
+        if (Environment.GetEnvironmentVariable("INTENTMESH_FS_E2E") != "1") { Skip.If(true,"set INTENTMESH_FS_E2E=1 to run the real @modelcontextprotocol/server-filesystem E2E"); return; }
+        if (!NodeAvailable()) { Skip.If(true,"node not available — the real stdio MCP server requires it"); return; }
 
         var root = TempRoot();
         File.WriteAllText(Path.Combine(root, "note.txt"), "hello from the sandbox");
@@ -296,9 +296,9 @@ public sealed class IntegrationTests
         try
         {
             try { client = McpStdioClient.ConnectNpx("@modelcontextprotocol/server-filesystem", root); }
-            catch { return; }
+            catch { Skip.If(true,"could not launch @modelcontextprotocol/server-filesystem via npx"); return; }
             var tools = client.ListTools();
-            if (tools.Count == 0) return;
+            if (tools.Count == 0) { Skip.If(true,"filesystem MCP server exposed no tools"); return; }
             Assert.Contains("read_file", tools);
             Assert.Contains("write_file", tools);
 
@@ -686,11 +686,11 @@ public sealed class IntegrationTests
     /// with application/json, list its tools, and forward an APPROVED read_calendar call. Proves the
     /// gate is transport-agnostic — the same pipeline fronts HTTP exactly like stdio.
     /// </summary>
-    [Fact]
+    [SkippableFact]
     public void McpHttpClient_lists_and_forwards_over_json_transport()
     {
         using var server = McpHttpTestServer.Start(useSse: false);
-        if (server is null) return;   // HttpListener unavailable in this environment
+        if (server is null) { Skip.If(true,"HttpListener unavailable in this environment"); return; }
         using var client = McpHttpClient.Connect(server.Url);
 
         var tools = client.ListTools();
@@ -711,11 +711,11 @@ public sealed class IntegrationTests
     /// text/event-stream body, exercising McpHttpClient's SSE parse path. The gated forward still
     /// returns the server's result.
     /// </summary>
-    [Fact]
+    [SkippableFact]
     public void McpHttpClient_forwards_over_sse_transport()
     {
         using var server = McpHttpTestServer.Start(useSse: true);
-        if (server is null) return;
+        if (server is null) { Skip.If(true,"HttpListener unavailable in this environment"); return; }
         using var client = McpHttpClient.Connect(server.Url);
 
         Assert.Contains("read_calendar", client.ListTools());
@@ -733,11 +733,11 @@ public sealed class IntegrationTests
     /// the error body is read through the SAME bounded reader and truncated. (Regression for the
     /// uncapped error-body read flagged in PR review.)
     /// </summary>
-    [Fact]
+    [SkippableFact]
     public void McpHttpClient_caps_and_truncates_a_hostile_error_body()
     {
         using var server = McpHttpTestServer.Start(useSse: false, errorOnCall: true);
-        if (server is null) return;
+        if (server is null) { Skip.If(true,"HttpListener unavailable in this environment"); return; }
         using var client = McpHttpClient.Connect(server.Url);
 
         var ex = Assert.Throws<InvalidOperationException>(
@@ -750,11 +750,11 @@ public sealed class IntegrationTests
     /// SSRF: a server that 307-redirects tools/call to the cloud-metadata address must NOT be followed
     /// by the guarded client — the call fails instead of chasing the redirect to an internal target.
     /// </summary>
-    [Fact]
+    [SkippableFact]
     public void McpHttpClient_does_not_follow_a_redirect_to_an_internal_target()
     {
         using var server = McpHttpTestServer.Start(useSse: false, redirectOnCall: true);
-        if (server is null) return;
+        if (server is null) { Skip.If(true,"HttpListener unavailable in this environment"); return; }
         using var client = McpHttpClient.Connect(server.Url);   // internal guarded client (no caller HttpClient)
 
         var ex = Assert.Throws<InvalidOperationException>(
@@ -766,11 +766,11 @@ public sealed class IntegrationTests
     /// Transport-agnostic gating: a blocked send_email is NEVER forwarded over HTTP either — the gate
     /// stops it before any bytes reach the server (ServerResponse null), exactly as over stdio.
     /// </summary>
-    [Fact]
+    [SkippableFact]
     public void McpHttpClient_does_not_forward_a_blocked_send_email()
     {
         using var server = McpHttpTestServer.Start(useSse: false);
-        if (server is null) return;
+        if (server is null) { Skip.If(true,"HttpListener unavailable in this environment"); return; }
         using var client = McpHttpClient.Connect(server.Url);
 
         var ws = Workspace.CreateDemo();
