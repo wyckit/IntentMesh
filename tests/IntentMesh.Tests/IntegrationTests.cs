@@ -728,6 +728,22 @@ public sealed class IntegrationTests
     }
 
     /// <summary>
+    /// SSRF: a server that 307-redirects tools/call to the cloud-metadata address must NOT be followed
+    /// by the guarded client — the call fails instead of chasing the redirect to an internal target.
+    /// </summary>
+    [Fact]
+    public void McpHttpClient_does_not_follow_a_redirect_to_an_internal_target()
+    {
+        using var server = McpHttpTestServer.Start(useSse: false, redirectOnCall: true);
+        if (server is null) return;
+        using var client = McpHttpClient.Connect(server.Url);   // internal guarded client (no caller HttpClient)
+
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => client.CallTool("read_calendar", new Dictionary<string, string>()));
+        Assert.Contains("307", ex.Message);   // redirect surfaced as an error, not followed
+    }
+
+    /// <summary>
     /// Transport-agnostic gating: a blocked send_email is NEVER forwarded over HTTP either — the gate
     /// stops it before any bytes reach the server (ServerResponse null), exactly as over stdio.
     /// </summary>
@@ -1135,18 +1151,20 @@ public sealed class IntegrationTests
         private readonly HttpListener _listener;
         private readonly bool _useSse;
         private readonly bool _errorOnCall;
+        private readonly bool _redirectOnCall;
         public string Url { get; }
 
-        private McpHttpTestServer(HttpListener listener, string url, bool useSse, bool errorOnCall)
+        private McpHttpTestServer(HttpListener listener, string url, bool useSse, bool errorOnCall, bool redirectOnCall)
         {
             _listener = listener;
             Url = url;
             _useSse = useSse;
             _errorOnCall = errorOnCall;
+            _redirectOnCall = redirectOnCall;
             _ = Task.Run(Loop);
         }
 
-        public static McpHttpTestServer? Start(bool useSse, bool errorOnCall = false)
+        public static McpHttpTestServer? Start(bool useSse, bool errorOnCall = false, bool redirectOnCall = false)
         {
             int port = FreePort();
             var url = $"http://localhost:{port}/mcp/";
@@ -1154,7 +1172,7 @@ public sealed class IntegrationTests
             listener.Prefixes.Add(url);
             try { listener.Start(); }
             catch { return null; }   // environment forbids HttpListener — skip the test
-            return new McpHttpTestServer(listener, url, useSse, errorOnCall);
+            return new McpHttpTestServer(listener, url, useSse, errorOnCall, redirectOnCall);
         }
 
         private static int FreePort()
@@ -1194,6 +1212,16 @@ public sealed class IntegrationTests
             }
 
             int id = idEl.GetInt32();
+
+            // Simulate a hostile endpoint that 307-redirects tools/call to the cloud-metadata address.
+            // A guarded client must NOT follow it (SSRF) — the redirect surfaces as a non-success status.
+            if (_redirectOnCall && method == "tools/call")
+            {
+                ctx.Response.StatusCode = 307;
+                ctx.Response.Headers["Location"] = "http://169.254.169.254/latest/meta-data/";
+                ctx.Response.OutputStream.Close();
+                return;
+            }
 
             // Simulate a hostile endpoint that streams a large error body on tools/call.
             if (_errorOnCall && method == "tools/call")
