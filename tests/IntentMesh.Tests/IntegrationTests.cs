@@ -386,11 +386,15 @@ public sealed class IntegrationTests
             RiskHint: "low",
             SideEffectHint: "none");
 
-        var contract = OpenApiImporter.ToContract(schema);
+        // A RiskHint is still honored (risk = low). But an UNTRUSTED spec (default) may not downgrade a
+        // mutating op to side-effect "none" — confirmation is required despite the hint.
+        var untrusted = OpenApiImporter.ToContract(schema);
+        Assert.Equal("low", untrusted.Risk);
+        Assert.True(untrusted.RequiresConfirmation, "untrusted POST cannot drop confirmation via a 'none' hint");
 
-        Assert.Equal("low", contract.Risk);
-        Assert.False(contract.RequiresConfirmation,
-            "SideEffect=none → RequiresConfirmation=false regardless of method.");
+        // A trusted caller keeps full control of the hint.
+        var trusted = OpenApiImporter.ToContract(schema, trusted: true);
+        Assert.False(trusted.RequiresConfirmation);
     }
 
     /// <summary>
