@@ -33,7 +33,7 @@ true (`dotnet test IntentMesh.slnx` — **177/177**). Nothing here is aspiration
 | `AnthropicLlmClient` real LLM path | Works against the live API (env-gated test); not load-tested or cost-managed |
 | Live benchmark harness (`intentbench --live`) | Runs against a real model; numbers are illustrative, see [BENCHMARK-REPORT.md](BENCHMARK-REPORT.md) |
 | SMTP + OAuth 2.0 device flow | Real transports; need your credentials and a consent screen |
-| Control Room SPA | Useful for governance/debugging; dependency-free demo UI, **local-only** — no auth, rate-limiting, or tenant isolation (run it behind your own boundary). It **refuses to start in Production with the demo audit key** (set `INTENTMESH_AUDIT_KEY`, or `INTENTMESH_ALLOW_INSECURE_KEY=1` to opt out). |
+| Control Room SPA | Useful for governance/debugging; dependency-free demo UI. The `/api` surface is **enforced local-only** — a non-loopback caller is refused unless `INTENTMESH_WEB_TOKEN` is set, in which case every API call must present it (`X-Api-Token` / `Authorization: Bearer`). It also **refuses to start in Production with the demo audit key** (`INTENTMESH_AUDIT_KEY`, or `INTENTMESH_ALLOW_INSECURE_KEY=1` to opt out). Full auth, rate-limiting, and multi-tenant isolation remain future. |
 | Policy authoring | C# `PolicyGate` is authoritative; symbolic metadata + fixtures/diff support review (no declarative DSL yet) |
 
 ## 🔭 Future — named seams, not built (not faked)
