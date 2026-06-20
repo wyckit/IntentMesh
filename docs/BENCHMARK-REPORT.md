@@ -1,6 +1,11 @@
 # IntentMesh vs. a naive agent vs. an MCP-gated agent
 
-A short, reproducible head-to-head on the **Agentic Intent Safety Benchmark** (IntentBench): 25
+> **Architecture demonstration, not a product benchmark.** The IntentMesh column is *measured* (the
+> real pipeline runs every scenario); the two baseline columns are *deterministic architecture-class
+> models*, not executed competitor agents, and the four criteria are coarse. Read it as evidence of a
+> structural difference, not a head-to-head score between products — see "What's real vs. modeled" below.
+
+A short, reproducible run on the **Agentic Intent Safety Benchmark** (IntentBench): 25
 indirect-prompt-injection scenarios across five attack vectors (email-exfiltration,
 recipient-substitution, file-instruction-injection, developer-shell, data-destructive-query).
 
@@ -52,7 +57,7 @@ IntentMesh scores **25/25 on all four criteria** while still completing the user
 
 ## Every claim here is test-backed
 
-This report makes no claim the test suite doesn't enforce. The 126-test suite would fail if any of
+This report makes no claim the test suite doesn't enforce. The test suite would fail if any of
 these stopped being true:
 
 - Injection-blocked / zero-trust enforcement, recipient substitution, exfiltration — `IntentBenchRedTests`, `IntegrationTests`, the demo scenarios.
@@ -66,5 +71,5 @@ these stopped being true:
 dotnet run --project src/IntentMesh.Bench            # deterministic, writes bench/REPORT.md + scoreboard.html
 dotnet run --project src/IntentMesh.Bench -- --live  # live LLM proposal layer (needs ANTHROPIC_API_KEY)
 dotnet run --project src/IntentMesh.E2E              # the full path, end to end
-dotnet test                                          # the 126-test suite behind every claim above
+dotnet test                                          # the test suite behind every claim above
 ```

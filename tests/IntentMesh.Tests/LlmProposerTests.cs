@@ -182,15 +182,46 @@ public sealed class LlmProposerTests
         Assert.Equal("llm:anthropic:test-model", node.SourceText);   // provenance preserved on the node + into the audit
     }
 
+    [Fact]
+    public void An_approved_action_that_halts_is_marked_Halted_not_Allowed()
+    {
+        // Approve a send whose draft doesn't exist: the adapter halts (draft-before-send). The node must
+        // NOT remain "Allowed" — a signed run can't claim approval-consumed-but-action-done.
+        var bundle = Bundle();
+        var llm = new ScriptedLlm("""{"actions":[{"kind":"act-send-email","fields":{"recipient":"Sarah Chen","draftRef":"does-not-exist"}}]}""");
+        var rt = new IntentMeshRuntime(bundle, new LlmIntentProposer(bundle, llm));
+        var result = rt.Run("email Sarah the notes", Workspace.CreateDemo(), new HashSet<string> { "n1" });
+
+        var node = result.Nodes.Single(n => n.Type == Kinds.SendEmail);
+        Assert.Equal("Halted", node.Status);
+        Assert.NotEqual("Allowed", node.Status);
+    }
+
+    [Fact]
+    public void A_proposer_invented_recipient_not_in_the_prompt_is_not_user_requested()
+    {
+        // A bad proposer drafts to an address the user never named; ground-truth recipients come from the
+        // prompt, not the proposer, so pc-recipient-matches-request must FAIL (it can't self-authorize).
+        var bundle = Bundle();
+        var llm = new ScriptedLlm("""{"actions":[{"kind":"act-draft-email","fields":{"recipient":"evil@attacker.com","subject":"hi","bodySourceRefs":"[]"}}]}""");
+        var result = new IntentMeshRuntime(bundle, new LlmIntentProposer(bundle, llm))
+            .Run("draft a quick email", Workspace.CreateDemo());
+
+        Assert.Contains(result.Nodes, n => n.Type == Kinds.DraftEmail);   // the draft was produced
+        var pc = result.Verification.FirstOrDefault(v => v.Id == "pc-recipient-matches-request");
+        Assert.NotNull(pc);
+        Assert.False(pc!.Pass, "a proposer-invented recipient must not verify as user-requested");
+    }
+
     /// <summary>
     /// Real Anthropic call — env-gated (ANTHROPIC_API_KEY). Proves the AnthropicLlmClient transport
     /// is wired; deterministic logic is covered by the scripted tests above.
     /// </summary>
-    [Fact]
+    [SkippableFact]
     public void LlmProposer_against_the_real_api_when_configured()
     {
         using var client = AnthropicLlmClient.FromEnvironment();
-        if (client is null) return;   // no ANTHROPIC_API_KEY — skip
+        if (client is null) { Skip.If(true, "ANTHROPIC_API_KEY not set — real-API test skipped"); return; }
         var bundle = Bundle();
         var plan = new LlmIntentProposer(bundle, client).Propose("Read my calendar for Friday.", Workspace.CreateDemo());
         Assert.NotNull(plan);   // a real model should propose something registry-bounded (or nothing) without throwing

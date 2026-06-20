@@ -3,6 +3,46 @@
 All notable changes to IntentMesh. Claims are test-backed; see [docs/MATURITY.md](docs/MATURITY.md)
 for the production-ready / experimental / future breakdown.
 
+## v1.8.0 — Security review hardening pass
+
+Closes a full external review (6 High, 7 Medium) plus release hygiene. **183 passing + 3 env-gated
+skipped.** No conceptual changes to the kernel — these harden correctness, trust boundaries, and
+release engineering.
+
+### Security / correctness (High)
+- **Signed-audit transcript binding (H1):** `AuditSigner.Verify(SignedAudit)` recomputes the chain
+  from the events in `AuditJson` — editing the exported transcript while keeping chainHash/signature
+  no longer verifies.
+- **User-requested recipients (H2):** derived as ground truth from the prompt + workspace contacts,
+  not from proposer output — a bad proposer can't invent a recipient that `pc-recipient-matches-request` trusts.
+- **MCP HTTP SSRF (H3):** the default client disables redirects and re-validates the resolved IP at
+  connect time (closes redirect + DNS-rebinding bypass).
+- **Control Room access (H4):** the `/api` surface is enforced local-only (loopback) unless
+  `INTENTMESH_WEB_TOKEN` is set (then required on every call).
+- **True per-file approval (H5):** approving one file (`node#fileRef`) deletes only that file; a single
+  node approval can't delete the whole batch.
+- **Self-contained packages (H6):** the compiled TLM bundle is embedded in `IntentMesh.Core`, so
+  `IntentMeshSdk.Load()` works from the package with no `dataset/compiled` on disk.
+
+### Correctness (Medium)
+- **Approved-but-halted (M7):** an allowed/approved action that halts is marked `Halted`, not `Allowed`.
+- **Direct run-query gating (M8):** a direct `RunQueryAction` is validated by the data policy (untrusted
+  origin blocked, table existence) — no generic-allow bypass.
+- **OpenAPI hints (M9):** an untrusted/imported spec can't downgrade a mutating op to side-effect
+  "none" to silence confirmation (`trusted` flag, default off).
+- **Stdio cleanup (M10):** a failed handshake disposes (kills) the child process; stderr is drained.
+- **Artifact viewer (M11):** serves the persisted split file as stored (reflects tampering), not a
+  regenerated copy.
+- **Honest benchmark (M12):** IntentBench is labeled an architecture demonstration (measured mesh,
+  modeled baselines); the dev "legit task" criterion now requires a PR drafted.
+- **Test skip semantics (M13):** env/dependency-gated tests skip (`Xunit.SkippableFact`) instead of
+  silently passing — the suite reports 183 passing + 3 skipped.
+
+### Release hygiene
+- Version → 1.8.0; explicit `LICENSE.txt` shipped in every package (no ambiguous license metadata);
+  `packages.lock.json` committed + CI `--locked-mode`; CI uploads package artifacts and validates
+  tag == `<Version>` on release tags.
+
 ## v1.7.1 — Post-release hardening
 
 Review fixes after the v1.7.0 tag (no API changes):

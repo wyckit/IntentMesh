@@ -118,6 +118,17 @@ public sealed class FileRunArtifactStore : IRunArtifactStore
         return true;
     }
 
+    /// <summary>Read a persisted split artifact (e.g. <c>policy.decisions.json</c>) AS STORED ON DISK,
+    /// not re-derived from the bundle — so a viewer reflects a tampered file rather than masking it with
+    /// a clean regenerated copy. The name is validated against the artifact allowlist (no traversal) and
+    /// the run id against the hex content-address. Returns null if the file is absent.</summary>
+    public string? ReadArtifact(string runId, string name)
+    {
+        if (!TraceBundleBuilder.ArtifactNames.Contains(name)) return null;
+        var path = Path.Combine(RunDir(runId), name);
+        return File.Exists(path) ? File.ReadAllText(path) : null;
+    }
+
     public IReadOnlyList<string> List()
         => Directory.Exists(_root)
             ? Directory.GetDirectories(_root)

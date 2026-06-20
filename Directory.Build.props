@@ -5,7 +5,7 @@
        Demos, tools, the web host, the E2E/bench runners, the template, and tests stay non-packable. -->
 
   <PropertyGroup>
-    <Version>1.7.1</Version>
+    <Version>1.8.0</Version>
     <Authors>Chad Sandor</Authors>
     <Company>wyckit</Company>
     <Product>IntentMesh</Product>
@@ -14,11 +14,14 @@
     <RepositoryType>git</RepositoryType>
     <PackageProjectUrl>https://github.com/wyckit/IntentMesh</PackageProjectUrl>
     <PackageTags>ai-agents;agent-security;verified-intent;prompt-injection;mcp;policy;audit;dotnet</PackageTags>
-    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
 
-    <!-- Research/SDK preview: all rights reserved (no OSS license claimed). Publishing to nuget.org is
-         a future decision; `dotnet pack` produces valid, versioned, documented nupkgs today. -->
-    <PackageReleaseNotes>v1.7.1 — post-release hardening. See CHANGELOG.md.</PackageReleaseNotes>
+    <!-- License is explicit (no ambiguity): a research/evaluation license shipped in every package. -->
+    <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <PackageReleaseNotes>v1.8.0 — security review hardening pass. See CHANGELOG.md.</PackageReleaseNotes>
+
+    <!-- Reproducible restore: lock files are honored in CI via locked-mode restore. -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
 
     <!-- Default: not packable. Library projects set IsPackable=true explicitly. -->
     <IsPackable>false</IsPackable>

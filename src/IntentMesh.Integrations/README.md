@@ -14,5 +14,5 @@ verified-intent runtime — everything here is gated by the kernel before any by
 See the [integrations guide](https://github.com/wyckit/IntentMesh/blob/master/docs/INTEGRATIONS.md)
 and [adapter guide](https://github.com/wyckit/IntentMesh/blob/master/docs/ADAPTER-GUIDE.md).
 
-> v1.7.0 — verified-intent platform **preview**. See
+> v1.8.0 — verified-intent platform **preview**. See
 > [MATURITY.md](https://github.com/wyckit/IntentMesh/blob/master/docs/MATURITY.md).

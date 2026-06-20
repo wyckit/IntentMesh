@@ -101,6 +101,17 @@ public sealed class SdkTests
     }
 
     [Fact]
+    public void Bundle_loads_from_the_embedded_resource_with_no_dataset_dir()
+    {
+        // The package self-containment guarantee: a NuGet consumer with only the DLL can load the
+        // registry from the embedded TLM bundle — no dataset/compiled on disk required.
+        var bundle = SymbolicBundle.LoadEmbedded();
+        Assert.True(bundle.Contracts.Count >= 18);
+        Assert.True(bundle.IsRegistered(Kinds.SendEmail));
+        Assert.True(bundle.IsRegistered(Kinds.RunCommand));
+    }
+
+    [Fact]
     public void RegisteredKinds_is_the_closed_proposable_set()
     {
         var sdk = IntentMeshSdk.Load();

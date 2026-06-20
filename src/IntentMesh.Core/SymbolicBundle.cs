@@ -50,11 +50,44 @@ public sealed class SymbolicBundle
     public bool IsRegistered(string kind) => Contracts.ContainsKey(kind);
 
     public static SymbolicBundle Load(string compiledDir)
+        => Build(Directory.GetFiles(compiledDir, "im-*.tlmz").Select(File.ReadAllBytes).ToList(), compiledDir);
+
+    /// <summary>Load the bundle for a host that may not ship the dataset folder (e.g. a NuGet consumer):
+    /// use <paramref name="compiledDir"/> if given, else a discovered <c>dataset/compiled</c>, else the
+    /// im-*.tlmz EMBEDDED in this assembly. So <see cref="IntentMeshSdk.Load"/> works out of the box.</summary>
+    public static SymbolicBundle LoadDefault(string? compiledDir = null)
+    {
+        if (compiledDir is not null) return Load(compiledDir);
+        try { return Load(DatasetLocator.FindCompiledDir()); }
+        catch (DirectoryNotFoundException) { }
+        try { return Load(DatasetLocator.FindCompiledDir(AppContext.BaseDirectory)); }
+        catch (DirectoryNotFoundException) { }
+        return LoadEmbedded();
+    }
+
+    /// <summary>Load the bundle from the im-*.tlmz files embedded in IntentMesh.Core — the
+    /// self-contained path that needs no dataset folder on disk.</summary>
+    public static SymbolicBundle LoadEmbedded()
+    {
+        var asm = typeof(SymbolicBundle).Assembly;
+        var names = asm.GetManifestResourceNames().Where(n => n.Contains("im-") && n.EndsWith(".tlmz")).ToList();
+        var bytes = new List<byte[]>();
+        foreach (var n in names)
+        {
+            using var s = asm.GetManifestResourceStream(n)!;
+            using var ms = new MemoryStream();
+            s.CopyTo(ms);
+            bytes.Add(ms.ToArray());
+        }
+        if (bytes.Count == 0)
+            throw new InvalidOperationException("No im-*.tlmz embedded in IntentMesh.Core. Build the package with the compiled bundle embedded.");
+        return Build(bytes, "embedded:IntentMesh.Core");
+    }
+
+    private static SymbolicBundle Build(IReadOnlyList<byte[]> packageBytes, string source)
     {
         var compiler = new TlmCompiler();
-        var packages = Directory.GetFiles(compiledDir, "im-*.tlmz")
-            .Select(f => compiler.Deserialize(File.ReadAllBytes(f)))
-            .ToList();
+        var packages = packageBytes.Select(compiler.Deserialize).ToList();
 
         var contracts = new Dictionary<string, ContractInfo>(StringComparer.OrdinalIgnoreCase);
         var cues = new List<CueInfo>();
@@ -106,7 +139,7 @@ public sealed class SymbolicBundle
 
         if (contracts.Count == 0)
             throw new InvalidOperationException(
-                $"No action contracts found in '{compiledDir}'. Run the tlm CLI: author + compile all.");
+                $"No action contracts found in '{source}'. Run the tlm CLI: author + compile all.");
 
         lifecycle.Sort((a, b) => a.Order.CompareTo(b.Order));
         return new SymbolicBundle(contracts, cues, rules, postLabels, skills, lifecycle, capabilities);

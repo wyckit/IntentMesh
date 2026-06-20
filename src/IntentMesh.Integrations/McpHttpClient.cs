@@ -53,8 +53,39 @@ public sealed class McpHttpClient : IMcpClient
         var uri = new Uri(endpointUrl);
         ValidateEndpoint(uri, allowInsecureTransport);
         bool owns = http is null;
-        http ??= new HttpClient { Timeout = ReadTimeout, MaxResponseContentBufferSize = MaxResponseBytes };
+        http ??= CreateGuardedClient(uri.IsLoopback);
         return Initialize(new McpHttpClient(http, uri, owns));
+    }
+
+    /// <summary>The default internal client, hardened against SSRF beyond the Connect-time check:
+    /// redirects are NOT followed (a 3xx to an internal target can't be chased), and every actual TCP
+    /// connection re-validates its resolved IP against the internal-range blocklist — so DNS that
+    /// re-resolves to an internal address between preflight and send (rebinding) is still blocked.
+    /// A caller-supplied HttpClient is used as-is (the Connect-time validation still applies).</summary>
+    private static HttpClient CreateGuardedClient(bool loopbackAllowed)
+    {
+        var handler = new SocketsHttpHandler
+        {
+            AllowAutoRedirect = false,
+            ConnectTimeout = ReadTimeout,
+            ConnectCallback = async (context, ct) =>
+            {
+                var host = context.DnsEndPoint.Host;
+                var port = context.DnsEndPoint.Port;
+                IPAddress[] addresses = IPAddress.TryParse(host, out var literal)
+                    ? new[] { literal }
+                    : await Dns.GetHostAddressesAsync(host, ct).ConfigureAwait(false);
+                foreach (var ip in addresses)
+                {
+                    if (!loopbackAllowed && IsInternalAddress(ip)) continue;   // re-validate at connect time
+                    var socket = new Socket(SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
+                    try { await socket.ConnectAsync(ip, port, ct).ConfigureAwait(false); return new NetworkStream(socket, ownsSocket: true); }
+                    catch { socket.Dispose(); throw; }
+                }
+                throw new InvalidOperationException($"MCP endpoint host '{host}' resolves only to internal/blocked addresses — blocked (SSRF guard).");
+            },
+        };
+        return new HttpClient(handler) { Timeout = ReadTimeout, MaxResponseContentBufferSize = MaxResponseBytes };
     }
 
     private static McpHttpClient Initialize(McpHttpClient client)

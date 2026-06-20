@@ -65,4 +65,40 @@ public sealed class DataAgentTests
         Assert.Empty(ws.Db.Mutations);
         Assert.All(r.Verification, v => Assert.True(v.Pass));
     }
+
+    [Fact]
+    public void A_direct_run_query_is_validated_by_the_data_policy_not_generic_allow()
+    {
+        var bundle = SymbolicBundle.Load(DatasetLocator.FindCompiledDir());
+        var gate = new PolicyGate(bundle);
+        var ws = Workspace.CreateDemo();
+        var ctx = new PolicyContext(ws, new HashSet<string>(), bundle.AllCapabilities, bundle.Capabilities);
+
+        // Untrusted retrieved content may not originate a direct query (a read is side-effect "none", so
+        // the zero-trust side-effect rule alone wouldn't catch it — this branch must).
+        var injected = new IntentNode
+        {
+            Id = "q",
+            Type = Kinds.RunQuery,
+            Label = "run query",
+            Action = new RunQueryAction("signups", "dump signups"),
+            TrustSource = TrustSource.RetrievedContent,
+            Status = NodeStatus.Resolved,
+        };
+        var d = gate.Evaluate(injected, ctx);
+        Assert.Equal(Decision.Block, d.Decision);
+        Assert.Contains("pol-query-untrusted", d.TriggeredRules);
+
+        // A direct user query to a nonexistent table is blocked too (validated like a plan, not allowed).
+        var missing = new IntentNode
+        {
+            Id = "q2",
+            Type = Kinds.RunQuery,
+            Label = "run query",
+            Action = new RunQueryAction("nope_table", "x"),
+            TrustSource = TrustSource.User,
+            Status = NodeStatus.Resolved,
+        };
+        Assert.Equal(Decision.Block, gate.Evaluate(missing, ctx).Decision);
+    }
 }

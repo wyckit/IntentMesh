@@ -2,7 +2,7 @@
 
 The single source of truth for **what is production-ready, what is experimental, and what is future
 work.** Every "proven" claim below is backed by a test that would fail if the claim stopped being
-true (`dotnet test IntentMesh.slnx` — **177/177**). Nothing here is aspirational unless it says so.
+true (`dotnet test IntentMesh.slnx` — **183 passing, 3 env-gated skipped**). Nothing here is aspirational unless it says so.
 
 > IntentMesh is a **research prototype with a production-shaped core**: the security kernel and its
 > guarantees are proven and stable; the *operational backends* around it (KMS, DB persistence,
@@ -31,9 +31,9 @@ true (`dotnet test IntentMesh.slnx` — **177/177**). Nothing here is aspiration
 | Capability | Status |
 |---|---|
 | `AnthropicLlmClient` real LLM path | Works against the live API (env-gated test); not load-tested or cost-managed |
-| Live benchmark harness (`intentbench --live`) | Runs against a real model; numbers are illustrative, see [BENCHMARK-REPORT.md](BENCHMARK-REPORT.md) |
+| IntentBench (25 scenarios) | **Architecture demonstration**, not a product benchmark: the IntentMesh column is measured (real pipeline), the vanilla/mcp-gated baselines are deterministic architecture-class *models* (not executed agents) and the criteria are coarse — see [BENCHMARK-REPORT.md](BENCHMARK-REPORT.md). `intentbench --live` runs the proposal layer against a real model. |
 | SMTP + OAuth 2.0 device flow | Real transports; need your credentials and a consent screen |
-| Control Room SPA | Useful for governance/debugging; dependency-free demo UI, **local-only** — no auth, rate-limiting, or tenant isolation (run it behind your own boundary). It **refuses to start in Production with the demo audit key** (set `INTENTMESH_AUDIT_KEY`, or `INTENTMESH_ALLOW_INSECURE_KEY=1` to opt out). |
+| Control Room SPA | Useful for governance/debugging; dependency-free demo UI. The `/api` surface is **enforced local-only** — a non-loopback caller is refused unless `INTENTMESH_WEB_TOKEN` is set, in which case every API call must present it (`X-Api-Token` / `Authorization: Bearer`). It also **refuses to start in Production with the demo audit key** (`INTENTMESH_AUDIT_KEY`, or `INTENTMESH_ALLOW_INSECURE_KEY=1` to opt out). Full auth, rate-limiting, and multi-tenant isolation remain future. |
 | Policy authoring | C# `PolicyGate` is authoritative; symbolic metadata + fixtures/diff support review (no declarative DSL yet) |
 
 ## 🔭 Future — named seams, not built (not faked)

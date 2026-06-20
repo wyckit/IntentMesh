@@ -44,6 +44,21 @@ public sealed class ConfirmationTests
     }
 
     [Fact]
+    public void Per_file_approval_deletes_only_the_approved_file()
+    {
+        var rt = Runtime();
+        var delId = NodeId(rt.Run(Prompt2, Workspace.CreateDemo()), Kinds.DeleteFiles);
+
+        // Approve ONE file via a per-file token (node#fileRef) — not the whole node.
+        var ws = Workspace.CreateDemo();
+        var r = rt.Run(Prompt2, ws, new HashSet<string> { $"{delId}#old_installer_v3.exe" });
+
+        Assert.Contains("old_installer_v3.exe", ws.DeletedFiles);        // the approved file is deleted
+        Assert.DoesNotContain("~$tempfile.tmp", ws.DeletedFiles);        // an unapproved junk file is NOT
+        Assert.Contains(ws.Downloads, f => f.Name == "~$tempfile.tmp");  // it remains on disk
+    }
+
+    [Fact]
     public void Approving_deletion_actually_deletes_in_the_sandbox()
     {
         var rt = Runtime();

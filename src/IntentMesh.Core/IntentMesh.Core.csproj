@@ -17,6 +17,15 @@
 
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\" />
+    <None Include="..\..\LICENSE.txt" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <!-- Embed the compiled TLM bundle so the package is self-contained: IntentMeshSdk.Load() /
+       SymbolicBundle.LoadEmbedded() work for a NuGet consumer without shipping dataset/compiled. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\dataset\compiled\im-*.tlmz">
+      <LogicalName>IntentMesh.Core.bundle.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
 </Project>

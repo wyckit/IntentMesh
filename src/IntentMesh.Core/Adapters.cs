@@ -166,24 +166,31 @@ public sealed class FileAdapter : IToolAdapter
         ClassifyJunkAction => ToolHost.Ok(node.Id, "Classified downloads.",
             $"junk: {Names(ws, JunkClass.Junk)}", $"ambiguous: {Names(ws, JunkClass.Ambiguous)}", $"important (keep): {Names(ws, JunkClass.Important)}"),
 
-        DeleteFilesAction del => Delete(node.Id, del, ws, approved),
+        DeleteFilesAction del => Delete(node, del, ws),
 
         _ => ToolHost.Ok(node.Id, "no-op")
     };
 
-    // Not approved -> require explicit per-file approval, delete nothing. Approved -> delete (sandboxed).
-    private static ExecutionResult Delete(string id, DeleteFilesAction del, Workspace ws, bool approved)
+    // PER-FILE deletion: delete ONLY the files the operator approved for this node (node.ApprovedRefs),
+    // never the whole batch on a single node approval. Unapproved files stay; nothing is deleted when
+    // no file was approved.
+    private static ExecutionResult Delete(IntentNode node, DeleteFilesAction del, Workspace ws)
     {
-        if (!approved)
-            return ToolHost.Halt(id, $"{del.FileRefs.Count} file(s) await explicit per-file approval — 0 deleted.",
+        var toDelete = del.FileRefs.Where(r => node.ApprovedRefs.Contains(r)).ToList();
+        if (toDelete.Count == 0)
+            return ToolHost.Halt(node.Id, $"{del.FileRefs.Count} file(s) await explicit per-file approval — 0 deleted.",
                 "0 files deleted", $"pending approval: {string.Join(", ", del.FileRefs)}");
-        foreach (var name in del.FileRefs)
+
+        foreach (var name in toDelete)
         {
             ws.DeletedFiles.Add(name);
             ws.Downloads.RemoveAll(f => f.Name == name);
         }
-        return ToolHost.Ok(id, $"Deleted {del.FileRefs.Count} file(s) after approval.",
-            $"deleted: {string.Join(", ", del.FileRefs)}");
+        var pending = del.FileRefs.Where(r => !node.ApprovedRefs.Contains(r)).ToList();
+        var summary = pending.Count == 0
+            ? $"Deleted {toDelete.Count} file(s) after approval."
+            : $"Deleted {toDelete.Count} approved file(s); {pending.Count} still await approval.";
+        return ToolHost.Ok(node.Id, summary, $"deleted: {string.Join(", ", toDelete)}");
     }
 
     private static string Names(Workspace ws, JunkClass c) =>

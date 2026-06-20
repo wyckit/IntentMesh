@@ -1,3 +1,6 @@
+using System.Net;
+using System.Security.Cryptography;
+using System.Text;
 using IntentMesh.Core;
 
 // IntentMesh Control Room — ASP.NET minimal API over IntentMesh.Core. Serves a dependency-free
@@ -58,6 +61,40 @@ var demos = new[]
     new { id = 5, title = "Data agent", prompt = "Summarize signups by plan from the analytics database, delete old records, and email the client a report." },
 };
 
+// API access guard: the /api surface (run, history, artifact, replay, export, explain) is LOCAL-ONLY
+// by default — a non-loopback caller is refused. Set INTENTMESH_WEB_TOKEN to allow remote access; then
+// every /api request must present it (X-Api-Token, or 'Authorization: Bearer <token>'). This stops a
+// public caller from enumerating artifacts or using a real-key host as a signing/approval oracle.
+// (Full auth / rate-limiting / multi-tenant isolation remain preview-out-of-scope — see docs/MATURITY.md.)
+var apiToken = Environment.GetEnvironmentVariable("INTENTMESH_WEB_TOKEN");
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path.StartsWithSegments("/api"))
+    {
+        var remote = context.Connection.RemoteIpAddress;
+        bool loopback = remote is null || IPAddress.IsLoopback(remote);
+        if (!string.IsNullOrEmpty(apiToken))
+        {
+            var provided = context.Request.Headers["X-Api-Token"].FirstOrDefault()
+                ?? context.Request.Headers.Authorization.FirstOrDefault()?.Replace("Bearer ", "", StringComparison.Ordinal);
+            if (provided is null || !CryptographicOperations.FixedTimeEquals(
+                    Encoding.UTF8.GetBytes(provided), Encoding.UTF8.GetBytes(apiToken)))
+            {
+                context.Response.StatusCode = 401;
+                await context.Response.WriteAsJsonAsync(new { error = "invalid or missing API token" });
+                return;
+            }
+        }
+        else if (!loopback)
+        {
+            context.Response.StatusCode = 403;
+            await context.Response.WriteAsJsonAsync(new { error = "Control Room API is local-only; set INTENTMESH_WEB_TOKEN to allow remote access." });
+            return;
+        }
+    }
+    await next();
+});
+
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
@@ -95,14 +132,16 @@ app.MapGet("/api/runs/{id}", (string id) =>
 });
 
 /// One inspectable split artifact (intent.graph.json … audit.signed.json) — the signed-artifact viewer.
+/// Serves the file AS STORED ON DISK (not re-derived), so a tampered artifact is shown verbatim and the
+/// viewer agrees with /verify rather than masking tampering with a clean regenerated copy.
 app.MapGet("/api/runs/{id}/artifact/{name}", (string id, string name) =>
 {
     try
     {
-        var files = TraceBundleBuilder.SplitFiles(store.Load(id));
-        return files.TryGetValue(name, out var json)
+        var json = store.ReadArtifact(id, name);
+        return json is not null
             ? Results.Text(json, "application/json")
-            : Results.NotFound(new { error = $"no artifact '{name}'", available = files.Keys });
+            : Results.NotFound(new { error = $"no artifact '{name}'", available = TraceBundleBuilder.ArtifactNames });
     }
     catch (Exception ex) when (ex is FileNotFoundException or ArgumentException) { return Results.NotFound(new { error = $"no run '{id}'" }); }
 });

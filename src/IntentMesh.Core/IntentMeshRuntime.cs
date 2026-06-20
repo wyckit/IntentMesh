@@ -55,7 +55,7 @@ public sealed class IntentMeshRuntime
     }
 
     public static IntentMeshRuntime Load(string? compiledDir = null)
-        => new(SymbolicBundle.Load(compiledDir ?? DatasetLocator.FindCompiledDir()));
+        => new(SymbolicBundle.LoadDefault(compiledDir));   // dataset dir if present, else the embedded bundle
 
     public RunResult Run(string prompt, Workspace ws) => Run(prompt, ws, new HashSet<string>());
 
@@ -84,12 +84,12 @@ public sealed class IntentMeshRuntime
         foreach (var u in resolved.Unsupported)
             audit.Add("-", "resolve", $"unsupported: {u}");
 
-        // Recipients the USER explicitly named (used to detect substitution from untrusted content).
-        var userRecipients = resolved.Nodes
-            .Select(n => n.Action)
-            .OfType<DraftEmailAction>().Select(a => a.Recipient)
-            .Concat(resolved.Nodes.Select(n => n.Action).OfType<SendEmailAction>().Select(a => a.Recipient))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        // Recipients the USER actually requested — derived as GROUND TRUTH from the prompt + workspace
+        // contacts, NOT from the proposer's own nodes. Trusting proposer output here is circular: a bad
+        // (e.g. LLM) proposer could invent a recipient and make pc-recipient-matches-request believe the
+        // user asked for it. A proposer-invented recipient that the prompt never names is therefore not
+        // treated as user-requested, and fails the postcondition / triggers substitution rules.
+        var userRecipients = DeriveUserRecipients(prompt, ws);
         var ctx = new PolicyContext(ws, userRecipients, _granted, _bundle.Capabilities);
 
         // Consent is part of the signed record: fold the operator's approvals into the audit chain so
@@ -132,9 +132,24 @@ public sealed class IntentMeshRuntime
 
             // An approval applies ONLY to a full-authority node that the gate gated for
             // confirmation. A Block never reaches here, so injected/zero-trust nodes can't be approved.
-            bool approved = decision.Decision == Decision.Confirm
-                            && node.Authority == Authority.Full
-                            && effectiveApprovals.Contains(node.Id);
+            bool approved = false;
+            if (decision.Decision == Decision.Confirm && node.Authority == Authority.Full)
+            {
+                if (node.Action is DeleteFilesAction del)
+                {
+                    // True PER-FILE approval: approve a whole node (node.Id) OR specific files
+                    // (node.Id#fileRef). The adapter deletes only these refs — one node approval can't
+                    // delete the whole batch.
+                    node.ApprovedRefs = del.FileRefs
+                        .Where(r => effectiveApprovals.Contains(node.Id) || effectiveApprovals.Contains($"{node.Id}#{r}"))
+                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    approved = node.ApprovedRefs.Count > 0;
+                }
+                else
+                {
+                    approved = effectiveApprovals.Contains(node.Id);
+                }
+            }
 
             // Transitive-allow guard: a node proposed dynamically by an adapter (ParentId set) must
             // never auto-execute a side effect on a bare Allow — emergent side-effecting intent is
@@ -166,7 +181,14 @@ public sealed class IntentMeshRuntime
             node.Execution = exec;
             audit.Add(node.Id, "execute",
                 (approved ? "[APPROVED] " : "") + (exec.Halted ? $"HALTED — {exec.Summary}" : exec.Summary));
-            if (exec.Ran && !exec.Halted && (decision.Decision == Decision.Allow || approved))
+            if (exec.Halted)
+            {
+                // An ALLOWED/approved action that still halted is a real failure — don't leave it looking
+                // "Allowed" in the signed run (approval consumed but the action never happened). A node
+                // merely awaiting confirmation halts by design, so keep that as NeedsConfirmation.
+                if (node.Status == NodeStatus.Allowed) node.Status = NodeStatus.Halted;
+            }
+            else if (exec.Ran && (decision.Decision == Decision.Allow || approved))
                 node.Status = NodeStatus.Executed;
 
             // Ingest proposed nodes as ZERO-TRUST (State-Poisoning guard) and re-queue them.
@@ -243,5 +265,30 @@ public sealed class IntentMeshRuntime
         var skills = new SkillsView(lifecycle.Select(s => s.Label).ToList(), skillItems);
 
         return new RunResult(prompt, resolved.Fired, resolved.Unsupported, nodes, policy, exec, verify, auditViews, summary, skills);
+    }
+
+    /// <summary>Ground-truth recipients the USER requested, derived from the prompt + workspace contacts
+    /// (independent of any proposer output): a known contact whose first name appears in the prompt, the
+    /// external "client" when the prompt says "client", and any literal email address typed in the
+    /// prompt. Mirrors the trusted resolver binding so a proposer cannot smuggle in a recipient.</summary>
+    private static HashSet<string> DeriveUserRecipients(string prompt, Workspace ws)
+    {
+        var lowered = " " + (prompt ?? "").ToLowerInvariant() + " ";
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        bool clientContext = lowered.Contains(" client");
+        foreach (var c in ws.Contacts)
+        {
+            if (!c.Known) continue;
+            var first = c.Name.Split(' ')[0].ToLowerInvariant();
+            if (lowered.Contains(" " + first) || (clientContext && c.External))
+            {
+                set.Add(c.Name);
+                if (!string.IsNullOrEmpty(c.Email)) set.Add(c.Email);
+            }
+        }
+        foreach (System.Text.RegularExpressions.Match m in
+                 System.Text.RegularExpressions.Regex.Matches(prompt ?? "", @"[\w.+-]+@[\w.-]+\.\w+"))
+            set.Add(m.Value);
+        return set;
     }
 }

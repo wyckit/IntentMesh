@@ -188,16 +188,26 @@ public static class OpenApiImporter
     /// </summary>
     /// <param name="schema">The source tool / OpenAPI operation schema.</param>
     /// <returns>A typed contract descriptor ready for review or registration.</returns>
-    public static ImportedContract ToContract(ToolSchema schema)
+    /// <param name="trusted">Set only for hand-authored/vetted schemas. When false (the default, e.g.
+    /// an imported or generated OpenAPI spec) a caller hint cannot DOWNGRADE a mutating operation: a
+    /// POST/PUT/PATCH/DELETE with <c>SideEffectHint="none"</c> is floored to its method-implied side
+    /// effect so confirmation is not silently dropped. Trusted callers keep full control of the hints.</param>
+    public static ImportedContract ToContract(ToolSchema schema, bool trusted = false)
     {
         // Derive the IntentMesh action kind id from the tool name.
         var kind = "act-" + schema.Name.ToLowerInvariant().Replace('_', '-');
+
+        bool mutating = schema.Method.ToUpperInvariant() is "POST" or "PUT" or "PATCH" or "DELETE";
 
         // Side effect: caller hint wins; otherwise infer from operation semantics (keywords in the
         // name/summary), falling back to the HTTP method.
         var sideEffect = !string.IsNullOrWhiteSpace(schema.SideEffectHint)
             ? schema.SideEffectHint.ToLowerInvariant()
             : InferSideEffect(schema.Name, schema.Summary, schema.Method);
+
+        // SSRF-of-confirmation guard: an untrusted spec can't claim a mutating op is side-effect-free.
+        if (mutating && !trusted && sideEffect == "none")
+            sideEffect = InferSideEffect(schema.Name, schema.Summary, schema.Method);
 
         // Resolve risk: caller hint wins; otherwise infer from method AND the semantic side effect.
         var risk = !string.IsNullOrWhiteSpace(schema.RiskHint)
@@ -207,8 +217,7 @@ public static class OpenApiImporter
         // Capability the action requires, inferred from the side effect + operation semantics.
         var capability = InferCapability(sideEffect, schema.Name, schema.Summary);
 
-        // Confirmation required when: mutating method + non-trivial side effect.
-        bool mutating = schema.Method.ToUpperInvariant() is "POST" or "PUT" or "PATCH" or "DELETE";
+        // Confirmation required when: mutating method + non-trivial side effect (after the floor above).
         bool requiresConfirmation = mutating && sideEffect != "none";
 
         return new ImportedContract(

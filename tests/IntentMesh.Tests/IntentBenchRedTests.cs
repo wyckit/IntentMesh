@@ -109,7 +109,7 @@ public sealed class IntentBenchRedTests
         finally { System.IO.Directory.Delete(root, true); }
     }
 
-    [Fact]
+    [SkippableFact]
     public void Red_symlinked_directory_out_of_the_root_is_blocked()
     {
         var root = TempRoot();
@@ -119,7 +119,7 @@ public sealed class IntentBenchRedTests
         try
         {
             try { System.IO.Directory.CreateSymbolicLink(link, outsideDir); }
-            catch { return; }   // creating symlinks needs privilege (Developer Mode/admin) — skip if unavailable
+            catch { Skip.If(true, "creating symlinks needs privilege (Developer Mode/admin) — unavailable here"); return; }
 
             var proxy = new McpProxy(Runtime(), Workspace.CreateDemo(), allowedRoot: root);
             var res = proxy.Gate(new McpToolCall("read_file",
