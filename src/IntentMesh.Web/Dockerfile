@@ -7,8 +7,11 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 COPY . .
-RUN dotnet restore IntentMesh.slnx \
- && dotnet publish src/IntentMesh.Web/IntentMesh.Web.csproj -c Release -o /app
+# Locked restore (honors packages.lock.json + the repo NuGet.config source mapping) so the image is
+# built from the exact, pinned dependency set — a drifted lock file fails the build rather than
+# silently resolving different packages.
+RUN dotnet restore IntentMesh.slnx --locked-mode \
+ && dotnet publish src/IntentMesh.Web/IntentMesh.Web.csproj -c Release --no-restore -o /app
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app

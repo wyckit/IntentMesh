@@ -1,14 +1,15 @@
 'use strict';
 
-// When the Control Room is run token-gated (INTENTMESH_WEB_TOKEN set, e.g. for remote access), every
-// /api call must carry the token. The operator stores it once via localStorage['intentmesh_token'];
-// we attach it to every same-origin /api request so the SPA keeps working under token auth. On a
-// loopback/local host no token is configured and nothing is added.
+// When the Control Room is run with authentication, every /api call must carry the bearer token. The
+// operator stores it once via sessionStorage['intentmesh_token'] — sessionStorage (not localStorage) so
+// the credential is scoped to the tab/session and cleared when it closes, rather than persisted to disk
+// where it outlives the session and is reachable long-term by any script. We attach it to every
+// same-origin /api request. On a loopback/local dev host no token is configured and nothing is added.
 (() => {
   const _fetch = window.fetch.bind(window);
   window.fetch = (url, opts = {}) => {
     if (typeof url === 'string' && url.startsWith('/api')) {
-      const tok = localStorage.getItem('intentmesh_token');
+      const tok = sessionStorage.getItem('intentmesh_token');
       if (tok) opts = { ...opts, headers: { ...(opts.headers || {}), 'X-Api-Token': tok } };
     }
     return _fetch(url, opts);

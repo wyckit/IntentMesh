@@ -217,8 +217,12 @@ public static class OpenApiImporter
         // Capability the action requires, inferred from the side effect + operation semantics.
         var capability = InferCapability(sideEffect, schema.Name, schema.Summary);
 
-        // Confirmation required when: mutating method + non-trivial side effect (after the floor above).
-        bool requiresConfirmation = mutating && sideEffect != "none";
+        // Confirmation is required whenever the operation has a real side effect — keyed on the SIDE
+        // EFFECT, not the HTTP verb. A side-effecting GET/HEAD (e.g. an operation named "sendInvite" or
+        // "purgeCache" exposed over GET) must still be gated; tying confirmation to mutating verbs let
+        // such operations bypass it. A genuinely safe read infers side-effect "none" and stays ungated;
+        // a trusted spec can still mark a read explicitly safe via SideEffectHint="none".
+        bool requiresConfirmation = sideEffect != "none";
 
         return new ImportedContract(
             Kind: kind,

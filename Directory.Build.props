@@ -5,7 +5,7 @@
        Demos, tools, the web host, the E2E/bench runners, the template, and tests stay non-packable. -->
 
   <PropertyGroup>
-    <Version>1.10.1</Version>
+    <Version>1.11.0</Version>
     <Authors>Chad Sandor</Authors>
     <Company>wyckit</Company>
     <Product>IntentMesh</Product>
@@ -18,7 +18,7 @@
     <!-- MIT-licensed (SPDX expression in package metadata). -->
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
-    <PackageReleaseNotes>v1.10.1 — authz hardening: reject traversal-shaped tenant/principal ids, tenant-path containment, and a request-body cap that holds for chunked bodies. See CHANGELOG.md.</PackageReleaseNotes>
+    <PackageReleaseNotes>v1.11.0 — service hardening: server-mediated approvals on export, verify-before-rerun, per-file web approvals, fail-closed persistence, rate limiting, CSP/security headers, side-effecting-GET gating, MCP typed-path enforcement. See CHANGELOG.md.</PackageReleaseNotes>
 
     <!-- Reproducible restore: lock files are honored in CI via locked-mode restore. -->
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>

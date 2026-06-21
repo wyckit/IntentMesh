@@ -22,11 +22,13 @@ public sealed class WebAuthzTests
     private const string AliceKey = "sk-alice-secret";   // acme: operator+approver+viewer
     private const string CarolKey = "sk-carol-secret";   // acme: viewer only
     private const string BobKey = "sk-bob-secret";       // globex: operator+approver+viewer
+    private const string DanKey = "sk-dan-secret";       // acme: NO roles
 
     private static string PrincipalsJson() =>
         "[" +
         $"{{\"id\":\"alice\",\"tenant\":\"acme\",\"roles\":[\"operator\",\"approver\",\"viewer\"],\"apiKeyHash\":\"{PrincipalStore.HashApiKey(AliceKey)}\"}}," +
         $"{{\"id\":\"carol\",\"tenant\":\"acme\",\"roles\":[\"viewer\"],\"apiKeyHash\":\"{PrincipalStore.HashApiKey(CarolKey)}\"}}," +
+        $"{{\"id\":\"dan\",\"tenant\":\"acme\",\"roles\":[],\"apiKeyHash\":\"{PrincipalStore.HashApiKey(DanKey)}\"}}," +
         $"{{\"id\":\"bob\",\"tenant\":\"globex\",\"roles\":[\"operator\",\"approver\",\"viewer\"],\"apiKeyHash\":\"{PrincipalStore.HashApiKey(BobKey)}\"}}" +
         "]";
 
@@ -67,8 +69,9 @@ public sealed class WebAuthzTests
 
     private sealed record TokenResp(string token, string principal, string tenant, string[] roles, long expiresAt);
     private sealed record WhoResp(string principal, string tenant, string[] roles);
-    private sealed record Challenge(string nodeId, string label, string reason, string challenge, long expiresAt);
+    private sealed record Challenge(string nodeId, string? fileRef, string label, string reason, string challenge, long expiresAt);
     private sealed record ChallengesResp(string runId, Challenge[] challenges);
+    private sealed record BundleApprovals(string bundleSignature, string[] approvals);
 
     private static async Task<string> TokenFor(WebApplicationFactory<Program> f, string apiKey)
     {
@@ -205,6 +208,102 @@ public sealed class WebAuthzTests
             Assert.Equal(HttpStatusCode.Forbidden, (await carol.PostAsync($"/api/runs/{id}/challenges", null)).StatusCode);
             Assert.Equal(HttpStatusCode.Forbidden,
                 (await carol.PostAsJsonAsync($"/api/runs/{id}/approve", new { challenges = Array.Empty<string>() })).StatusCode);
+        }
+        finally { Cleanup(f, runs); }
+    }
+
+    [Fact]
+    public async Task A_principal_with_no_role_cannot_read_runs()
+    {
+        var (f, runs) = MakeTokenMode();
+        try
+        {
+            var dan = await ClientFor(f, DanKey);   // authenticated, but no roles
+            Assert.Equal(HttpStatusCode.Forbidden, (await dan.GetAsync("/api/runs")).StatusCode);
+        }
+        finally { Cleanup(f, runs); }
+    }
+
+    [Fact]
+    public async Task Export_does_not_honor_caller_supplied_approvals()
+    {
+        var (f, runs) = MakeTokenMode();
+        try
+        {
+            var alice = await ClientFor(f, AliceKey);
+            var resp = await alice.PostAsJsonAsync("/api/export",
+                new { prompt = Demo1, approvals = new[] { "n1", "n2" }, format = "bundle" });
+            resp.EnsureSuccessStatusCode();
+            var bundle = (await resp.Content.ReadFromJsonAsync<BundleApprovals>())!;
+            Assert.Empty(bundle.approvals);   // caller approvals ignored — the signed bundle has none
+        }
+        finally { Cleanup(f, runs); }
+    }
+
+    [Fact]
+    public async Task A_tampered_stored_run_fails_integrity_before_approval()
+    {
+        var (f, runs) = MakeTokenMode();
+        try
+        {
+            var alice = await ClientFor(f, AliceKey);
+            var id = (await alice.PostAsJsonAsync("/api/run", new { prompt = Demo1 }))
+                .Headers.GetValues("X-Run-Id").First();
+
+            // Tamper the stored signed bundle (acme tenant partition) so its signature no longer verifies.
+            var bundlePath = Path.Combine(runs, "t", "acme", id, "bundle.json");
+            File.WriteAllText(bundlePath, File.ReadAllText(bundlePath).Replace("Friday", "Monday"));
+
+            // Both challenge minting and approval must refuse to re-run a bundle that fails verification.
+            Assert.Equal(HttpStatusCode.Conflict, (await alice.PostAsync($"/api/runs/{id}/challenges", null)).StatusCode);
+            Assert.Equal(HttpStatusCode.Conflict,
+                (await alice.PostAsJsonAsync($"/api/runs/{id}/approve", new { challenges = new[] { "x" } })).StatusCode);
+        }
+        finally { Cleanup(f, runs); }
+    }
+
+    [Fact]
+    public async Task Per_file_delete_confirmations_are_minted_and_approved_per_file()
+    {
+        const string deletePrompt = "Clean up my downloads and delete anything that looks like junk.";
+        var (f, runs) = MakeTokenMode();
+        try
+        {
+            var alice = await ClientFor(f, AliceKey);
+            var id = (await alice.PostAsJsonAsync("/api/run", new { prompt = deletePrompt }))
+                .Headers.GetValues("X-Run-Id").First();
+
+            var chResp = await alice.PostAsync($"/api/runs/{id}/challenges", null);
+            chResp.EnsureSuccessStatusCode();
+            var challenges = (await chResp.Content.ReadFromJsonAsync<ChallengesResp>())!;
+
+            // A destructive delete is offered as PER-FILE challenges (node#fileRef), not one node-wide grant.
+            Assert.Contains(challenges.challenges, c => c.fileRef is not null);
+
+            var approve = await alice.PostAsJsonAsync($"/api/runs/{id}/approve",
+                new { challenges = challenges.challenges.Select(x => x.challenge).ToArray() });
+            approve.EnsureSuccessStatusCode();
+            Assert.NotEqual(id, approve.Headers.GetValues("X-Run-Id").First());
+        }
+        finally { Cleanup(f, runs); }
+    }
+
+    [Fact]
+    public async Task Auth_endpoint_is_rate_limited_per_client()
+    {
+        var (f, runs) = MakeTokenMode();
+        try
+        {
+            var codes = new List<HttpStatusCode>();
+            for (int i = 0; i < 13; i++)
+            {
+                var req = new HttpRequestMessage(HttpMethod.Post, "/api/auth/token")
+                { Content = JsonContent.Create(new { apiKey = "nope" }) };
+                req.Headers.Add("X-Forwarded-For", "203.0.113.7");   // a fixed client ip → its own partition
+                codes.Add((await f.CreateClient().SendAsync(req)).StatusCode);
+            }
+            // The "auth" policy permits 10/min per client; the surplus is rejected with 429.
+            Assert.Contains(HttpStatusCode.TooManyRequests, codes);
         }
         finally { Cleanup(f, runs); }
     }

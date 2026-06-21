@@ -1,13 +1,42 @@
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading.RateLimiting;
 using IntentMesh.Core;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.RateLimiting;
 
 // IntentMesh Control Room — ASP.NET minimal API over IntentMesh.Core. Serves a dependency-free
 // SPA (wwwroot) and runs the pipeline on demand. No CDN, no npm — robust offline.
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Rate limiting (built into the shared framework — no extra package). Partitions by the forwarded
+// client ip (X-Forwarded-For behind the reverse proxy, else the socket ip); a request with no
+// resolvable client key (e.g. an in-process test server) is not limited. A global per-client cap
+// covers run/replay/export/storage amplification; the stricter "auth" policy throttles credential
+// brute force on POST /api/auth/token.
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(ctx =>
+    {
+        var key = ClientKey(ctx);
+        return key is null
+            ? RateLimitPartition.GetNoLimiter("unkeyed")
+            : RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
+            { PermitLimit = 600, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 });
+    });
+    options.AddPolicy("auth", ctx =>
+    {
+        var key = ClientKey(ctx);
+        return key is null
+            ? RateLimitPartition.GetNoLimiter("unkeyed")
+            : RateLimitPartition.GetFixedWindowLimiter("auth:" + key, _ => new FixedWindowRateLimiterOptions
+            { PermitLimit = 10, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 });
+    });
+});
+
 var app = builder.Build();
 
 // Load the symbolic bundle once. Walk up from CWD, then from the binary location, to find
@@ -105,6 +134,23 @@ var demos = new[]
     new { id = 5, title = "Data agent", prompt = "Summarize signups by plan from the analytics database, delete old records, and email the client a report." },
 };
 
+// Security headers on every response — a strict CSP (the SPA is dependency-free: its only script is the
+// same-origin app.js), plus anti-sniff / anti-framing / referrer hygiene. style-src allows inline styles
+// the dependency-free UI uses; no remote origins are permitted.
+app.Use(async (context, next) =>
+{
+    var h = context.Response.Headers;
+    h["X-Content-Type-Options"] = "nosniff";
+    h["X-Frame-Options"] = "DENY";
+    h["Referrer-Policy"] = "no-referrer";
+    h["Content-Security-Policy"] =
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; " +
+        "connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
+    await next();
+});
+
+app.UseRateLimiter();
+
 // ── Auth middleware: resolve the calling principal for every /api request ──────────────────────────
 // Precedence: trusted-proxy > built-in token > legacy single-token > dev-loopback. The resolved
 // principal is attached to HttpContext.Items["principal"]; endpoints role-gate off it and scope every
@@ -151,10 +197,12 @@ app.Use(async (context, next) =>
     }
     else if (webToken is not null)
     {
-        // Legacy single shared token → a default-tenant principal with read+run+approve.
+        // Legacy single shared token (dev/local only — see docs) → a default-tenant principal with
+        // read+run, but NOT approver: a shared bearer must not be able to self-approve gated nodes, so
+        // approvals still require a real approver principal (token mode) or trusted-proxy identity.
         if (ConstTimeEq(BearerOf(context), webToken))
             principal = new AuthPrincipal("operator", "default",
-                Roles.Set(new[] { Roles.Operator, Roles.Approver, Roles.Viewer }));
+                Roles.Set(new[] { Roles.Operator, Roles.Viewer }));
     }
     else if (loopback)
     {
@@ -210,7 +258,7 @@ app.MapPost("/api/auth/token", (TokenRequest req) =>
         roles = p.Roles,
         expiresAt = exp,
     });
-});
+}).RequireRateLimiting("auth");
 
 /// The authenticated caller's identity (principal, tenant, roles).
 app.MapGet("/api/auth/whoami", (HttpContext http) =>
@@ -232,21 +280,25 @@ app.MapPost("/api/run", (RunRequest req, HttpContext http) =>
     // challenge (POST /api/runs/{id}/approve). The first pass always runs with no approvals.
     var result = runtime.Run(prompt, Workspace.CreateDemo(), new HashSet<string>());
 
+    // Fail CLOSED on persistence: a run that cannot be durably, verifiably recorded is treated as
+    // failed (503) rather than returning 200 with an unsaved result — an audited action must not look
+    // successful when its signed record was lost. The exception detail is logged server-side only.
     var store = StoreFor(p.TenantId);
+    string runId;
     try
     {
-        var runId = store.Save(TraceBundleBuilder.From(result, new List<string>(), keyProvider));
+        runId = store.Save(TraceBundleBuilder.From(result, new List<string>(), keyProvider));
         store.RecordOwner(runId, new RunOwner(p.PrincipalId, p.TenantId, NowUnix()));
-        http.Response.Headers["X-Run-Id"] = runId;
-        if (req.Approvals is { Length: > 0 })
-            http.Response.Headers["X-Approvals-Ignored"] = "approve gated nodes via POST /api/runs/{id}/approve with a server-issued challenge";
     }
     catch (Exception ex)
     {
-        Console.Error.WriteLine($"WARN: could not persist run: {ex.Message}");
-        http.Response.Headers["X-Persist-Error"] = ex.Message.Replace('\n', ' ').Replace('\r', ' ');
+        Console.Error.WriteLine($"ERROR: could not persist run: {ex}");
+        return Results.Json(new { error = "run could not be durably persisted" }, statusCode: 503);
     }
 
+    http.Response.Headers["X-Run-Id"] = runId;
+    if (req.Approvals is { Length: > 0 })
+        http.Response.Headers["X-Approvals-Ignored"] = "approve gated nodes via POST /api/runs/{id}/approve with a server-issued challenge";
     return Results.Json(result);
 });
 
@@ -254,19 +306,28 @@ app.MapPost("/api/run", (RunRequest req, HttpContext http) =>
 // All reads are tenant-scoped: any authenticated member of the tenant may view its runs; a run id from
 // another tenant simply isn't found (404), so existence never leaks across tenants.
 
-app.MapGet("/api/runs", (HttpContext http) => Results.Json(StoreFor(Principal(http).TenantId).ListSummaries()));
+app.MapGet("/api/runs", (HttpContext http) =>
+{
+    var p = Principal(http);
+    if (!CanRead(p)) return Forbidden(Roles.Viewer);
+    return Results.Json(StoreFor(p.TenantId).ListSummaries());
+});
 
 app.MapGet("/api/runs/{id}", (string id, HttpContext http) =>
 {
-    try { return Results.Json(StoreFor(Principal(http).TenantId).Load(id)); }
+    var p = Principal(http);
+    if (!CanRead(p)) return Forbidden(Roles.Viewer);
+    try { return Results.Json(StoreFor(p.TenantId).Load(id)); }
     catch (Exception ex) when (ex is FileNotFoundException or ArgumentException) { return Results.NotFound(new { error = $"no run '{id}'" }); }
 });
 
 app.MapGet("/api/runs/{id}/artifact/{name}", (string id, string name, HttpContext http) =>
 {
+    var p = Principal(http);
+    if (!CanRead(p)) return Forbidden(Roles.Viewer);
     try
     {
-        var json = StoreFor(Principal(http).TenantId).ReadArtifact(id, name);
+        var json = StoreFor(p.TenantId).ReadArtifact(id, name);
         return json is not null
             ? Results.Text(json, "application/json")
             : Results.NotFound(new { error = $"no artifact '{name}'", available = TraceBundleBuilder.ArtifactNames });
@@ -276,9 +337,11 @@ app.MapGet("/api/runs/{id}/artifact/{name}", (string id, string name, HttpContex
 
 app.MapGet("/api/runs/{id}/verify", (string id, HttpContext http) =>
 {
+    var p = Principal(http);
+    if (!CanRead(p)) return Forbidden(Roles.Viewer);
     try
     {
-        var store = StoreFor(Principal(http).TenantId);
+        var store = StoreFor(p.TenantId);
         var bundle = store.Load(id);
         return Results.Json(new
         {
@@ -293,9 +356,11 @@ app.MapGet("/api/runs/{id}/verify", (string id, HttpContext http) =>
 
 app.MapPost("/api/runs/{id}/replay", (string id, HttpContext http) =>
 {
+    var p = Principal(http);
+    if (!CanRead(p)) return Forbidden(Roles.Viewer);
     try
     {
-        var saved = StoreFor(Principal(http).TenantId).Load(id);
+        var saved = StoreFor(p.TenantId).Load(id);
         var replay = RunReplay.Reproduce(runtime, Workspace.CreateDemo(), saved, keyProvider);
         return Results.Json(new
         {
@@ -310,8 +375,10 @@ app.MapPost("/api/runs/{id}/replay", (string id, HttpContext http) =>
 });
 
 // ── Server-issued approval flow (replaces caller-asserted approvals) ───────────────────────────────
-/// Mint a signed approval challenge for each gated (Confirm) node of a run. The challenge is bound to
-/// {runId, nodeId, tenant} — it is the ONLY thing /approve will accept. Requires the approver role.
+/// Mint a signed approval challenge for each gated (Confirm) approval UNIT of a run. The unit is the
+/// bare node id, except for a per-file destructive delete where it is "{nodeId}#{fileRef}" — so each
+/// file gets its own challenge and granular consent is preserved. The challenge is bound to
+/// {runId, unit, tenant}; it is the ONLY thing /approve will accept. Requires the approver role.
 app.MapPost("/api/runs/{id}/challenges", (string id, HttpContext http) =>
 {
     var p = Principal(http);
@@ -320,17 +387,27 @@ app.MapPost("/api/runs/{id}/challenges", (string id, HttpContext http) =>
     try { saved = StoreFor(p.TenantId).Load(id); }
     catch (Exception ex) when (ex is FileNotFoundException or ArgumentException) { return Results.NotFound(new { error = $"no run '{id}'" }); }
 
+    // Trust the stored run BEFORE re-running it: a tampered bundle must not become input to a freshly
+    // signed approved run. (Mirrors RunReplay, which verifies before re-execution.)
+    if (!TraceBundleBuilder.VerifySignature(saved, keyProvider))
+        return Results.Json(new { error = "stored run failed integrity verification" }, statusCode: 409);
+
     var res = runtime.Run(saved.Prompt, Workspace.CreateDemo(), new HashSet<string>());
     var now = NowUnix();
     var exp = now + ChallengeTtlSeconds;
-    var challenges = res.Policy.Where(x => x.RequiresConfirmation).Select(x => new
-    {
-        nodeId = x.NodeId,
-        label = x.Label,
-        reason = x.Reason,
-        challenge = challengeSvc.Mint(id, x.NodeId, p.TenantId, now, exp, Nonce()),
-        expiresAt = exp,
-    }).ToList();
+    var challenges = res.Policy.Where(x => x.RequiresConfirmation).SelectMany(x =>
+        // No refs → one challenge for the bare node; per-file delete → one challenge per "node#ref".
+        (x.ApprovalRefs.Count == 0 ? new[] { (unit: x.NodeId, fileRef: (string?)null) }
+            : x.ApprovalRefs.Select(r => (unit: $"{x.NodeId}#{r}", fileRef: (string?)r)).ToArray())
+        .Select(u => new
+        {
+            nodeId = x.NodeId,
+            fileRef = u.fileRef,
+            label = x.Label,
+            reason = x.Reason,
+            challenge = challengeSvc.Mint(id, u.unit, p.TenantId, now, exp, Nonce()),
+            expiresAt = exp,
+        })).ToList();
     return Results.Json(new { runId = id, challenges });
 });
 
@@ -341,31 +418,37 @@ app.MapPost("/api/runs/{id}/approve", (string id, ApproveRequest req, HttpContex
 {
     var p = Principal(http);
     if (!p.Has(Roles.Approver)) return Forbidden(Roles.Approver);
+    var store = StoreFor(p.TenantId);
     TraceBundle saved;
-    try { saved = StoreFor(p.TenantId).Load(id); }
+    try { saved = store.Load(id); }
     catch (Exception ex) when (ex is FileNotFoundException or ArgumentException) { return Results.NotFound(new { error = $"no run '{id}'" }); }
+
+    // Trust the stored run BEFORE re-running it under approval — a tampered bundle must never become
+    // input to a newly signed approved run.
+    if (!TraceBundleBuilder.VerifySignature(saved, keyProvider))
+        return Results.Json(new { error = "stored run failed integrity verification" }, statusCode: 409);
 
     var now = NowUnix();
     var approved = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     foreach (var token in req.Challenges ?? Array.Empty<string>())
-        if (challengeSvc.TryVerify(token, id, p.TenantId, now, out var node))
-            approved.Add(node);
+        if (challengeSvc.TryVerify(token, id, p.TenantId, now, out var unit))
+            approved.Add(unit);   // unit is a bare node id, or "node#fileRef" for a per-file delete
     if (approved.Count == 0)
         return Results.Json(new { error = "no valid approval challenge presented" }, statusCode: 400);
 
     var result = runtime.Run(saved.Prompt, Workspace.CreateDemo(), approved);
-    var store = StoreFor(p.TenantId);
+    string newId;
     try
     {
-        var newId = store.Save(TraceBundleBuilder.From(result, approved.ToList(), keyProvider));
+        newId = store.Save(TraceBundleBuilder.From(result, approved.ToList(), keyProvider));
         store.RecordOwner(newId, new RunOwner(p.PrincipalId, p.TenantId, now));
-        http.Response.Headers["X-Run-Id"] = newId;
     }
     catch (Exception ex)
     {
-        Console.Error.WriteLine($"WARN: could not persist approved run: {ex.Message}");
-        http.Response.Headers["X-Persist-Error"] = ex.Message.Replace('\n', ' ').Replace('\r', ' ');
+        Console.Error.WriteLine($"ERROR: could not persist approved run: {ex}");
+        return Results.Json(new { error = "approved run could not be durably persisted" }, statusCode: 503);
     }
+    http.Response.Headers["X-Run-Id"] = newId;
     return Results.Json(result);
 });
 
@@ -380,18 +463,21 @@ app.MapPost("/api/explain", (RunRequest req, HttpContext http) =>
 });
 
 // Export the run as the canonical, deterministic audit artifact (replayable; no timestamps).
+// Caller-asserted approvals are NOT honored here: export would otherwise SIGN a bundle showing approved
+// actions without going through server-issued challenges + approver authorization. Export always runs
+// unapproved; to obtain a signed approved bundle, approve via /api/runs/{id}/approve (which persists it)
+// and fetch it from /api/runs/{id}.
 app.MapPost("/api/export", (ExportRequest req, HttpContext http) =>
 {
     if (!Principal(http).Has(Roles.Operator)) return Forbidden(Roles.Operator);
     var prompt = (req.Prompt ?? "").Trim();
     if (string.IsNullOrEmpty(prompt)) return Results.BadRequest(new { error = "empty prompt" });
-    var approvals = (req.Approvals ?? Array.Empty<string>()).ToHashSet(StringComparer.OrdinalIgnoreCase);
-    var result = runtime.Run(prompt, Workspace.CreateDemo(), approvals);
+    var result = runtime.Run(prompt, Workspace.CreateDemo(), new HashSet<string>());
     return (req.Format ?? "json").ToLowerInvariant() switch
     {
         "md" or "markdown" => Results.Text(AuditExporter.ToMarkdown(result), "text/markdown"),
         "signed" => Results.Json(AuditSigner.Sign(result, keyProvider)),
-        "bundle" => Results.Json(TraceBundleBuilder.From(result, approvals.ToList(), keyProvider)),
+        "bundle" => Results.Json(TraceBundleBuilder.From(result, new List<string>(), keyProvider)),
         _ => Results.Text(AuditExporter.ToJson(result), "application/json"),
     };
 });
@@ -411,6 +497,19 @@ static string? BearerOf(HttpContext c)
 static bool ConstTimeEq(string? a, string b)
     => !string.IsNullOrEmpty(a)
        && CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(a), Encoding.UTF8.GetBytes(b));
+
+// Rate-limit partition key: the forwarded client ip (first X-Forwarded-For hop, set by the reverse
+// proxy) if present, else the socket ip. Null when neither is resolvable (e.g. the in-process test
+// server) — such requests are not rate-limited.
+static string? ClientKey(HttpContext c)
+{
+    var fwd = c.Request.Headers["X-Forwarded-For"].FirstOrDefault();
+    if (!string.IsNullOrWhiteSpace(fwd)) return fwd.Split(',')[0].Trim();
+    return c.Connection.RemoteIpAddress?.ToString();
+}
+
+static bool CanRead(AuthPrincipal p)
+    => p.Has(Roles.Viewer) || p.Has(Roles.Operator) || p.Has(Roles.Approver);   // admin covered by Has
 
 // Per-tenant run store: each tenant's runs live under {runsDir}/t/{tenant} — isolation by construction.
 // Defense-in-depth: the tenant id is already validated when the principal is resolved, but re-validate

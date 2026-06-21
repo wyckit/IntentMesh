@@ -14,7 +14,11 @@ public sealed record NodeView(
 public sealed record PolicyView(
     string NodeId, string Label, string Decision, string Risk, string Reason,
     IReadOnlyList<string> TriggeredRules, bool RequiresConfirmation,
-    string TrustSource, bool Sensitive, bool ExternalSideEffect, bool Destructive);
+    string TrustSource, bool Sensitive, bool ExternalSideEffect, bool Destructive,
+    // The granular approval units for this node. Empty for a normal node (approve the bare node id);
+    // for a per-file destructive delete it is the file refs — each is approved as "{NodeId}#{ref}", so
+    // a UI / API can mint and consent to one approval challenge per file rather than a node-wide blanket.
+    IReadOnlyList<string> ApprovalRefs);
 
 public sealed record ExecView(string NodeId, string Label, bool Ran, bool Halted, string Summary, IReadOnlyList<string> Effects);
 
