@@ -47,7 +47,15 @@ Console.WriteLine($"Verification: {(result.Verification.All(v => v.Pass) ? "PASS
 //    malicious one (injected exfil) is blocked and NEVER reaches the server. Uses a REAL MCP server
 //    over stdio JSON-RPC (the bundled mcp-echo-server.js) when node is available; otherwise an
 //    in-process fake — labeled, so the demo never overclaims.
-var proxy = new McpProxy(runtime, Workspace.CreateDemo());
+// Forwarding requires a durable signed audit sink (pre-forward, fail-closed). Wire a temp store + the
+// env/demo audit key + a challenge service (no approvals are used in this smoke, but the proxy is fully
+// wired so the forward path matches production).
+var e2eAuditKeys = AuditKeyProviders.FromEnvironment();
+var proxy = new McpProxy(runtime, Workspace.CreateDemo(),
+    auditStore: new FileRunArtifactStore(Path.Combine(Path.GetTempPath(), "intentmesh-e2e-audit")),
+    auditKeyProvider: e2eAuditKeys,
+    approvalService: new ApprovalChallengeService(e2eAuditKeys.GetKey()),
+    tenantId: "e2e");
 // Strict mode for release/CI: require the REAL stdio MCP leg so the "full path" gate can't pass on
 // the in-process fake. Set INTENTMESH_REQUIRE_REAL_MCP=1 (CI does) to fail when node/echo-server is
 // unavailable instead of silently falling back.

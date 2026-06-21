@@ -68,7 +68,11 @@ public sealed class E2ESliceTests
     public void Real_tool_leg_forwards_benign_and_blocks_malicious_before_it_reaches_the_server()
     {
         var bundle = Bundle();
-        var proxy = new McpProxy(new IntentMeshRuntime(bundle), Workspace.CreateDemo());
+        // Forwarding mandates a signed audit sink; wire a temp store + the env/demo key + a challenge service.
+        var keys = AuditKeyProviders.FromEnvironment();
+        var proxy = new McpProxy(new IntentMeshRuntime(bundle), Workspace.CreateDemo(),
+            auditStore: new FileRunArtifactStore(Path.Combine(Path.GetTempPath(), "im-e2eslice-" + Guid.NewGuid().ToString("N"))),
+            auditKeyProvider: keys, approvalService: new ApprovalChallengeService(keys.GetKey()), tenantId: "test");
         var server = new RecordingMcpClient();
 
         // Benign read → gated allowed → forwarded.

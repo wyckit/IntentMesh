@@ -124,15 +124,17 @@ public sealed class McpProxy
     /// <param name="customMapper">Optional per-server mapping: given an inbound call, return the typed
     /// action + label to use, or <c>null</c> to fall through to the built-in mappings. This is how you
     /// cover every tool in a specific MCP server's manifest without editing the proxy.</param>
-    /// <param name="auditStore">When set (with <paramref name="auditKeyProvider"/>), every FORWARDED call
-    /// is persisted as a signed <see cref="TraceBundle"/> BEFORE the external call is made — a real MCP
-    /// side effect can never occur without a durable, signed audit record. Fail-closed: if the audit can't
-    /// be persisted, the call is NOT forwarded.</param>
-    /// <param name="auditKeyProvider">Signs the pre-forward audit bundle.</param>
-    /// <param name="approvalService">When set, MCP approvals are SERVER-ISSUED challenges bound to this
-    /// exact call (tool + canonical args) + tenant + expiry — not raw, replayable node ids. Mint one with
-    /// <see cref="MintApprovalChallenge"/>; pass the returned token(s) as the approvals to
-    /// <see cref="Gate"/>/<see cref="GateAndForward"/>.</param>
+    /// <param name="auditStore">REQUIRED to forward: <see cref="GateAndForward"/> persists a signed
+    /// <see cref="TraceBundle"/> here BEFORE the external call is made — a real MCP side effect can never
+    /// occur without a durable, signed audit record. Fail-closed: if the audit can't be persisted, the call
+    /// is NOT forwarded. A proxy constructed without it can still <see cref="Gate"/> (a pure decision) but
+    /// <see cref="GateAndForward"/> throws.</param>
+    /// <param name="auditKeyProvider">Signs the pre-forward audit bundle (required alongside
+    /// <paramref name="auditStore"/>).</param>
+    /// <param name="approvalService">REQUIRED to approve: MCP approvals are SERVER-ISSUED challenges bound
+    /// to the exact call (tool + canonical args) + tenant + expiry — there is no raw-node-id path. Mint a
+    /// token with <see cref="MintApprovalChallenge"/> and pass it as the approval. Supplying approvals
+    /// without this service throws (a gated call simply stays blocked if nothing is approved).</param>
     /// <param name="tenantId">Tenant the proxy acts for (binds approval challenges + audit ownership).</param>
     public McpProxy(IntentMeshRuntime runtime, Workspace workspace, string? allowedRoot = null,
         Func<McpToolCall, (TypedAction? action, string label)?>? customMapper = null,
@@ -219,13 +221,17 @@ public sealed class McpProxy
             Status = NodeStatus.Resolved,
         };
 
-        // 2. Resolve approvals. When an approvalService is configured, the inbound set is SERVER-ISSUED
-        //    challenge TOKENS bound to {this call's fingerprint, tenant, expiry} — a raw, replayable node
-        //    id ("n1") no longer approves anything. Each valid token contributes the node id it attests.
-        //    Without an approvalService (programmatic/dev use), the set is treated as raw node ids.
+        // 2. Resolve approvals. An MCP approval is ALWAYS a SERVER-ISSUED challenge token bound to
+        //    {this call's fingerprint, tenant, expiry} — there is NO raw-node-id path. Each valid token
+        //    contributes the node id it attests; a "n1" string can never approve. Supplying approvals to a
+        //    proxy with no approvalService is a configuration error (fail loud), not a silent raw-approve.
         var effectiveApprovals = approvals ?? (IReadOnlySet<string>)new HashSet<string>();
-        if (_approvalService is not null)
+        if (effectiveApprovals.Count > 0)
         {
+            if (_approvalService is null)
+                throw new InvalidOperationException(
+                    "MCP approvals must be server-issued challenges — construct McpProxy with an approvalService and pass " +
+                    "tokens from MintApprovalChallenge. Raw node-id approvals are not accepted.");
             var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             var fingerprint = CallFingerprint(call);
             var verified = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -270,6 +276,13 @@ public sealed class McpProxy
     public McpForwardResult GateAndForward(McpToolCall call, IMcpClient client,
         IReadOnlySet<string>? approvals = null, IProgress<string>? progress = null)
     {
+        // Forwarding a real MCP call is a side effect — it REQUIRES a durable signed audit sink. There is
+        // no audit-less forward path: a proxy not wired with one cannot forward.
+        if (_auditStore is null || _auditKeyProvider is null)
+            throw new InvalidOperationException(
+                "GateAndForward requires a durable audit sink — construct McpProxy with an auditStore + auditKeyProvider " +
+                "so every forwarded call is signed and persisted before it is made.");
+
         var gate = Gate(call, approvals);
         progress?.Report($"gate: {(gate.Allowed ? "allowed" : "blocked")} — {gate.Reason}");
         if (!gate.Allowed)
@@ -278,26 +291,23 @@ public sealed class McpProxy
             return new McpForwardResult(gate, ServerResponse: null);
         }
 
-        // Durable signed audit BEFORE the external side effect: when an audit store is configured, persist
-        // a signed TraceBundle of the approved gate decision first. FAIL-CLOSED — if the audit can't be
-        // written, the call is NOT forwarded, so a real MCP side effect can never occur without a record.
-        if (_auditStore is not null)
+        // Durable signed audit BEFORE the external side effect: persist a signed TraceBundle of the
+        // approved gate decision first. FAIL-CLOSED — if the audit can't be written, the call is NOT
+        // forwarded, so a real MCP side effect can never occur without a record.
+        try
         {
-            try
-            {
-                var bundle = TraceBundleBuilder.From(gate.RunResult, new List<string>(), _auditKeyProvider!);
-                var runId = _auditStore.Save(bundle);
-                if (_auditStore is FileRunArtifactStore fs)
-                    fs.RecordOwner(runId, new RunOwner(_tenantId, _tenantId, DateTimeOffset.UtcNow.ToUnixTimeSeconds()));
-                progress?.Report($"audited {call.Tool} (run {runId})");
-            }
-            catch (Exception ex)
-            {
-                progress?.Report($"blocked {call.Tool} — audit persistence failed, not forwarded");
-                return new McpForwardResult(
-                    gate with { Allowed = false, Reason = $"Approved, but NOT forwarded: pre-forward audit could not be persisted ({ex.Message})." },
-                    ServerResponse: null);
-            }
+            var bundle = TraceBundleBuilder.From(gate.RunResult, new List<string>(), _auditKeyProvider);
+            var runId = _auditStore.Save(bundle);
+            if (_auditStore is FileRunArtifactStore fs)
+                fs.RecordOwner(runId, new RunOwner(_tenantId, _tenantId, DateTimeOffset.UtcNow.ToUnixTimeSeconds()));
+            progress?.Report($"audited {call.Tool} (run {runId})");
+        }
+        catch (Exception ex)
+        {
+            progress?.Report($"blocked {call.Tool} — audit persistence failed, not forwarded");
+            return new McpForwardResult(
+                gate with { Allowed = false, Reason = $"Approved, but NOT forwarded: pre-forward audit could not be persisted ({ex.Message})." },
+                ServerResponse: null);
         }
 
         // Forward the NORMALIZED call: a filesystem path is rewritten to the exact canonical in-root

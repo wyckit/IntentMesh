@@ -3,6 +3,23 @@
 All notable changes to IntentMesh. Claims are test-backed; see [docs/MATURITY.md](docs/MATURITY.md)
 for the production-ready / experimental / future breakdown.
 
+## v1.13.0 — MCP audit + challenge approvals are now mandatory (BREAKING)
+
+Removes the opt-in/unsafe MCP paths introduced in v1.12.0. **246 passing + 3 env-gated skipped.**
+
+- **No audit-less forward.** `McpProxy.GateAndForward` now **throws** unless the proxy is constructed with
+  an `auditStore` + `auditKeyProvider`; a real MCP side effect can never occur without a signed,
+  persisted record (still fail-closed if the write fails). A pure `Gate` decision (no forwarding) still
+  works without them.
+- **No raw approvals.** Supplying approvals to `Gate`/`GateAndForward` without an `approvalService`
+  **throws** — there is no raw-node-id path. An MCP approval is always a server-issued challenge bound to
+  `{call fingerprint, tenant, expiry}`; mint it with `MintApprovalChallenge`.
+- Callers updated accordingly: `IntentMesh.McpDemo` and the `IntentMesh.E2E` smoke now wire an audit store
+  + key provider + challenge service and approve via a minted challenge.
+
+**Migration:** construct `McpProxy` with `auditStore`, `auditKeyProvider`, `approvalService`, and
+`tenantId` to forward/approve; replace any raw `"n1"` approval with `MintApprovalChallenge(call, …)`.
+
 ## v1.12.0 — MCP audit/approval + policy hardening (sixth review pass)
 
 Closes a sixth external review (8 High + 3 Medium). **245 passing + 3 env-gated skipped.**
