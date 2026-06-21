@@ -75,6 +75,21 @@ public sealed class WebTests
     }
 
     [Fact]
+    public async Task Security_headers_are_present_on_responses()
+    {
+        Environment.SetEnvironmentVariable("INTENTMESH_WEB_TOKEN", null);
+        var (f, runs) = Make();
+        try
+        {
+            var resp = await f.CreateClient().GetAsync("/api/demos");
+            Assert.Contains("script-src 'self'", resp.Headers.GetValues("Content-Security-Policy").First());
+            Assert.Equal("nosniff", resp.Headers.GetValues("X-Content-Type-Options").First());
+            Assert.Equal("DENY", resp.Headers.GetValues("X-Frame-Options").First());
+        }
+        finally { Cleanup(f, runs); }
+    }
+
+    [Fact]
     public async Task An_oversized_api_body_is_rejected()
     {
         Environment.SetEnvironmentVariable("INTENTMESH_WEB_TOKEN", null);

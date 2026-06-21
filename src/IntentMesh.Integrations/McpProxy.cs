@@ -152,11 +152,14 @@ public sealed class McpProxy
         }
 
         // Path-safety policy: a filesystem call whose path escapes the allowed root is blocked here,
-        // before the pipeline runs and before anything is forwarded to the MCP server. Every
-        // path-bearing argument is checked — including the multi-path `paths` array (read_multiple_files)
-        // — so a tool whose primary action maps to "." cannot smuggle escaping paths past the gate.
+        // before the pipeline runs and before anything is forwarded to the MCP server. We check the
+        // NORMALIZED typed action path(s) — FsReadAction/FsWriteAction.Path — AS WELL AS the raw
+        // arguments. Checking the typed path is what closes the custom-mapper gap: a per-server mapper
+        // that reads a non-standard argument name (e.g. "filepath") still produces a typed action whose
+        // Path is enforced here, even though a raw-key scan over {path,source,destination,paths} would
+        // miss it. The raw-arg scan remains as defense-in-depth for the multi-path `paths` array.
         if (_allowedRoot is not null && action is FsReadAction or FsWriteAction)
-            foreach (var p in CandidatePaths(call.Args))
+            foreach (var p in TypedPaths(action).Concat(CandidatePaths(call.Args)))
                 if (PathEscapesRoot(p))
                     return new McpGateResult(
                         Allowed: false,
@@ -304,6 +307,17 @@ public sealed class McpProxy
         if (!call.Args.TryGetValue("path", out var path)) return (null, $"{call.Tool} missing 'path'");
         call.Args.TryGetValue("content", out var content);
         return (new FsWriteAction(path, content ?? ""), $"MCP {call.Tool} → {path}");
+    }
+
+    /// <summary>The path(s) carried by the NORMALIZED typed action — enforced regardless of which raw
+    /// argument name a (possibly custom) mapper read them from.</summary>
+    private static IEnumerable<string> TypedPaths(TypedAction action)
+    {
+        switch (action)
+        {
+            case FsReadAction r when !string.IsNullOrEmpty(r.Path): yield return r.Path; break;
+            case FsWriteAction w when !string.IsNullOrEmpty(w.Path): yield return w.Path; break;
+        }
     }
 
     /// <summary>Every path-bearing argument for a filesystem tool: the single-path keys plus the

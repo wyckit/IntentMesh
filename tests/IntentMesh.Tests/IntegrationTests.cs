@@ -320,6 +320,26 @@ public sealed class IntegrationTests
     }
 
     [Fact]
+    public void McpProxy_custom_mapper_with_nonstandard_arg_name_still_enforces_path_policy()
+    {
+        var root = TempRoot();
+        try
+        {
+            var outside = OperatingSystem.IsWindows() ? @"C:\Windows\win.ini" : "/etc/passwd";
+            // A per-server mapper that reads a NON-standard argument name ("target") — not one of the raw
+            // keys CandidatePaths scans — but produces a typed FsReadAction whose Path must still be gated.
+            var proxy = new McpProxy(Runtime(), Workspace.CreateDemo(), allowedRoot: root,
+                customMapper: call => call.Args.TryGetValue("target", out var t)
+                    ? ((TypedAction?)new FsReadAction(t), $"read {t}")
+                    : (null, "no target"));
+            var res = proxy.Gate(new McpToolCall("grab", new Dictionary<string, string> { ["target"] = outside }));
+            Assert.False(res.Allowed);
+            Assert.Contains("path policy", res.Reason, StringComparison.OrdinalIgnoreCase);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
     public void McpProxy_fs_write_is_gated_then_allowed_with_approval()
     {
         var root = TempRoot();
@@ -419,6 +439,26 @@ public sealed class IntegrationTests
         Assert.Contains("customer_id", contract.Fields);
         Assert.False(contract.RequiresConfirmation,
             "GET with no side effect must not require confirmation.");
+    }
+
+    /// <summary>
+    /// A side-effecting operation exposed over GET/HEAD must STILL require confirmation — gating is keyed
+    /// on the inferred side effect, not the HTTP verb, so a "sendReminder"-style GET cannot bypass it.
+    /// </summary>
+    [Fact]
+    public void OpenApiImporter_ToContract_side_effecting_get_still_requires_confirmation()
+    {
+        var schema = new ToolSchema(
+            Name: "send_reminder",
+            Method: "GET",
+            Summary: "Send a reminder email to the customer.",
+            Parameters: new[] { "customer_id" });
+
+        var contract = OpenApiImporter.ToContract(schema);
+
+        Assert.Equal("email-send", contract.SideEffect);
+        Assert.True(contract.RequiresConfirmation,
+            "a side-effecting GET must still be gated — confirmation keys on side effect, not verb.");
     }
 
     /// <summary>

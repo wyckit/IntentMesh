@@ -237,8 +237,11 @@ public sealed class IntentMeshRuntime
         var policy = graph.Nodes.Where(n => n.Policy is not null).Select(n =>
         {
             var p = n.Policy!;
+            var approvalRefs = n.Action is DeleteFilesAction del
+                ? del.FileRefs.ToList()
+                : (IReadOnlyList<string>)Array.Empty<string>();
             return new PolicyView(n.Id, n.Label, p.Decision.ToString(), p.Risk, p.Reason, p.TriggeredRules,
-                p.RequiresConfirmation, p.TrustSource, p.Sensitive, p.ExternalSideEffect, p.Destructive);
+                p.RequiresConfirmation, p.TrustSource, p.Sensitive, p.ExternalSideEffect, p.Destructive, approvalRefs);
         }).ToList();
 
         var exec = graph.Nodes.Where(n => n.Execution is not null).Select(n =>

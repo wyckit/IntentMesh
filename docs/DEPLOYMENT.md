@@ -66,10 +66,25 @@ headers** so a caller can't spoof identity.
 another tenant returns `404`. Caller-asserted approvals are ignored — approve a gated node by fetching
 `POST /api/runs/{id}/challenges` and posting the returned challenge(s) to `POST /api/runs/{id}/approve`.
 
-### Legacy single-token (dev/simple)
+### Legacy single-token (dev/local only — NOT for production)
 
-`INTENTMESH_WEB_TOKEN` still works as a single shared bearer mapped to a `default`-tenant principal
-(operator+approver+viewer). Prefer Mode A/B for anything multi-user.
+`INTENTMESH_WEB_TOKEN` is a single shared bearer mapped to a `default`-tenant principal with
+**operator + viewer only** (deliberately *not* approver — a shared token must not be able to
+self-approve gated nodes). It exists for local/dev convenience; **do not use it in production** — use
+Mode A (token) or Mode B (proxy), which give per-principal identity and real approver separation.
+
+## Hardening notes
+
+- **Rate limiting** — a per-client fixed-window limiter (keyed on `X-Forwarded-For` from the proxy, else
+  the socket IP) caps `/api` traffic; `POST /api/auth/token` has a stricter limit to blunt credential
+  brute force. Behind a proxy, ensure it sets a truthful `X-Forwarded-For`.
+- **Security headers** — every response carries a strict `Content-Security-Policy` (`script-src 'self'`),
+  `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, and `Referrer-Policy: no-referrer`. The SPA
+  keeps its bearer token in `sessionStorage` (tab-scoped), not `localStorage`.
+- **Reads are role-gated** — every read endpoint requires at least the `viewer` role (operator/approver/
+  admin also satisfy it); a principal with no recognized role cannot read run data.
+- **Fail-closed persistence** — if a run (or an approved run) cannot be durably, verifiably stored, the
+  API returns `503` rather than a `200` with an unsaved result.
 
 ## TLS / reverse-proxy contract
 

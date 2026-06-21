@@ -3,6 +3,40 @@
 All notable changes to IntentMesh. Claims are test-backed; see [docs/MATURITY.md](docs/MATURITY.md)
 for the production-ready / experimental / future breakdown.
 
+## v1.11.0 — Service & integration hardening (fifth review pass)
+
+Closes a fifth external review (7 High + 4 Medium). **240 passing + 3 env-gated skipped.**
+
+High:
+- **Export no longer honors caller approvals** — `/api/export` signed/bundle output was running with
+  caller-supplied approvals, bypassing server-issued challenges + approver authorization. It now always
+  runs unapproved; a signed approved bundle comes only from `/api/runs/{id}/approve`.
+- **Verify-before-rerun** — `/challenges` and `/approve` now verify the stored bundle signature before
+  re-running `saved.Prompt` (HTTP 409 on failure), so a tampered artifact can't become input to a newly
+  signed approved run.
+- **Per-file delete approvals over the web** — challenges are minted per approval *unit*: a bare node id,
+  or `node#fileRef` for a destructive delete, so granular per-file consent works through the API (the
+  core already required `node#fileRef`).
+- **Fail-closed persistence** — `/api/run` and `/approve` return `503` (no leaked exception text) when a
+  run can't be durably, verifiably stored, instead of `200` with an unsaved result.
+- **Rate limiting** — a per-client fixed-window limiter (built-in framework limiter, no new dependency)
+  on `/api`, with a stricter policy on `POST /api/auth/token` to blunt credential brute force.
+- **Side-effecting GET/HEAD is gated** — imported-OpenAPI confirmation now keys on the inferred side
+  effect, not the HTTP verb, so a `sendReminder`-style GET still requires confirmation.
+- **MCP custom-mapper path enforcement** — path policy now checks the normalized typed action path
+  (`FsRead/FsWrite.Path`), not only fixed raw argument keys, closing a bypass for mappers that use a
+  non-standard path argument name.
+
+Medium:
+- **Reads are role-gated** — every read endpoint requires at least `viewer` (a roleless principal gets 403).
+- **Legacy `INTENTMESH_WEB_TOKEN`** reduced to operator+viewer (no approver) and documented dev-only.
+- **Security headers** — strict CSP (`script-src 'self'`), `nosniff`, `DENY` framing, `no-referrer`; the
+  SPA keeps its bearer token in `sessionStorage` (tab-scoped), not `localStorage`.
+- **Release hardening** — repo `NuGet.config` with single-source package mapping; Docker restore uses
+  `--locked-mode`; build-provenance attestation moved to a separate least-privilege job so build/test/pack
+  hold no write tokens. (Residual, documented: NuGet package signing needs a code-signing cert; base-image
+  digest pinning needs registry access.)
+
 ## v1.10.1 — Authz hardening (traversal-safe ids, body-cap)
 
 A follow-up security pass on the v1.10.0 authz surface. **232 passing + 3 env-gated skipped.**

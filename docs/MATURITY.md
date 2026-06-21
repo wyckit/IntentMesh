@@ -2,7 +2,7 @@
 
 The single source of truth for **what is production-ready, what is experimental, and what is future
 work.** Every "proven" claim below is backed by a test that would fail if the claim stopped being
-true (`dotnet test IntentMesh.slnx` — **232 passing, 3 env-gated skipped**). Nothing here is aspirational unless it says so.
+true (`dotnet test IntentMesh.slnx` — **240 passing, 3 env-gated skipped**). Nothing here is aspirational unless it says so.
 
 > IntentMesh is a **research prototype with a production-shaped core**: the security kernel and its
 > guarantees are proven and stable; the *operational backends* around it (KMS, DB persistence,
@@ -24,7 +24,8 @@ true (`dotnet test IntentMesh.slnx` — **232 passing, 3 env-gated skipped**). N
 | MCP proxy gates intent before forwarding (stdio + HTTP/SSE) | IntegrationTests — blocked call never reaches the server |
 | OpenAPI import (JSON+YAML, `$ref`, semantic inference) | IntegrationTests |
 | Operator workflow: history, approval queue, replay diff, artifact viewer, why-blocked | ExplainTests + Web endpoints, smoke-tested |
-| Multi-tenant authz: principal/tenant/role identity, tenant-isolated run store, server-issued approval challenges | AuthTests, WebAuthzTests — cross-tenant run is 404, viewer can't run, only a server-minted challenge approves |
+| Multi-tenant authz: principal/tenant/role identity, tenant-isolated run store, server-issued approval challenges (incl. per-file delete `node#fileRef`) | AuthTests, WebAuthzTests — cross-tenant run is 404, roleless principal can't read, viewer can't run, only a server-minted challenge approves (export/explain don't honor caller approvals) |
+| Service hardening: per-client rate limiting, CSP/security headers, verify-before-rerun, fail-closed persistence | WebTests, WebAuthzTests — auth endpoint 429s per client, CSP present, tampered run is 409, lost persistence is 503 |
 | Stable SDK surface + minimal host template | SdkTests; `templates/IntentMesh.Host.Template` builds **and runs** |
 
 ## 🧪 Experimental — works, reference-grade, not hardened
@@ -48,9 +49,12 @@ true (`dotnet test IntentMesh.slnx` — **232 passing, 3 env-gated skipped**). N
   backend is future). Put the runs dir on an encrypted volume meanwhile — see [DEPLOYMENT.md](DEPLOYMENT.md).
 - **Declarative policy DSL** — see [POLICY-AUTHORING.md](POLICY-AUTHORING.md) (C# authoritative today).
 - **Live RSRM hot-load** of the `im-*` bundle.
-- **Identity-provider provisioning** (SSO/SCIM) and **rate limiting / quotas** on the Control Room API.
-  The authz boundary is built (principal/tenant/role, server-issued approvals — see Proven); what remains
-  future is bulk provisioning, a managed principal store, and per-tenant rate limits.
+- **Identity-provider provisioning** (SSO/SCIM) and a **managed principal store**. The authz boundary,
+  per-client rate limiting, CSP/security headers, and server-mediated approvals are built (see Proven);
+  what remains future is bulk/federated provisioning and per-tenant quota policies.
+- **Signed NuGet packages + digest-pinned base images.** Build-provenance attestation + SHA256SUMS ship
+  today (and attestation now runs in an isolated least-privilege job); cryptographic package signing needs
+  a code-signing certificate, and base-image digest pinning needs registry access — both deployment-owned.
 - **Fuzz / mutation testing + enforced coverage thresholds** — the suite is example-based today.
 - **Live-LLM CI gate** — the real-Anthropic test runs in CI only when the `ANTHROPIC_API_KEY` secret is
   configured (it skips otherwise). The real filesystem-MCP and stdio-MCP E2E paths now DO run in CI.
