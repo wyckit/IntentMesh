@@ -266,6 +266,6 @@ nuget.org is a future decision — `dotnet pack` produces valid local packages t
 
 ## License
 
-Research / evaluation only — **not licensed for production use** (no OSS license granted). See
-[LICENSE.txt](LICENSE.txt). This matches the status throughout: a research/SDK preview with a
-production-shaped core, per [docs/MATURITY.md](docs/MATURITY.md).
+**MIT** — see [LICENSE.txt](LICENSE.txt). Permissively licensed and free to use; maturity is described
+honestly in [docs/MATURITY.md](docs/MATURITY.md) (a research/SDK preview with a production-shaped core —
+the MIT "AS IS, no warranty" terms apply).

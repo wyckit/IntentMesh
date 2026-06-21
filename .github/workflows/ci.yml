@@ -42,6 +42,9 @@ jobs:
         run: dotnet run --project src/IntentMesh.Tlm.Cli -c Release --no-build -- verify --root dataset
 
       - name: Test
+        env:
+          INTENTMESH_FS_E2E: '1'   # run the REAL @modelcontextprotocol/server-filesystem path (node + network present)
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}   # live-LLM test runs when the secret is configured, else skips
         run: dotnet test IntentMesh.slnx -c Release --no-build --nologo
 
       - name: Policy fixtures

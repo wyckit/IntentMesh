@@ -15,8 +15,8 @@
     <PackageProjectUrl>https://github.com/wyckit/IntentMesh</PackageProjectUrl>
     <PackageTags>ai-agents;agent-security;verified-intent;prompt-injection;mcp;policy;audit;dotnet</PackageTags>
 
-    <!-- License is explicit (no ambiguity): a research/evaluation license shipped in every package. -->
-    <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
+    <!-- MIT-licensed (SPDX expression in package metadata). -->
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
     <PackageReleaseNotes>v1.9.0 — second security review hardening pass. See CHANGELOG.md.</PackageReleaseNotes>
 
