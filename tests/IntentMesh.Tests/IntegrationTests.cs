@@ -226,6 +226,95 @@ public sealed class IntegrationTests
     }
 
     /// <summary>
+    /// ConnectNpx must reject option-shaped names (a leading dash) and floating/unpinned specs — only a
+    /// PINNED, digit-led version (name@1.2.3) is accepted, so npx can't resolve to an unexpected build.
+    /// </summary>
+    [Fact]
+    public void ConnectNpx_requires_a_pinned_non_option_package()
+    {
+        Assert.Throws<ArgumentException>(() => McpStdioClient.ConnectNpx("-rf@1.0.0"));                       // option-shaped
+        Assert.Throws<ArgumentException>(() => McpStdioClient.ConnectNpx("@modelcontextprotocol/server-filesystem"));  // unpinned
+        Assert.Throws<ArgumentException>(() => McpStdioClient.ConnectNpx("server-filesystem@latest"));         // floating tag
+        Assert.Throws<ArgumentException>(() => McpStdioClient.ConnectNpx("server-filesystem@^1.0"));           // range
+    }
+
+    private sealed class ThrowingStore : IRunArtifactStore
+    {
+        public string Save(TraceBundle bundle) => throw new IOException("audit volume unwritable");
+        public TraceBundle Load(string runId) => throw new NotImplementedException();
+        public IReadOnlyList<string> List() => Array.Empty<string>();
+        public bool VerifyArtifacts(string runId, byte[]? key = null) => false;
+        public bool VerifyArtifacts(string runId, IAuditKeyProvider provider) => false;
+    }
+
+    /// <summary>An MCP approval is a SERVER-ISSUED challenge bound to {this call's fingerprint, tenant,
+    /// expiry} — a raw, replayable node id ("n1") no longer approves, and a challenge for one call can't
+    /// approve a different call.</summary>
+    [Fact]
+    public void McpProxy_approvals_must_be_challenge_bound_to_the_call()
+    {
+        var root = TempRoot();
+        try
+        {
+            var key = Encoding.UTF8.GetBytes("mcp-approval-key-0123456789abcd");
+            var appr = new ApprovalChallengeService(key);
+            var proxy = new McpProxy(Runtime(), Workspace.CreateDemo(), allowedRoot: root,
+                approvalService: appr, tenantId: "acme");
+            var write = new McpToolCall("write_file", new Dictionary<string, string>
+            { ["path"] = Path.Combine(root, "out.txt"), ["content"] = "x" });
+
+            var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+            // A raw node id no longer approves in challenge mode.
+            Assert.False(proxy.Gate(write, new HashSet<string> { "n1" }).Allowed);
+
+            // A challenge for a DIFFERENT call does not approve this one.
+            var other = new McpToolCall("write_file", new Dictionary<string, string>
+            { ["path"] = Path.Combine(root, "OTHER.txt"), ["content"] = "x" });
+            var otherToken = proxy.MintApprovalChallenge(other, now, now + 300, "n2");
+            Assert.False(proxy.Gate(write, new HashSet<string> { otherToken }).Allowed);
+
+            // The challenge minted for THIS exact call approves it.
+            var token = proxy.MintApprovalChallenge(write, now, now + 300, "n1");
+            Assert.True(proxy.Gate(write, new HashSet<string> { token }).Allowed);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    /// <summary>A forwarded MCP call persists a signed audit bundle BEFORE the external call; if the audit
+    /// cannot be persisted, the call is NOT forwarded (fail-closed) — no side effect without a record.</summary>
+    [Fact]
+    public void McpProxy_persists_a_signed_audit_before_forwarding()
+    {
+        var root = TempRoot();
+        var auditDir = TempRoot();
+        try
+        {
+            var kp = new FixedKeyProvider("t", Encoding.UTF8.GetBytes("mcp-audit-key-0123456789abcdef"));
+            var store = new FileRunArtifactStore(auditDir);
+            var proxy = new McpProxy(Runtime(), Workspace.CreateDemo(), allowedRoot: root,
+                auditStore: store, auditKeyProvider: kp);
+            var read = new McpToolCall("read_file", new Dictionary<string, string> { ["path"] = Path.Combine(root, "note.txt") });
+
+            var fwd = proxy.GateAndForward(read, new FakeMcpClient(() => "read ok"));
+
+            Assert.True(fwd.Gate.Allowed);
+            Assert.Equal("read ok", fwd.ServerResponse);
+            Assert.NotEmpty(store.List());      // a signed bundle was persisted before the forward
+
+            // Fail-closed: if the audit can't be written, the call is NOT forwarded.
+            var throwing = new McpProxy(Runtime(), Workspace.CreateDemo(), allowedRoot: root,
+                auditStore: new ThrowingStore(), auditKeyProvider: kp);
+            var forwarded = false;
+            var blocked = throwing.GateAndForward(read, new FakeMcpClient(() => { forwarded = true; return "should not run"; }));
+            Assert.False(blocked.Gate.Allowed);
+            Assert.Null(blocked.ServerResponse);
+            Assert.False(forwarded);   // the real transport was never invoked
+        }
+        finally { Directory.Delete(root, true); Directory.Delete(auditDir, true); }
+    }
+
+    /// <summary>
     /// A node that ends Halted (approved, but the adapter halted) must NOT be forwarded — the proxy
     /// forwards only Allowed/Executed/Verified, never an unexpected status.
     /// </summary>
@@ -369,7 +458,7 @@ public sealed class IntegrationTests
         McpStdioClient? client = null;
         try
         {
-            try { client = McpStdioClient.ConnectNpx("@modelcontextprotocol/server-filesystem", root); }
+            try { client = McpStdioClient.ConnectNpx("@modelcontextprotocol/server-filesystem@2026.1.14", root); }
             catch { Skip.If(true, "could not launch @modelcontextprotocol/server-filesystem via npx"); return; }
             var tools = client.ListTools();
             if (tools.Count == 0) { Skip.If(true, "filesystem MCP server exposed no tools"); return; }

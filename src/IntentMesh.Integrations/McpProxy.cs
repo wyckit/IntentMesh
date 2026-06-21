@@ -104,6 +104,10 @@ public sealed class McpProxy
     private readonly Workspace _workspace;
     private readonly string? _allowedRoot;
     private readonly Func<McpToolCall, (TypedAction? action, string label)?>? _customMapper;
+    private readonly IRunArtifactStore? _auditStore;
+    private readonly IAuditKeyProvider? _auditKeyProvider;
+    private readonly ApprovalChallengeService? _approvalService;
+    private readonly string _tenantId;
 
     /// <param name="runtime">
     /// A loaded IntentMeshRuntime. The caller controls which capabilities are
@@ -120,13 +124,51 @@ public sealed class McpProxy
     /// <param name="customMapper">Optional per-server mapping: given an inbound call, return the typed
     /// action + label to use, or <c>null</c> to fall through to the built-in mappings. This is how you
     /// cover every tool in a specific MCP server's manifest without editing the proxy.</param>
+    /// <param name="auditStore">When set (with <paramref name="auditKeyProvider"/>), every FORWARDED call
+    /// is persisted as a signed <see cref="TraceBundle"/> BEFORE the external call is made — a real MCP
+    /// side effect can never occur without a durable, signed audit record. Fail-closed: if the audit can't
+    /// be persisted, the call is NOT forwarded.</param>
+    /// <param name="auditKeyProvider">Signs the pre-forward audit bundle.</param>
+    /// <param name="approvalService">When set, MCP approvals are SERVER-ISSUED challenges bound to this
+    /// exact call (tool + canonical args) + tenant + expiry — not raw, replayable node ids. Mint one with
+    /// <see cref="MintApprovalChallenge"/>; pass the returned token(s) as the approvals to
+    /// <see cref="Gate"/>/<see cref="GateAndForward"/>.</param>
+    /// <param name="tenantId">Tenant the proxy acts for (binds approval challenges + audit ownership).</param>
     public McpProxy(IntentMeshRuntime runtime, Workspace workspace, string? allowedRoot = null,
-        Func<McpToolCall, (TypedAction? action, string label)?>? customMapper = null)
+        Func<McpToolCall, (TypedAction? action, string label)?>? customMapper = null,
+        IRunArtifactStore? auditStore = null, IAuditKeyProvider? auditKeyProvider = null,
+        ApprovalChallengeService? approvalService = null, string? tenantId = null)
     {
         _runtime = runtime;
         _workspace = workspace;
         _allowedRoot = allowedRoot;
         _customMapper = customMapper;
+        _auditStore = auditStore;
+        _auditKeyProvider = auditKeyProvider;
+        _approvalService = approvalService;
+        _tenantId = tenantId ?? "default";
+        if (_auditStore is not null && _auditKeyProvider is null)
+            throw new ArgumentException("auditKeyProvider is required when auditStore is set (the pre-forward audit must be signed).", nameof(auditKeyProvider));
+    }
+
+    /// <summary>A deterministic fingerprint of a call (tool + canonical, key-sorted args) — the identity an
+    /// approval challenge is bound to, so a challenge for one (tool, args) can't approve a different call.</summary>
+    public static string CallFingerprint(McpToolCall call)
+    {
+        var sorted = new SortedDictionary<string, string>(StringComparer.Ordinal);
+        foreach (var kv in call.Args) sorted[kv.Key] = kv.Value;
+        var canonical = call.Tool + "\n" + JsonSerializer.Serialize(sorted);
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
+    }
+
+    /// <summary>Mint a server-issued approval challenge bound to this exact call + tenant + expiry. The
+    /// returned token is the ONLY thing that approves the call's gated node — a raw node id cannot.
+    /// Requires the proxy to be constructed with an <c>approvalService</c>.</summary>
+    public string MintApprovalChallenge(McpToolCall call, long issuedAtUnix, long expiresAtUnix, string nonce)
+    {
+        if (_approvalService is null)
+            throw new InvalidOperationException("This proxy was not constructed with an approvalService.");
+        return _approvalService.Mint(CallFingerprint(call), "n1", _tenantId, issuedAtUnix, expiresAtUnix, nonce);
     }
 
     /// <summary>
@@ -177,11 +219,27 @@ public sealed class McpProxy
             Status = NodeStatus.Resolved,
         };
 
-        // 2. Run through the full IntentMesh pipeline using a one-node proposer (with any approvals).
+        // 2. Resolve approvals. When an approvalService is configured, the inbound set is SERVER-ISSUED
+        //    challenge TOKENS bound to {this call's fingerprint, tenant, expiry} — a raw, replayable node
+        //    id ("n1") no longer approves anything. Each valid token contributes the node id it attests.
+        //    Without an approvalService (programmatic/dev use), the set is treated as raw node ids.
+        var effectiveApprovals = approvals ?? (IReadOnlySet<string>)new HashSet<string>();
+        if (_approvalService is not null)
+        {
+            var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var fingerprint = CallFingerprint(call);
+            var verified = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var token in effectiveApprovals)
+                if (_approvalService.TryVerify(token, fingerprint, _tenantId, now, out var approvedNode))
+                    verified.Add(approvedNode);
+            effectiveApprovals = verified;
+        }
+
+        // 3. Run through the full IntentMesh pipeline using a one-node proposer (with any approvals).
         //    RunWith preserves the caller's capability grants + approval cap — a proxy built on a
         //    capability-restricted runtime must gate under those same restrictions, not widen them.
         var proposer = new McpOneNodeProposer(node);
-        var result = _runtime.RunWith(proposer, $"mcp:{call.Tool}", _workspace, approvals ?? new HashSet<string>());
+        var result = _runtime.RunWith(proposer, $"mcp:{call.Tool}", _workspace, effectiveApprovals);
 
         // 3. Decide from the node's final status. ALLOW-LIST, not deny-list: forward ONLY if the node
         //    actually proceeded (Allowed/Executed/Verified). Anything else — Blocked, NeedsConfirmation,
@@ -219,6 +277,29 @@ public sealed class McpProxy
             progress?.Report($"blocked {call.Tool} — not forwarded");
             return new McpForwardResult(gate, ServerResponse: null);
         }
+
+        // Durable signed audit BEFORE the external side effect: when an audit store is configured, persist
+        // a signed TraceBundle of the approved gate decision first. FAIL-CLOSED — if the audit can't be
+        // written, the call is NOT forwarded, so a real MCP side effect can never occur without a record.
+        if (_auditStore is not null)
+        {
+            try
+            {
+                var bundle = TraceBundleBuilder.From(gate.RunResult, new List<string>(), _auditKeyProvider!);
+                var runId = _auditStore.Save(bundle);
+                if (_auditStore is FileRunArtifactStore fs)
+                    fs.RecordOwner(runId, new RunOwner(_tenantId, _tenantId, DateTimeOffset.UtcNow.ToUnixTimeSeconds()));
+                progress?.Report($"audited {call.Tool} (run {runId})");
+            }
+            catch (Exception ex)
+            {
+                progress?.Report($"blocked {call.Tool} — audit persistence failed, not forwarded");
+                return new McpForwardResult(
+                    gate with { Allowed = false, Reason = $"Approved, but NOT forwarded: pre-forward audit could not be persisted ({ex.Message})." },
+                    ServerResponse: null);
+            }
+        }
+
         // Forward the NORMALIZED call: a filesystem path is rewritten to the exact canonical in-root
         // path the gate validated, so the server can't re-resolve a relative/aliased original arg to a
         // different (possibly escaping) target than what was checked (time-of-check/time-of-use).
@@ -244,6 +325,17 @@ public sealed class McpProxy
         bool hadPath = false;
         foreach (var key in new[] { "path", "source", "destination" })
             if (args.TryGetValue(key, out var p) && !string.IsNullOrEmpty(p)) { args[key] = Resolve(p, root); hadPath = true; }
+
+        // Custom-mapper paths: a per-server mapper may carry the path in a NON-standard arg (e.g. "target",
+        // "filepath"). The typed action already exposes the validated path(s); rewrite whichever raw arg
+        // holds that value to the exact canonical in-root path, so the forwarded call can't re-resolve a
+        // relative/aliased original to a different target than the gate checked.
+        foreach (var typed in TypedPaths(action))
+        {
+            var canonical = Resolve(typed, root);
+            foreach (var key in args.Keys.ToList())
+                if (!string.IsNullOrEmpty(args[key]) && Resolve(args[key], root) == canonical) { args[key] = canonical; hadPath = true; }
+        }
         // No-path filesystem tool under a sandbox: scope it explicitly to the root rather than letting the
         // server fall back to its own working directory (defense in depth over the server's own sandbox).
         if (!hadPath && !args.ContainsKey("paths"))

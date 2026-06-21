@@ -11,17 +11,24 @@ using Microsoft.AspNetCore.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Rate limiting (built into the shared framework — no extra package). Partitions by the forwarded
-// client ip (X-Forwarded-For behind the reverse proxy, else the socket ip); a request with no
-// resolvable client key (e.g. an in-process test server) is not limited. A global per-client cap
-// covers run/replay/export/storage amplification; the stricter "auth" policy throttles credential
-// brute force on POST /api/auth/token.
+// Whether an upstream reverse proxy is trusted to assert identity / client ip, and the shared secret it
+// must present. Read here (before the rate limiter) so the limiter can decide when X-Forwarded-For is
+// trustworthy. (Re-read by the auth middleware below for the same trust decision.)
+var trustedProxy = Environment.GetEnvironmentVariable("INTENTMESH_TRUSTED_PROXY") == "1";
+var proxySecret = Environment.GetEnvironmentVariable("INTENTMESH_PROXY_SECRET");
+
+// Rate limiting (built into the shared framework — no extra package). Partitions by client: behind the
+// trusted proxy the forwarded X-Forwarded-For client ip, otherwise the socket ip. X-Forwarded-For is
+// trusted ONLY behind the proxy, so a direct client can't rotate that header to evade the limit. A
+// request with no resolvable client key (e.g. an in-process test server) is not limited. A global
+// per-client cap covers run/replay/export/storage amplification; the stricter "auth" policy throttles
+// credential brute force on POST /api/auth/token.
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(ctx =>
     {
-        var key = ClientKey(ctx);
+        var key = ClientKey(ctx, trustedProxy, proxySecret);
         return key is null
             ? RateLimitPartition.GetNoLimiter("unkeyed")
             : RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
@@ -29,7 +36,7 @@ builder.Services.AddRateLimiter(options =>
     });
     options.AddPolicy("auth", ctx =>
     {
-        var key = ClientKey(ctx);
+        var key = ClientKey(ctx, trustedProxy, proxySecret);
         return key is null
             ? RateLimitPartition.GetNoLimiter("unkeyed")
             : RateLimitPartition.GetFixedWindowLimiter("auth:" + key, _ => new FixedWindowRateLimiterOptions
@@ -81,11 +88,12 @@ var effectiveAuthKey = authKeyRaw is not null ? AuthKeys.Parse(authKeyRaw) : key
 var tokenSvc = new AuthTokenService(effectiveAuthKey);
 var challengeSvc = new ApprovalChallengeService(effectiveAuthKey);
 var principals = PrincipalStore.FromEnvironment();
-var trustedProxy = Environment.GetEnvironmentVariable("INTENTMESH_TRUSTED_PROXY") == "1";
-var proxySecret = Environment.GetEnvironmentVariable("INTENTMESH_PROXY_SECRET");
 var webToken = Environment.GetEnvironmentVariable("INTENTMESH_WEB_TOKEN");   // legacy single-token (default tenant)
 var tokenMode = principals.Count > 0;
-var authConfigured = tokenMode || trustedProxy || webToken is not null;
+// A real (production-grade) auth boundary is token mode or trusted-proxy mode. The legacy shared
+// WEB_TOKEN is a dev/local convenience and does NOT count as a production boundary.
+var realAuthConfigured = tokenMode || trustedProxy;
+var authConfigured = realAuthConfigured || webToken is not null;
 
 const long SessionTtlSeconds = 3600;     // 1h session tokens
 const long ChallengeTtlSeconds = 600;    // 10m approval challenges
@@ -103,15 +111,26 @@ if (app.Environment.IsProduction()
     return;
 }
 
-// Production safety #2: refuse to start without an authentication boundary — otherwise the /api surface
-// would fall back to local-only/dev access on a public host.
-if (app.Environment.IsProduction() && !authConfigured
+// Production safety #2: refuse to start without a REAL authentication boundary. The legacy shared
+// WEB_TOKEN does NOT qualify in Production — it's a single shared bearer with no per-principal identity.
+if (app.Environment.IsProduction() && !realAuthConfigured
     && Environment.GetEnvironmentVariable("INTENTMESH_ALLOW_INSECURE_AUTH") != "1")
 {
     Console.Error.WriteLine(
-        "FATAL: refusing to start in Production without authentication configured. Provide INTENTMESH_PRINCIPALS + " +
-        "INTENTMESH_AUTH_KEY (token mode) or INTENTMESH_TRUSTED_PROXY=1 (proxy mode), or set " +
-        "INTENTMESH_ALLOW_INSECURE_AUTH=1 for a deliberately local-only host.");
+        "FATAL: refusing to start in Production without a real auth boundary. Provide INTENTMESH_PRINCIPALS + " +
+        "INTENTMESH_AUTH_KEY (token mode) or INTENTMESH_TRUSTED_PROXY=1 + INTENTMESH_PROXY_SECRET (proxy mode). " +
+        "The legacy INTENTMESH_WEB_TOKEN is dev-only. Set INTENTMESH_ALLOW_INSECURE_AUTH=1 for a deliberately local-only host.");
+    return;
+}
+
+// Production safety #2b: trusted-proxy mode in Production MUST require a shared proxy secret — otherwise
+// asserted X-Auth-* headers would be trusted from any loopback-presenting source.
+if (app.Environment.IsProduction() && trustedProxy && string.IsNullOrEmpty(proxySecret)
+    && Environment.GetEnvironmentVariable("INTENTMESH_ALLOW_INSECURE_AUTH") != "1")
+{
+    Console.Error.WriteLine(
+        "FATAL: trusted-proxy mode in Production requires INTENTMESH_PROXY_SECRET — the upstream proxy must present " +
+        "it as X-Proxy-Secret so injected X-Auth-* headers are trusted only from the real proxy hop.");
     return;
 }
 
@@ -236,9 +255,22 @@ app.UseStaticFiles();
 
 // Liveness/readiness for orchestrators/proxies (no auth — they carry no run data).
 app.MapGet("/healthz", () => Results.Text("ok"));
-app.MapGet("/readyz", () => runtime is not null && Directory.Exists(runsDir)
-    ? Results.Json(new { status = "ready", keyId = keyProvider.KeyId })
-    : Results.StatusCode(503));
+// Readiness actually PROBES persistence: it writes and removes a temp file in the runs dir (the same
+// kind of write + atomic move real persistence needs), so /readyz fails fast when the volume is
+// read-only/full/unmounted — not merely when the directory is absent.
+app.MapGet("/readyz", () =>
+{
+    if (runtime is null) return Results.StatusCode(503);
+    try
+    {
+        var probe = Path.Combine(runsDir, ".readyz-" + Guid.NewGuid().ToString("N"));
+        File.WriteAllText(probe, "ok");
+        File.Move(probe, probe + ".moved", overwrite: true);   // exercises the atomic-move path persistence uses
+        File.Delete(probe + ".moved");
+    }
+    catch { return Results.StatusCode(503); }
+    return Results.Json(new { status = "ready", keyId = keyProvider.KeyId });
+});
 
 // ── Authentication endpoints ───────────────────────────────────────────────────────────────────
 /// Exchange an API key for a short-lived signed session token (built-in token mode only).
@@ -498,14 +530,22 @@ static bool ConstTimeEq(string? a, string b)
     => !string.IsNullOrEmpty(a)
        && CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(a), Encoding.UTF8.GetBytes(b));
 
-// Rate-limit partition key: the forwarded client ip (first X-Forwarded-For hop, set by the reverse
-// proxy) if present, else the socket ip. Null when neither is resolvable (e.g. the in-process test
-// server) — such requests are not rate-limited.
-static string? ClientKey(HttpContext c)
+// Rate-limit partition key. X-Forwarded-For is honored ONLY when the request comes through the trusted
+// proxy (proxy mode + matching X-Proxy-Secret, or loopback when no secret is configured) — so a direct
+// client cannot rotate that header to dodge the limit. Otherwise the socket ip is used. Null when
+// neither is resolvable (e.g. the in-process test server) — such requests are not rate-limited.
+static string? ClientKey(HttpContext c, bool trustedProxy, string? proxySecret)
 {
-    var fwd = c.Request.Headers["X-Forwarded-For"].FirstOrDefault();
-    if (!string.IsNullOrWhiteSpace(fwd)) return fwd.Split(',')[0].Trim();
-    return c.Connection.RemoteIpAddress?.ToString();
+    var remote = c.Connection.RemoteIpAddress;
+    var proxyTrusted = trustedProxy && (proxySecret is not null
+        ? ConstTimeEq(c.Request.Headers["X-Proxy-Secret"].ToString(), proxySecret)
+        : remote is null || IPAddress.IsLoopback(remote));
+    if (proxyTrusted)
+    {
+        var fwd = c.Request.Headers["X-Forwarded-For"].FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(fwd)) return fwd.Split(',')[0].Trim();
+    }
+    return remote?.ToString();
 }
 
 static bool CanRead(AuthPrincipal p)

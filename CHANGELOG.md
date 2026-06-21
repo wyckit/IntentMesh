@@ -3,6 +3,39 @@
 All notable changes to IntentMesh. Claims are test-backed; see [docs/MATURITY.md](docs/MATURITY.md)
 for the production-ready / experimental / future breakdown.
 
+## v1.12.0 — MCP audit/approval + policy hardening (sixth review pass)
+
+Closes a sixth external review (8 High + 3 Medium). **245 passing + 3 env-gated skipped.**
+
+High:
+- **MCP side effects require a durable signed audit.** `McpProxy.GateAndForward` can be wired with an
+  `IRunArtifactStore` + key provider; it persists a signed `TraceBundle` of the approved decision **before**
+  forwarding to the real server, and **fails closed** (does not forward) if the audit can't be written.
+- **MCP approvals are challenge-bound.** With an `ApprovalChallengeService` configured, an MCP approval is
+  a server-issued challenge bound to `{call fingerprint (tool+canonical args), tenant, expiry}` — a raw,
+  replayable `n1` no longer approves, and a challenge for one call can't approve another.
+- **Pinned, non-option npx.** `ConnectNpx` rejects option-shaped names (leading dash) and floating specs;
+  only a pinned, digit-led `name@1.2.3` is accepted. Call sites pin `@modelcontextprotocol/server-filesystem@2026.1.14`.
+- **CI isolates the API key from npx.** The live-LLM test (with `ANTHROPIC_API_KEY`) and the real-filesystem
+  E2E (which runs `npx`) are now separate steps with disjoint environments — a compromised npm package can't
+  read the secret.
+- **Production auth boundaries.** Trusted-proxy mode requires `INTENTMESH_PROXY_SECRET` in Production; the
+  legacy `INTENTMESH_WEB_TOKEN` no longer satisfies the Production auth guard and is gone from the quickstart.
+- **`/readyz` probes persistence.** It now writes + atomically moves + deletes a temp file in the runs dir,
+  so it fails when the volume is read-only/full/unmounted — not merely when the directory is absent.
+- **Direct run-query row cap.** A direct `RunQueryAction` (no `RowLimit` field) is now bounded by `db.RowCap`
+  at execution, the same cap a compiled plan must satisfy.
+- **Per-file delete verification.** A new `pc-deletion-matches-approval` postcondition proves the deleted
+  set is exactly the approved file refs — not merely that a delete node ran.
+
+Medium:
+- **Rate-limit key is trust-scoped.** `X-Forwarded-For` is honored only behind the trusted proxy (matching
+  `X-Proxy-Secret`); otherwise the socket IP is used, so a direct client can't rotate the header to evade limits.
+- **Custom-mapper path forwarding.** `NormalizeForForward` rewrites a custom mapper's path arg (e.g. `target`,
+  `filepath`) to the canonical in-root path actually validated, not just the standard keys.
+- **NuGet package signing** remains a documented residual (needs a code-signing certificate); provenance
+  attestation + SHA256SUMS ship today.
+
 ## v1.11.0 — Service & integration hardening (fifth review pass)
 
 Closes a fifth external review (7 High + 4 Medium). **240 passing + 3 env-gated skipped.**

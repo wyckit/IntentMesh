@@ -12,12 +12,17 @@ docker build -f src/IntentMesh.Web/Dockerfile -t intentmesh-controlroom .
 docker run -p 8080:8080 \
   -e ASPNETCORE_ENVIRONMENT=Production \
   -e INTENTMESH_AUDIT_KEY="$(openssl rand -base64 32)" \
-  -e INTENTMESH_WEB_TOKEN="$(openssl rand -hex 24)" \
+  -e INTENTMESH_AUTH_KEY="$(openssl rand -base64 32)" \
+  -e INTENTMESH_PRINCIPALS=/run/secrets/principals.json \
   -e "AllowedHosts=mesh.example.com" \
   -e INTENTMESH_RUNS_DIR=/data/runs \
   -v intentmesh-runs:/data/runs \
   intentmesh-controlroom
 ```
+
+> Production uses **token mode** (above) or **trusted-proxy mode** (Mode B below). The legacy
+> `INTENTMESH_WEB_TOKEN` is **not** accepted as a production auth boundary — the host refuses to start in
+> Production unless token or proxy mode is configured.
 
 **From source:** `dotnet run --project src/IntentMesh.Web` (Development; loopback, demo key).
 
@@ -53,11 +58,11 @@ console snippet) or `printf '%s' "$KEY" | sha256sum`.
 | Variable | Purpose |
 |---|---|
 | `INTENTMESH_TRUSTED_PROXY=1` | Trust identity asserted by an upstream proxy/IdP instead of minting tokens. |
-| `INTENTMESH_PROXY_SECRET` | Shared secret the proxy must present as `X-Proxy-Secret`; without it, asserted headers are honored only from loopback. Set this whenever the app is reachable from anything but the proxy. |
+| `INTENTMESH_PROXY_SECRET` | Shared secret the proxy must present as `X-Proxy-Secret`. **Required in Production** (the host refuses to start in proxy mode without it) — without it, asserted headers would be honored from any loopback-presenting source. It also gates whether `X-Forwarded-For` is trusted for rate-limiting. |
 
 The proxy authenticates the user (OIDC, etc.) and forwards `X-Auth-Principal`, `X-Auth-Tenant`, and a
 comma-separated `X-Auth-Roles`. **The proxy MUST strip any client-supplied `X-Auth-*` / `X-Proxy-Secret`
-headers** so a caller can't spoof identity.
+/ `X-Forwarded-For` headers** so a caller can't spoof identity or its rate-limit bucket.
 
 ### Roles & isolation
 

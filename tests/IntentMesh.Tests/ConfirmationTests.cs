@@ -59,6 +59,21 @@ public sealed class ConfirmationTests
     }
 
     [Fact]
+    public void Verification_proves_deleted_files_match_the_approved_refs()
+    {
+        var rt = Runtime();
+        var delId = NodeId(rt.Run(Prompt2, Workspace.CreateDemo()), Kinds.DeleteFiles);
+        var ws = Workspace.CreateDemo();
+        var r = rt.Run(Prompt2, ws, new HashSet<string> { $"{delId}#old_installer_v3.exe" });
+
+        // The verifier independently proves the deleted set is EXACTLY the approved refs — not merely that
+        // a delete node ran (which would miss an over-deleting adapter).
+        var v = r.Verification.First(x => x.Id == "pc-deletion-matches-approval");
+        Assert.True(v.Pass);
+        Assert.All(ws.DeletedFiles, f => Assert.Equal("old_installer_v3.exe", f));
+    }
+
+    [Fact]
     public void Approving_deletion_actually_deletes_in_the_sandbox()
     {
         var rt = Runtime();

@@ -284,16 +284,23 @@ public sealed class DataAdapter : IToolAdapter
         if (table is null) return ToolHost.Ok(id, $"No such table '{r.Table}'.");
         ws.Db.RanQueries.Add(r.Summary);
 
+        // Row-cap enforcement: a DIRECT run-query carries no RowLimit field, so it is bounded here by the
+        // SAME db.RowCap a compiled plan must satisfy — a direct query cannot scan/aggregate more rows than
+        // the policy cap. (A capped read can't be used to exfiltrate an unbounded table.)
+        var cap = ws.Db.RowCap;
+        var rows = table.Rows.Take(cap).ToList();
+        var capNote = table.Rows.Count > cap ? $" (row cap {cap} applied to {table.Rows.Count} rows)" : "";
+
         // Aggregate signups by plan (non-sensitive columns only).
         int planCol = table.Columns.ToList().IndexOf("plan");
         var agg = planCol >= 0
-            ? string.Join(", ", table.Rows.GroupBy(row => row[planCol]).Select(g => $"{g.Key}: {g.Count()}"))
-            : $"{table.Rows.Count} rows";
+            ? string.Join(", ", rows.GroupBy(row => row[planCol]).Select(g => $"{g.Key}: {g.Count()}"))
+            : $"{rows.Count} rows";
 
         // Query results are retrieved content — scan for an embedded imperative.
         var proposed = new List<ProposedNode>();
-        var effects = new List<string> { $"result ({r.Summary}): {agg}", "no sensitive columns in the result" };
-        foreach (var row in table.Rows)
+        var effects = new List<string> { $"result ({r.Summary}){capNote}: {agg}", "no sensitive columns in the result" };
+        foreach (var row in rows)
             foreach (var cell in row)
                 if (cell.ToUpperInvariant().Contains("IGNORE PREVIOUS INSTRUCTIONS") ||
                     (cell.ToUpperInvariant().Contains("DROP") && cell.ToUpperInvariant().Contains("TABLE")))

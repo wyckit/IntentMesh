@@ -197,9 +197,17 @@ public sealed class McpStdioClient : IMcpClient
 
     private static readonly char[] ShellMeta = { ';', '|', '&', '$', '`', '\n', '\r', '>', '<', '(', ')', '{', '}', '"', '\'', '^', '%', '!', '*', '?' };
     private static bool ContainsShellMeta(string s) => s.IndexOfAny(ShellMeta) >= 0;
+
+    /// <summary>A package specifier accepted for <c>npx -y</c> execution. Hardened beyond shell-safety:
+    /// the name must START with an alphanumeric (so an option-shaped token like <c>-rf</c> or
+    /// <c>--foo</c> can never be passed as the "package"), and it MUST carry a PINNED, digit-led version
+    /// (<c>name@1.2.3</c>) — a floating spec (<c>name</c>, <c>name@latest</c>, <c>name@^1</c>) is rejected
+    /// so npx can't resolve to an unexpected newly-published build at run time.</summary>
     private static bool IsSafeNpmPackage(string p)
         => !string.IsNullOrWhiteSpace(p) && !ContainsShellMeta(p) && !p.Contains(' ')
-           && System.Text.RegularExpressions.Regex.IsMatch(p, @"^(@[a-z0-9._-]+/)?[a-z0-9._-]+(@[\w.\-]+)?$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+           && System.Text.RegularExpressions.Regex.IsMatch(
+                p, @"^(@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*@\d+(\.\d+)*(-[a-z0-9.]+)?$",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
     /// <summary>Locate the bundled mcp-echo-server.js by walking up to the repo root.</summary>
     public static string EchoServerScript()

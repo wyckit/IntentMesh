@@ -291,7 +291,11 @@ public sealed class WebAuthzTests
     [Fact]
     public async Task Auth_endpoint_is_rate_limited_per_client()
     {
+        // Token mode (so /api/auth/token works) AND behind a trusted proxy presenting the shared secret —
+        // only then is X-Forwarded-For trusted as the rate-limit client key.
         var (f, runs) = MakeTokenMode();
+        Environment.SetEnvironmentVariable("INTENTMESH_TRUSTED_PROXY", "1");
+        Environment.SetEnvironmentVariable("INTENTMESH_PROXY_SECRET", "rl-secret");
         try
         {
             var codes = new List<HttpStatusCode>();
@@ -299,7 +303,8 @@ public sealed class WebAuthzTests
             {
                 var req = new HttpRequestMessage(HttpMethod.Post, "/api/auth/token")
                 { Content = JsonContent.Create(new { apiKey = "nope" }) };
-                req.Headers.Add("X-Forwarded-For", "203.0.113.7");   // a fixed client ip → its own partition
+                req.Headers.Add("X-Proxy-Secret", "rl-secret");
+                req.Headers.Add("X-Forwarded-For", "203.0.113.7");   // trusted (via proxy secret) → its own partition
                 codes.Add((await f.CreateClient().SendAsync(req)).StatusCode);
             }
             // The "auth" policy permits 10/min per client; the surplus is rejected with 429.
