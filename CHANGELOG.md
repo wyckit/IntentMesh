@@ -3,6 +3,31 @@
 All notable changes to IntentMesh. Claims are test-backed; see [docs/MATURITY.md](docs/MATURITY.md)
 for the production-ready / experimental / future breakdown.
 
+## v1.10.0 — Real multi-tenant authorization
+
+Builds out the authz boundary that the fourth review flagged as a not-yet-built future seam — it is now
+a proven, test-backed feature. **218 passing + 3 env-gated skipped.**
+
+- **Principal / tenant / role identity.** Every `/api` call resolves to an `AuthPrincipal`
+  (principal id, tenant, roles: viewer/operator/approver/admin). Two interchangeable modes:
+  - *Built-in tokens:* `POST /api/auth/token` exchanges an API key (a file/inline-JSON principal store,
+    keys stored only as SHA-256 hashes) for an HMAC-signed session token; `GET /api/auth/whoami` echoes
+    the identity.
+  - *Trusted proxy:* `INTENTMESH_TRUSTED_PROXY=1` honors `X-Auth-Principal/Tenant/Roles` from an upstream
+    IdP/proxy, gated by a shared `X-Proxy-Secret`.
+- **Tenant isolation.** Runs are partitioned under `{runsDir}/t/{tenant}`; a run id from another tenant
+  returns `404` (existence never leaks). Each run records its owning principal/tenant.
+- **Role gating.** Read (history/detail/verify/replay) = any tenant member; run/explain/export =
+  `operator`; approval challenges/approve = `approver`.
+- **Server-issued approval challenges.** Caller-asserted approvals on `/api/run` are ignored. A gated
+  (Confirm) node is approved only by presenting a server-minted challenge bound to `{runId, nodeId,
+  tenant}` (`POST /api/runs/{id}/challenges` → `POST /api/runs/{id}/approve`); the approved execution is
+  persisted as a new content-addressed run.
+- **Fail-closed in Production.** The host refuses to start without an auth boundary, and token mode
+  requires a dedicated `INTENTMESH_AUTH_KEY` (≥128-bit) separate from the audit key.
+- **Zero new dependencies** — signing is HMAC-SHA256 reusing the 128-bit key floor; 18 new tests
+  (`AuthTests`, `WebAuthzTests`). See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for configuration.
+
 ## v1.9.2 — Fourth review hardening pass (key floor, draft gate, capabilities, supply chain, deployment)
 
 Closes a fourth external review (2 Blockers + 7 High). **200 passing + 3 env-gated skipped.**

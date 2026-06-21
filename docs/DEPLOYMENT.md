@@ -1,9 +1,8 @@
 # Deploying the IntentMesh Control Room
 
-> **Scope.** This covers running the Control Room web host (`IntentMesh.Web`) as a single-operator
-> service behind your own boundary. It is **not** a multi-tenant SaaS deployment — there is no
-> per-tenant authn/z, rate limiting, or managed key/secret service (see
-> [MATURITY.md](MATURITY.md) for what's deliberately future).
+> **Scope.** This covers running the Control Room web host (`IntentMesh.Web`). It enforces a real
+> multi-tenant authz boundary (principal/tenant/role, tenant-isolated runs, server-issued approvals).
+> What's still future: rate limiting/quotas and SSO/SCIM provisioning (see [MATURITY.md](MATURITY.md)).
 
 ## Run it
 
@@ -29,12 +28,48 @@ docker run -p 8080:8080 \
 | `ASPNETCORE_ENVIRONMENT=Production` | Enables the production posture (the host **refuses to start with the demo audit key**). |
 | `INTENTMESH_AUDIT_KEY` | Real ≥128-bit HMAC key (base64 or utf8) for signed audits. Source it from your secret store, never the image. |
 | `INTENTMESH_AUDIT_KEY_ID` *(optional)* | Stable key id; `INTENTMESH_AUDIT_PRIOR_KEYS` (`id=base64;…`) for rotation — see [AUDIT-OPERATIONS.md](AUDIT-OPERATIONS.md). |
-| `INTENTMESH_WEB_TOKEN` | Bearer token required on every `/api` call from a **non-loopback** caller (a reverse proxy). Without it, `/api` is loopback-only. |
 | `AllowedHosts` | Your public host(s), e.g. `mesh.example.com`. **Do not use `*`.** Default is loopback only. |
-| `INTENTMESH_RUNS_DIR` | Where signed run bundles are persisted (mount a durable volume). |
+| `INTENTMESH_RUNS_DIR` | Where signed run bundles are persisted, partitioned per tenant under `t/{tenant}` (mount a durable volume). |
 
-The SPA sends the token from `localStorage['intentmesh_token']`; set it once in the browser console
-for remote access.
+Plus one of the two authentication modes below. In Production the host **refuses to start without an
+auth boundary** (set `INTENTMESH_ALLOW_INSECURE_AUTH=1` only for a deliberately local-only host).
+
+## Authentication
+
+### Mode A — built-in signed tokens (default)
+
+| Variable | Purpose |
+|---|---|
+| `INTENTMESH_AUTH_KEY` | Dedicated ≥128-bit HMAC key (base64 or utf8) that signs session tokens and approval challenges. **Required for token mode in Production**, and kept separate from the audit key. |
+| `INTENTMESH_PRINCIPALS` | Path to (or inline) a JSON principal directory. Each entry: `{ "id", "tenant", "roles": ["operator","approver","viewer"], "apiKeyHash" }` where `apiKeyHash` is the lowercase hex SHA-256 of the API key (the plaintext key is never stored). |
+
+Flow: `POST /api/auth/token {"apiKey":"…"}` → `{ token }`. Present it on every `/api` call as
+`X-Api-Token: <token>` (or `Authorization: Bearer <token>`). `GET /api/auth/whoami` echoes the
+resolved principal/tenant/roles. Compute a hash with `PrincipalStore.HashApiKey` (e.g. via a small
+console snippet) or `printf '%s' "$KEY" | sha256sum`.
+
+### Mode B — trusted reverse-proxy / OIDC
+
+| Variable | Purpose |
+|---|---|
+| `INTENTMESH_TRUSTED_PROXY=1` | Trust identity asserted by an upstream proxy/IdP instead of minting tokens. |
+| `INTENTMESH_PROXY_SECRET` | Shared secret the proxy must present as `X-Proxy-Secret`; without it, asserted headers are honored only from loopback. Set this whenever the app is reachable from anything but the proxy. |
+
+The proxy authenticates the user (OIDC, etc.) and forwards `X-Auth-Principal`, `X-Auth-Tenant`, and a
+comma-separated `X-Auth-Roles`. **The proxy MUST strip any client-supplied `X-Auth-*` / `X-Proxy-Secret`
+headers** so a caller can't spoof identity.
+
+### Roles & isolation
+
+`viewer` reads its tenant's runs; `operator` also runs the pipeline (`/api/run`, `/api/explain`,
+`/api/export`); `approver` issues/consumes approval challenges; `admin` is a superset. A run id from
+another tenant returns `404`. Caller-asserted approvals are ignored — approve a gated node by fetching
+`POST /api/runs/{id}/challenges` and posting the returned challenge(s) to `POST /api/runs/{id}/approve`.
+
+### Legacy single-token (dev/simple)
+
+`INTENTMESH_WEB_TOKEN` still works as a single shared bearer mapped to a `default`-tenant principal
+(operator+approver+viewer). Prefer Mode A/B for anything multi-user.
 
 ## TLS / reverse-proxy contract
 
