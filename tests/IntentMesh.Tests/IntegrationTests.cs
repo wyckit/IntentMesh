@@ -214,6 +214,18 @@ public sealed class IntegrationTests
     }
 
     /// <summary>
+    /// ConnectNpx (which on Windows launches through cmd.exe /c) must reject shell metacharacters in the
+    /// package name or args so they can't run extra commands — validated before any process is spawned.
+    /// </summary>
+    [Fact]
+    public void ConnectNpx_rejects_shell_metacharacters()
+    {
+        Assert.Throws<ArgumentException>(() => McpStdioClient.ConnectNpx("pkg; rm -rf /"));
+        Assert.Throws<ArgumentException>(() => McpStdioClient.ConnectNpx("@modelcontextprotocol/server-filesystem", "C:\\root & calc.exe"));
+        Assert.Throws<ArgumentException>(() => McpStdioClient.ConnectNpx("@scope/pkg", "$(whoami)"));
+    }
+
+    /// <summary>
     /// A node that ends Halted (approved, but the adapter halted) must NOT be forwarded — the proxy
     /// forwards only Allowed/Executed/Verified, never an unexpected status.
     /// </summary>

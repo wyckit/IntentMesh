@@ -45,20 +45,16 @@ public sealed class McpHttpClient : IMcpClient
     /// run the initialize handshake. The endpoint is validated against SSRF: scheme must be
     /// http/https, the cloud-metadata address (169.254.169.254) is always blocked, and a non-loopback
     /// host must use https unless <paramref name="allowInsecureTransport"/> is set.
-    /// <para><b>SSRF guard scope:</b> the runtime redirect/DNS-rebinding protection (no auto-redirects +
-    /// per-connect IP re-validation) lives on the DEFAULT client built when <paramref name="http"/> is
-    /// null. A caller-supplied <see cref="HttpClient"/> is used as-is and is the CALLER'S responsibility
-    /// to harden (e.g. <c>AllowAutoRedirect=false</c> + a connect-time IP check) — the Connect-time
-    /// endpoint validation still applies, but per-request redirect/rebinding protection does not.</para>
-    /// The default client is created with a read timeout + response-size cap and disposed with this
-    /// client. Throws if the server fails to respond to initialize.</summary>
-    public static McpHttpClient Connect(string endpointUrl, HttpClient? http = null, bool allowInsecureTransport = false)
+    /// <para><b>SSRF guard (always on):</b> the client is ALWAYS the internal hardened one — no
+    /// auto-redirects + per-connect IP re-validation, plus a read timeout and response-size cap. There
+    /// is no way to inject an unguarded <see cref="HttpClient"/>, so the redirect/DNS-rebinding
+    /// protection can't be bypassed by a caller-supplied client.</para>
+    /// Throws if the server fails to respond to initialize.</summary>
+    public static McpHttpClient Connect(string endpointUrl, bool allowInsecureTransport = false)
     {
         var uri = new Uri(endpointUrl);
         ValidateEndpoint(uri, allowInsecureTransport);
-        bool owns = http is null;
-        http ??= CreateGuardedClient(uri.IsLoopback);
-        return Initialize(new McpHttpClient(http, uri, owns));
+        return Initialize(new McpHttpClient(CreateGuardedClient(uri.IsLoopback), uri, ownsClient: true));
     }
 
     /// <summary>The default internal client, hardened against SSRF beyond the Connect-time check:

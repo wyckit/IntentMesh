@@ -179,12 +179,27 @@ public sealed class McpStdioClient : IMcpClient
     /// Windows where <c>npx</c> is a .cmd). Example: ConnectNpx("@modelcontextprotocol/server-filesystem", root).</summary>
     public static McpStdioClient ConnectNpx(string package, params string[] serverArgs)
     {
+        // On Windows the launch goes through cmd.exe /c, which RE-PARSES the command line — so any shell
+        // metacharacter in the package name or args could run extra commands. Reject them up front (the
+        // package name must look like an npm specifier; args must be metacharacter-free).
+        if (!IsSafeNpmPackage(package))
+            throw new ArgumentException($"Unsafe npm package specifier '{package}'.", nameof(package));
+        foreach (var a in serverArgs)
+            if (ContainsShellMeta(a))
+                throw new ArgumentException($"Unsafe argument contains a shell metacharacter: '{a}'.", nameof(serverArgs));
+
         var args = new List<string> { "-y", package };
         args.AddRange(serverArgs);
         return OperatingSystem.IsWindows()
             ? Connect("cmd.exe", new[] { "/c", "npx" }.Concat(args).ToArray())
             : Connect("npx", args.ToArray());
     }
+
+    private static readonly char[] ShellMeta = { ';', '|', '&', '$', '`', '\n', '\r', '>', '<', '(', ')', '{', '}', '"', '\'', '^', '%', '!', '*', '?' };
+    private static bool ContainsShellMeta(string s) => s.IndexOfAny(ShellMeta) >= 0;
+    private static bool IsSafeNpmPackage(string p)
+        => !string.IsNullOrWhiteSpace(p) && !ContainsShellMeta(p) && !p.Contains(' ')
+           && System.Text.RegularExpressions.Regex.IsMatch(p, @"^(@[a-z0-9._-]+/)?[a-z0-9._-]+(@[\w.\-]+)?$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
     /// <summary>Locate the bundled mcp-echo-server.js by walking up to the repo root.</summary>
     public static string EchoServerScript()
