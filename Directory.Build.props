@@ -23,6 +23,11 @@
     <!-- Reproducible restore: lock files are honored in CI via locked-mode restore. -->
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
 
+    <!-- Reproducible builds: deterministic compilation, and on CI also normalize embedded source paths
+         so duplicate clean builds produce byte-identical assemblies. global.json pins the exact SDK. -->
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+
     <!-- Default: not packable. Library projects set IsPackable=true explicitly. -->
     <IsPackable>false</IsPackable>
   </PropertyGroup>
