@@ -61,6 +61,20 @@ public sealed class WebTests
     }
 
     [Fact]
+    public async Task Health_and_readiness_endpoints_respond()
+    {
+        Environment.SetEnvironmentVariable("INTENTMESH_WEB_TOKEN", "tok");   // even token-gated, health is open
+        var (f, runs) = Make();
+        try
+        {
+            var c = f.CreateClient();
+            Assert.Equal(HttpStatusCode.OK, (await c.GetAsync("/healthz")).StatusCode);
+            Assert.Equal(HttpStatusCode.OK, (await c.GetAsync("/readyz")).StatusCode);
+        }
+        finally { Cleanup(f, runs); }
+    }
+
+    [Fact]
     public async Task A_run_persists_and_appears_in_history()
     {
         Environment.SetEnvironmentVariable("INTENTMESH_WEB_TOKEN", null);

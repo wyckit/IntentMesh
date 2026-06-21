@@ -105,6 +105,12 @@ app.Use(async (context, next) =>
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
+// Liveness/readiness for orchestrators/proxies (no auth — they carry no run data).
+app.MapGet("/healthz", () => Results.Text("ok"));
+app.MapGet("/readyz", () => runtime is not null && Directory.Exists(runsDir)
+    ? Results.Json(new { status = "ready", keyId = keyProvider.KeyId })
+    : Results.StatusCode(503));
+
 app.MapGet("/api/demos", () => Results.Json(demos));
 
 app.MapPost("/api/run", (RunRequest req, HttpResponse http) =>
