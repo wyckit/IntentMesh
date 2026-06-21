@@ -238,9 +238,13 @@ public sealed class McpProxy
 
         var root = Canonicalize(Path.TrimEndingDirectorySeparator(Path.GetFullPath(_allowedRoot)));
         var args = new Dictionary<string, string>(call.Args, StringComparer.Ordinal);
+        bool hadPath = false;
         foreach (var key in new[] { "path", "source", "destination" })
-            if (args.TryGetValue(key, out var p) && !string.IsNullOrEmpty(p))
-                args[key] = Resolve(p, root);
+            if (args.TryGetValue(key, out var p) && !string.IsNullOrEmpty(p)) { args[key] = Resolve(p, root); hadPath = true; }
+        // No-path filesystem tool under a sandbox: scope it explicitly to the root rather than letting the
+        // server fall back to its own working directory (defense in depth over the server's own sandbox).
+        if (!hadPath && !args.ContainsKey("paths"))
+            args["path"] = root;
         if (args.TryGetValue("paths", out var multi) && !string.IsNullOrWhiteSpace(multi))
         {
             try
