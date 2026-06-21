@@ -5,7 +5,7 @@
        Demos, tools, the web host, the E2E/bench runners, the template, and tests stay non-packable. -->
 
   <PropertyGroup>
-    <Version>1.12.0</Version>
+    <Version>1.13.0</Version>
     <Authors>Chad Sandor</Authors>
     <Company>wyckit</Company>
     <Product>IntentMesh</Product>
@@ -18,7 +18,7 @@
     <!-- MIT-licensed (SPDX expression in package metadata). -->
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
-    <PackageReleaseNotes>v1.12.0 — sixth review pass: MCP pre-forward signed audit + challenge-bound approvals, pinned npx, direct run-query row cap, per-file delete verification, production auth guards, readyz write-probe, trust-scoped rate-limit key. See CHANGELOG.md.</PackageReleaseNotes>
+    <PackageReleaseNotes>v1.13.0 — BREAKING: McpProxy now MANDATES a signed audit sink to forward and a server-issued challenge service to approve (no audit-less forward, no raw-node-id approval). See CHANGELOG.md.</PackageReleaseNotes>
 
     <!-- Reproducible restore: lock files are honored in CI via locked-mode restore. -->
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>

@@ -31,7 +31,14 @@ catch (Exception ex)
 using (client)
 {
     Console.WriteLine($"server tools: {string.Join(", ", client.ListTools())}\n");
-    var proxy = new McpProxy(runtime, Workspace.CreateDemo(), allowedRoot: root);
+    // Forwarding requires a durable signed audit sink, and approvals are server-issued challenges — wire
+    // both (an audit dir under the sandbox root, the env/demo audit key, and a challenge service).
+    var auditKeys = AuditKeyProviders.FromEnvironment();
+    var proxy = new McpProxy(runtime, Workspace.CreateDemo(), allowedRoot: root,
+        auditStore: new FileRunArtifactStore(Path.Combine(root, ".audit")),
+        auditKeyProvider: auditKeys,
+        approvalService: new ApprovalChallengeService(auditKeys.GetKey()),
+        tenantId: "demo");
 
     void Show(string title, McpForwardResult r)
     {
@@ -56,8 +63,11 @@ using (client)
     var writeCall = new McpToolCall("write_file", new Dictionary<string, string> { ["path"] = Path.Combine(root, "out.txt"), ["content"] = "written through IntentMesh\n" });
     Show("write_file out.txt (no approval)", proxy.GateAndForward(writeCall, client));
 
-    // 4) The same write WITH approval — forwarded, the real server writes the file.
-    Show("write_file out.txt (approved)", proxy.GateAndForward(writeCall, client, new HashSet<string> { "n1" }));
+    // 4) The same write WITH approval — a SERVER-ISSUED challenge bound to this exact call (not a raw
+    //    node id). Forwarded; the real server writes the file.
+    var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+    var approval = proxy.MintApprovalChallenge(writeCall, now, now + 300, Guid.NewGuid().ToString("N"));
+    Show("write_file out.txt (approved)", proxy.GateAndForward(writeCall, client, new HashSet<string> { approval }));
     Console.WriteLine($"  out.txt exists on disk: {File.Exists(Path.Combine(root, "out.txt"))}");
 }
 return 0;

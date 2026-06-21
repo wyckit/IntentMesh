@@ -26,8 +26,18 @@ public sealed class IntegrationTests
     // ── Shared helpers ────────────────────────────────────────────────────────
     private static IntentMeshRuntime Runtime() => IntentMeshRuntime.Load();
 
+    // McpProxy now MANDATES a signed audit sink to forward and a challenge service to approve — wire both
+    // in the shared helper so tests exercise the production shape.
+    private static readonly byte[] McpTestKeyBytes = Encoding.UTF8.GetBytes("mcp-test-key-0123456789abcdef01");
+    private static readonly IAuditKeyProvider McpTestKeyProvider = new FixedKeyProvider("test", McpTestKeyBytes);
+    private static ApprovalChallengeService NewApprovalService() => new(McpTestKeyBytes);
+
     private static McpProxy Proxy(IntentMeshRuntime? rt = null, Workspace? ws = null)
-        => new(rt ?? Runtime(), ws ?? Workspace.CreateDemo());
+        => new(rt ?? Runtime(), ws ?? Workspace.CreateDemo(),
+            auditStore: new FileRunArtifactStore(TempRoot()),
+            auditKeyProvider: McpTestKeyProvider,
+            approvalService: NewApprovalService(),
+            tenantId: "test");
 
     // ═══════════════════════════════════════════════════════════════════════════
     // (a) McpProxy — blocks / gates dangerous send_email
@@ -368,7 +378,9 @@ public sealed class IntegrationTests
         {
             string? forwarded = null;
             var client = new CapturingMcpClient(args => { args.TryGetValue("path", out forwarded); return "{}"; });
-            var proxy = new McpProxy(Runtime(), Workspace.CreateDemo(), allowedRoot: root);
+            var proxy = new McpProxy(Runtime(), Workspace.CreateDemo(), allowedRoot: root,
+                auditStore: new FileRunArtifactStore(TempRoot()), auditKeyProvider: McpTestKeyProvider,
+                approvalService: NewApprovalService(), tenantId: "test");
 
             var fwd = proxy.GateAndForward(new McpToolCall("read_file", new Dictionary<string, string> { ["path"] = "note.txt" }), client);
 
@@ -434,12 +446,30 @@ public sealed class IntegrationTests
         var root = TempRoot();
         try
         {
-            var proxy = new McpProxy(Runtime(), Workspace.CreateDemo(), allowedRoot: root);
+            var proxy = new McpProxy(Runtime(), Workspace.CreateDemo(), allowedRoot: root,
+                approvalService: NewApprovalService(), tenantId: "test");
             var call = new McpToolCall("write_file", new Dictionary<string, string> { ["path"] = Path.Combine(root, "out.txt"), ["content"] = "x" });
             Assert.False(proxy.Gate(call).Allowed);                                  // no approval → gated
-            Assert.True(proxy.Gate(call, new HashSet<string> { "n1" }).Allowed);     // approved → allowed
+            var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();                      // approve via a server-issued challenge
+            var token = proxy.MintApprovalChallenge(call, now, now + 300, "n");
+            Assert.True(proxy.Gate(call, new HashSet<string> { token }).Allowed);     // challenge-bound approval → allowed
         }
         finally { Directory.Delete(root, true); }
+    }
+
+    /// <summary>The audit sink and challenge service are MANDATORY for the dangerous operations: a proxy
+    /// not wired with them cannot forward (no audit-less side effect) and cannot accept a raw approval —
+    /// both throw rather than silently taking an unsafe path. A pure Gate decision still works.</summary>
+    [Fact]
+    public void Forwarding_requires_an_audit_sink_and_approvals_require_a_challenge_service()
+    {
+        var bare = new McpProxy(Runtime(), Workspace.CreateDemo());   // no audit store, no approval service
+        var read = new McpToolCall("read_calendar", new Dictionary<string, string> { ["range"] = "Friday" });
+
+        Assert.Throws<InvalidOperationException>(() => bare.GateAndForward(read, new FakeMcpClient(() => "x")));
+        Assert.Throws<InvalidOperationException>(() => bare.Gate(read, new HashSet<string> { "n1" }));
+
+        Assert.True(bare.Gate(read).Allowed);   // a pure decision with no approvals still works
     }
 
     /// <summary>
@@ -465,7 +495,9 @@ public sealed class IntegrationTests
             Assert.Contains("read_file", tools);
             Assert.Contains("write_file", tools);
 
-            var proxy = new McpProxy(Runtime(), Workspace.CreateDemo(), allowedRoot: root);
+            var proxy = new McpProxy(Runtime(), Workspace.CreateDemo(), allowedRoot: root,
+                auditStore: new FileRunArtifactStore(TempRoot()), auditKeyProvider: McpTestKeyProvider,
+                approvalService: NewApprovalService(), tenantId: "test");
 
             // Allowed read → forwarded → real file content.
             var read = proxy.GateAndForward(new McpToolCall("read_file", new Dictionary<string, string> { ["path"] = Path.Combine(root, "note.txt") }), client);
@@ -481,7 +513,9 @@ public sealed class IntegrationTests
             // Write gated; with approval → forwarded → the real server writes the file.
             var writeCall = new McpToolCall("write_file", new Dictionary<string, string> { ["path"] = Path.Combine(root, "out.txt"), ["content"] = "written via IntentMesh" });
             Assert.False(proxy.GateAndForward(writeCall, client).Gate.Allowed);
-            var approved = proxy.GateAndForward(writeCall, client, new HashSet<string> { "n1" });
+            var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var approval = proxy.MintApprovalChallenge(writeCall, now, now + 300, "n");
+            var approved = proxy.GateAndForward(writeCall, client, new HashSet<string> { approval });
             Assert.True(approved.Gate.Allowed);
             Assert.True(File.Exists(Path.Combine(root, "out.txt")));
         }
