@@ -33,11 +33,16 @@ public sealed record AuthPrincipal(string PrincipalId, string TenantId, IReadOnl
 }
 
 /// <summary>Validation for principal/tenant ids. They become a path segment (per-tenant run root), so
-/// they are restricted to a safe, traversal-free alphabet — a tenant id can never escape the runs root.</summary>
+/// they are restricted to a safe, traversal-free shape — a tenant id can never escape the runs root.
+/// Beyond the alphabet, an id must contain a letter or digit and may not start with '.' or '-', which
+/// rejects "." / ".." / dotfiles / option-like names (e.g. "-rf") even though their characters are in
+/// the allowed set.</summary>
 public static class AuthIds
 {
     public static bool IsValid(string? id)
         => !string.IsNullOrEmpty(id) && id.Length <= 64
+           && id[0] != '.' && id[0] != '-'
+           && id.Any(char.IsAsciiLetterOrDigit)
            && id.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '_' or '-');
 }
 

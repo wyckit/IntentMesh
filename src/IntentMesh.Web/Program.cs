@@ -2,6 +2,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using IntentMesh.Core;
+using Microsoft.AspNetCore.Http.Features;
 
 // IntentMesh Control Room — ASP.NET minimal API over IntentMesh.Core. Serves a dependency-free
 // SPA (wwwroot) and runs the pipeline on demand. No CDN, no npm — robust offline.
@@ -115,10 +116,16 @@ app.Use(async (context, next) =>
 
     if (context.Request.ContentLength > MaxApiBodyBytes)
     {
-        context.Response.StatusCode = 413;   // Payload Too Large
+        context.Response.StatusCode = 413;   // Payload Too Large — fast reject when Content-Length is declared
         await context.Response.WriteAsJsonAsync(new { error = $"request body exceeds {MaxApiBodyBytes} bytes" });
         return;
     }
+    // A declared Content-Length can be omitted or wrong (e.g. chunked transfer-encoding), so also cap the
+    // actual bytes read: Kestrel enforces this limit while binding the body and rejects an over-limit
+    // request regardless of the header. (Null/read-only on some test servers — handled gracefully.)
+    var sizeLimit = context.Features.Get<IHttpMaxRequestBodySizeFeature>();
+    if (sizeLimit is { IsReadOnly: false })
+        sizeLimit.MaxRequestBodySize = MaxApiBodyBytes;
 
     if (path.StartsWithSegments("/api/auth/token")) { await next(); return; }   // login endpoint is open
 
@@ -406,7 +413,20 @@ static bool ConstTimeEq(string? a, string b)
        && CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(a), Encoding.UTF8.GetBytes(b));
 
 // Per-tenant run store: each tenant's runs live under {runsDir}/t/{tenant} — isolation by construction.
-FileRunArtifactStore StoreFor(string tenant) => new(Path.Combine(runsDir, "t", tenant));
+// Defense-in-depth: the tenant id is already validated when the principal is resolved, but re-validate
+// here and confirm the resolved directory stays under the runs root before constructing the store, so a
+// traversal-shaped tenant can never escape (no store is created for an out-of-bounds path).
+FileRunArtifactStore StoreFor(string tenant)
+{
+    if (!AuthIds.IsValid(tenant))
+        throw new ArgumentException($"invalid tenant id '{tenant}'", nameof(tenant));
+    var rootFull = Path.TrimEndingDirectorySeparator(Path.GetFullPath(runsDir));
+    var dir = Path.GetFullPath(Path.Combine(rootFull, "t", tenant));
+    var cmp = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+    if (!dir.StartsWith(rootFull + Path.DirectorySeparatorChar, cmp))
+        throw new ArgumentException($"tenant '{tenant}' resolves outside the runs root", nameof(tenant));
+    return new FileRunArtifactStore(dir);
+}
 
 // Approvals: gated node ids are only ever applied when attested by a server-issued challenge.
 record RunRequest(string? Prompt, string[]? Approvals);
