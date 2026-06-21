@@ -114,7 +114,7 @@ public sealed class EmailAdapter : IToolAdapter
 
     public ExecutionResult Execute(IntentNode node, PolicyDecision decision, Workspace ws, bool approved) => node.Action switch
     {
-        DraftEmailAction d => Draft(node.Id, d, ws),
+        DraftEmailAction d => Draft(node.Id, d, ws, decision, approved),
         // Sending is gated. Only a user-authorized, explicitly approved send transmits.
         SendEmailAction se => Send(node.Id, se, ws, approved),
         _ => ToolHost.Ok(node.Id, "no-op")
@@ -141,8 +141,14 @@ public sealed class EmailAdapter : IToolAdapter
             "1 message transmitted after user approval", $"recipient = {draft.Recipient}");
     }
 
-    private static ExecutionResult Draft(string id, DraftEmailAction d, Workspace ws)
+    private static ExecutionResult Draft(string id, DraftEmailAction d, Workspace ws, PolicyDecision decision, bool approved)
     {
+        // A draft the gate flagged for confirmation (e.g. recipient not requested) is NOT created until
+        // approved — the recipient check is enforced before creation, not only as a postcondition.
+        if (decision.RequiresConfirmation && !approved)
+            return ToolHost.Halt(id, $"Draft to {d.Recipient} requires confirmation before creation — not drafted.",
+                "0 drafts created", $"recipient = {d.Recipient}");
+
         var contact = ws.FindContact(d.Recipient);
         var body = "Summary:\n" + string.Join("\n", d.BodySourceRefs.Select(r =>
             "- " + (ws.Notes.FirstOrDefault(nt => nt.Id == r)?.Body ?? r)));

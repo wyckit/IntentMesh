@@ -96,6 +96,7 @@ public sealed class SymbolicBundle
         var skills = new List<SkillInfo>();
         var lifecycle = new List<LifecycleStateInfo>();
         var capabilities = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var contractCaps = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);   // contract-declared (fallback)
 
         foreach (var pkg in packages)
         {
@@ -115,6 +116,12 @@ public sealed class SymbolicBundle
                             c.Id, c.Label, P("Risk"), P("SideEffect"),
                             bool.TryParse(P("RequiresConfirmation"), out var rc) && rc,
                             Split(P("Fields")), Split(P("RequiredFields")), Split(P("Postconditions")));
+                        // A contract may declare its own capability (e.g. an OpenAPI import that has no
+                        // ToolAdapter concept). Register it so the capability gate enforces it at runtime.
+                        // A ToolAdapter mapping, if present, takes precedence (don't clobber it).
+                        var contractCap = P("Capability");
+                        if (contractCap.Length > 0)
+                            contractCaps[c.Id] = contractCap;
                         break;
                     case "Postcondition":
                         postLabels.Add(c.Label);
@@ -136,6 +143,10 @@ public sealed class SymbolicBundle
             foreach (var p in pkg.Policies)
                 rules.Add(new RuleInfo(p.Id, p.Rule, p.Action));
         }
+
+        // Contract-declared capabilities are a fallback: a ToolAdapter mapping wins (TryAdd keeps it),
+        // but a contract with no adapter (e.g. an OpenAPI import) still gets its capability enforced.
+        foreach (var kv in contractCaps) capabilities.TryAdd(kv.Key, kv.Value);
 
         if (contracts.Count == 0)
             throw new InvalidOperationException(

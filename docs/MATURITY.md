@@ -2,7 +2,7 @@
 
 The single source of truth for **what is production-ready, what is experimental, and what is future
 work.** Every "proven" claim below is backed by a test that would fail if the claim stopped being
-true (`dotnet test IntentMesh.slnx` — **198 passing, 3 env-gated skipped**). Nothing here is aspirational unless it says so.
+true (`dotnet test IntentMesh.slnx` — **200 passing, 3 env-gated skipped**). Nothing here is aspirational unless it says so.
 
 > IntentMesh is a **research prototype with a production-shaped core**: the security kernel and its
 > guarantees are proven and stable; the *operational backends* around it (KMS, DB persistence,
@@ -38,8 +38,13 @@ true (`dotnet test IntentMesh.slnx` — **198 passing, 3 env-gated skipped**). N
 
 ## 🔭 Future — named seams, not built (not faked)
 
-- **KMS/HSM key-management backend** behind the existing `IAuditKeyProvider` seam (interface + rotation shipped; cloud backend future).
-- **Durable persistence backends** behind `IRunArtifactStore` (file store shipped; DB/blob future).
+- **KMS/HSM key-management backend** behind the existing `IAuditKeyProvider` seam (interface + rotation
+  shipped; production keys are currently raw env bytes held in process memory — a managed-KMS/HSM
+  backend that never exposes key material is future).
+- **Durable, confidential persistence** behind `IRunArtifactStore` (the shipped file store writes
+  atomically + tamper-evident, but is **cleartext, single-root, no encryption-at-rest, tenant
+  partitioning, WORM/immutability, or backup/restore**; a DB/blob/WORM backend is future). Put the runs
+  dir on an encrypted volume meanwhile — see [DEPLOYMENT.md](DEPLOYMENT.md).
 - **Declarative policy DSL** — see [POLICY-AUTHORING.md](POLICY-AUTHORING.md) (C# authoritative today).
 - **Live RSRM hot-load** of the `im-*` bundle.
 - **Multi-tenant isolation / authn-z** for the Control Room and run store. (Today: loopback-only or a

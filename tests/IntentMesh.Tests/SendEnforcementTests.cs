@@ -22,6 +22,11 @@ public sealed class SendEnforcementTests
         new("n1", Decision.Confirm, "high", "external comm", new[] { "pol-send-email" },
             RequiresConfirmation: true, TrustSource: "User", Sensitive: false, ExternalSideEffect: true, Destructive: false);
 
+    // A draft to a requested recipient is Allowed (no confirmation) in the real pipeline.
+    private static PolicyDecision AllowDraft() =>
+        new("d1", Decision.Allow, "low", "draft allowed", new[] { "pol-draft-allowed" },
+            RequiresConfirmation: false, TrustSource: "User", Sensitive: false, ExternalSideEffect: false, Destructive: false);
+
     private static IntentNode SendNode(string recipient, string draftRef) => new()
     {
         Id = "s1",
@@ -61,7 +66,7 @@ public sealed class SendEnforcementTests
         var known = ws.Contacts.First(c => c.Known && !c.External).Name;
         var adapter = new EmailAdapter();
 
-        adapter.Execute(DraftNode(known), Confirm(), ws, approved: false);                 // draft first
+        adapter.Execute(DraftNode(known), AllowDraft(), ws, approved: false);                 // draft first
         var draftRef = ws.Drafts.Single().Ref;                                             // the draft's real id
         var sent = adapter.Execute(SendNode(known, draftRef), Confirm(), ws, approved: true);
 
@@ -79,7 +84,7 @@ public sealed class SendEnforcementTests
         var known = ws.Contacts.First(c => c.Known && !c.External).Name;
         var adapter = new EmailAdapter();
 
-        adapter.Execute(DraftNode(known), Confirm(), ws, approved: false);                 // real draft to `known`
+        adapter.Execute(DraftNode(known), AllowDraft(), ws, approved: false);                 // real draft to `known`
         var sent = adapter.Execute(SendNode(known, draftRef: "bogus-id"), Confirm(), ws, approved: true);
 
         Assert.True(sent.Halted);

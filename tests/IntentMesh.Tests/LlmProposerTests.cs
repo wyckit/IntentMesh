@@ -198,19 +198,20 @@ public sealed class LlmProposerTests
     }
 
     [Fact]
-    public void A_proposer_invented_recipient_not_in_the_prompt_is_not_user_requested()
+    public void A_proposer_invented_recipient_not_in_the_prompt_is_gated_before_creation()
     {
         // A bad proposer drafts to an address the user never named; ground-truth recipients come from the
-        // prompt, not the proposer, so pc-recipient-matches-request must FAIL (it can't self-authorize).
+        // prompt, not the proposer, so the gate confirms BEFORE the draft is created (not post-hoc).
         var bundle = Bundle();
         var llm = new ScriptedLlm("""{"actions":[{"kind":"act-draft-email","fields":{"recipient":"evil@attacker.com","subject":"hi","bodySourceRefs":"[]"}}]}""");
-        var result = new IntentMeshRuntime(bundle, new LlmIntentProposer(bundle, llm))
-            .Run("draft a quick email", Workspace.CreateDemo());
+        var ws = Workspace.CreateDemo();
+        var result = new IntentMeshRuntime(bundle, new LlmIntentProposer(bundle, llm)).Run("draft a quick email", ws);
 
-        Assert.Contains(result.Nodes, n => n.Type == Kinds.DraftEmail);   // the draft was produced
-        var pc = result.Verification.FirstOrDefault(v => v.Id == "pc-recipient-matches-request");
-        Assert.NotNull(pc);
-        Assert.False(pc!.Pass, "a proposer-invented recipient must not verify as user-requested");
+        var node = result.Nodes.Single(n => n.Type == Kinds.DraftEmail);
+        Assert.Equal("NeedsConfirmation", node.Status);   // gated, not auto-drafted
+        var policy = result.Policy.Single(p => p.NodeId == node.Id);
+        Assert.Contains("pol-recipient-not-requested", policy.TriggeredRules);
+        Assert.Empty(ws.Drafts);                          // nothing was created
     }
 
     /// <summary>

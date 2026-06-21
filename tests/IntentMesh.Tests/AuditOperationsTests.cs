@@ -89,6 +89,17 @@ public sealed class AuditOperationsTests
     }
 
     [Fact]
+    public void Raw_and_fixed_key_signing_reject_a_sub_128_bit_key()
+    {
+        var weak = new byte[] { 1, 2, 3 };   // 24-bit — far below the 128-bit floor
+        var result = Runtime().Run(Prompt, Workspace.CreateDemo());
+        Assert.Throws<InvalidOperationException>(() => AuditSigner.Sign(result, weak));
+        Assert.Throws<InvalidOperationException>(() => AuditSigner.SignString("canonical", weak));
+        Assert.Throws<InvalidOperationException>(() => new FixedKeyProvider("k", weak));
+        Assert.Throws<InvalidOperationException>(() => TraceBundleBuilder.From(result, null, weak));
+    }
+
+    [Fact]
     public void A_weak_rotation_key_is_rejected_at_construction()
         => Assert.Throws<InvalidOperationException>(() => new RotatingAuditKeyProvider("k", new byte[] { 1, 2, 3 }));
 

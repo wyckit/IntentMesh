@@ -538,6 +538,11 @@ public sealed class IntegrationTests
             Assert.True(after.IsRegistered("act-create-invoice"));   // import is now a usable typed contract
             Assert.Equal(before.Contracts.Count + 1, after.Contracts.Count);
             Assert.Equal("medium", after.Contracts["act-create-invoice"].Risk);
+
+            // The imported contract's capability is ENFORCED at runtime: it's in the capability map
+            // (it has no ToolAdapter concept, so it would otherwise be unscoped).
+            Assert.Equal(contract.Capability, after.Capabilities["act-create-invoice"]);
+            Assert.NotEqual("", contract.Capability);
         }
         finally { Directory.Delete(tmp, recursive: true); }
     }

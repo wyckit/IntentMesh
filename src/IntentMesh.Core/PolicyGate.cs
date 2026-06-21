@@ -176,9 +176,18 @@ public sealed class PolicyGate
                 new[] { "pol-local-write" }, true, trust, sensitive, false, false);
 
         if (node.Type == Kinds.DraftEmail && IsEmail(node.Action, out var to))
+        {
+            // Check the recipient AT THE GATE, before the draft is created — not only as a postcondition.
+            // A draft to a recipient the user never named is gated for confirmation, even from a
+            // full-authority proposer (which could invent one).
+            if (!ctx.UserRequestedRecipients.Contains(to, StringComparer.OrdinalIgnoreCase))
+                return new PolicyDecision(node.Id, Decision.Confirm, risk,
+                    $"Draft recipient '{to}' was not named by the user — requires confirmation before drafting.",
+                    new[] { "pol-recipient-not-requested" }, true, trust, sensitive, false, false);
             return new PolicyDecision(node.Id, Decision.Allow, risk,
                 $"Drafting allowed; recipient '{to}' matches the user's request. Send remains gated.",
                 new[] { "pol-draft-allowed" }, false, trust, sensitive, false, false);
+        }
 
         return new PolicyDecision(node.Id, Decision.Allow, risk,
             "Low-risk read / analysis with no side effect.",

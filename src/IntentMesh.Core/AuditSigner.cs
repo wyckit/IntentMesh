@@ -115,6 +115,17 @@ public static class AuditSigner
     /// <summary>Clearly-labelled NON-secret demo key id — production audits use an env/KMS key id.</summary>
     public const string DemoKeyId = "demo-v1-INSECURE";
 
+    /// <summary>The minimum HMAC key length (128-bit). Enforced on EVERY path a key enters — env,
+    /// rotating, raw byte[], and fixed — so a weak key can't sign anywhere.</summary>
+    public const int MinKeyBytes = 16;
+
+    internal static byte[] RequireStrongKey(byte[] key, string what = "audit signing key")
+    {
+        if (key is null || key.Length < MinKeyBytes)
+            throw new InvalidOperationException($"{what} must be at least {MinKeyBytes} bytes (128-bit); got {(key?.Length ?? 0)}.");
+        return key;
+    }
+
     // Fixed demo key — NOT a production secret; used only when no key is configured.
     internal static readonly byte[] DemoKeyBytes = Encoding.UTF8.GetBytes("intentmesh-demo-audit-key-v1");
 
@@ -141,7 +152,7 @@ public static class AuditSigner
 
     /// <summary>Deterministic HMAC-SHA256 (hex) over arbitrary canonical text — used to sign a
     /// trace bundle over its five artifacts' canonical JSON.</summary>
-    public static string SignString(string canonical, byte[]? key = null) => Hmac(canonical, (key ?? Default.GetKey()));
+    public static string SignString(string canonical, byte[]? key = null) => Hmac(canonical, key is null ? Default.GetKey() : RequireStrongKey(key));
     public static string SignString(string canonical, IAuditKeyProvider provider) => Hmac(canonical, provider.GetKey());
 
     /// <summary>True iff the signature matches a fresh chain hash of the result under the given key
@@ -255,7 +266,7 @@ public static class AuditSigner
     private sealed class RawKeyProvider : IAuditKeyProvider
     {
         private readonly byte[] _key;
-        public RawKeyProvider(byte[] key) { _key = key; KeyId = "raw-" + EnvironmentAuditKeyProvider.ShortHash(key); }
+        public RawKeyProvider(byte[] key) { _key = RequireStrongKey(key); KeyId = "raw-" + EnvironmentAuditKeyProvider.ShortHash(key); }
         public byte[] GetKey() => _key;
         public string KeyId { get; }
     }
@@ -270,7 +281,7 @@ public sealed class FixedKeyProvider : IAuditKeyProvider
     public FixedKeyProvider(string keyId, byte[] key)
     {
         if (string.IsNullOrWhiteSpace(keyId)) throw new ArgumentException("keyId is required.", nameof(keyId));
-        KeyId = keyId; _key = key;
+        KeyId = keyId; _key = AuditSigner.RequireStrongKey(key);
     }
     public byte[] GetKey() => _key;
     public string KeyId { get; }
