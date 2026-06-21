@@ -44,10 +44,14 @@ public sealed class McpHttpClient : IMcpClient
     /// <summary>Connect to an MCP server over Streamable HTTP at <paramref name="endpointUrl"/> and
     /// run the initialize handshake. The endpoint is validated against SSRF: scheme must be
     /// http/https, the cloud-metadata address (169.254.169.254) is always blocked, and a non-loopback
-    /// host must use https unless <paramref name="allowInsecureTransport"/> is set. Pass your own
-    /// <see cref="HttpClient"/> to control proxies/auth/test handlers; otherwise one is created (with
-    /// a read timeout + response-size cap) and disposed with this client. Throws if the server fails
-    /// to respond to initialize.</summary>
+    /// host must use https unless <paramref name="allowInsecureTransport"/> is set.
+    /// <para><b>SSRF guard scope:</b> the runtime redirect/DNS-rebinding protection (no auto-redirects +
+    /// per-connect IP re-validation) lives on the DEFAULT client built when <paramref name="http"/> is
+    /// null. A caller-supplied <see cref="HttpClient"/> is used as-is and is the CALLER'S responsibility
+    /// to harden (e.g. <c>AllowAutoRedirect=false</c> + a connect-time IP check) — the Connect-time
+    /// endpoint validation still applies, but per-request redirect/rebinding protection does not.</para>
+    /// The default client is created with a read timeout + response-size cap and disposed with this
+    /// client. Throws if the server fails to respond to initialize.</summary>
     public static McpHttpClient Connect(string endpointUrl, HttpClient? http = null, bool allowInsecureTransport = false)
     {
         var uri = new Uri(endpointUrl);

@@ -214,6 +214,28 @@ public sealed class IntegrationTests
     }
 
     /// <summary>
+    /// A node that ends Halted (approved, but the adapter halted) must NOT be forwarded — the proxy
+    /// forwards only Allowed/Executed/Verified, never an unexpected status.
+    /// </summary>
+    [Fact]
+    public void McpProxy_does_not_forward_a_halted_action()
+    {
+        var ws = Workspace.CreateDemo();
+        var proxy = Proxy(ws: ws);
+        var forwarded = false;
+        var client = new FakeMcpClient(() => { forwarded = true; return "{}"; });
+
+        // send_email approved → external Confirm → approved → adapter halts (no 'mcp-draft' draft) → Halted.
+        var fwd = proxy.GateAndForward(
+            new McpToolCall("send_email", new Dictionary<string, string> { ["to"] = "sarah@company.com" }),
+            client, approvals: new HashSet<string> { "n1" });
+
+        Assert.False(fwd.Gate.Allowed);
+        Assert.Null(fwd.ServerResponse);
+        Assert.False(forwarded, "a Halted action must never reach the transport");
+    }
+
+    /// <summary>
     /// A stdio server that starts but never answers the handshake must fail FAST (not hang) and clean
     /// up the child process rather than leak it — Connect disposes on a failed handshake.
     /// </summary>
@@ -234,6 +256,26 @@ public sealed class IntegrationTests
         var root = Path.Combine(Path.GetTempPath(), "im-fs-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         return root;
+    }
+
+    [Fact]
+    public void McpProxy_forwards_the_canonical_in_root_path_not_the_original_relative_arg()
+    {
+        var root = TempRoot();
+        System.IO.File.WriteAllText(System.IO.Path.Combine(root, "note.txt"), "hi");
+        try
+        {
+            string? forwarded = null;
+            var client = new CapturingMcpClient(args => { args.TryGetValue("path", out forwarded); return "{}"; });
+            var proxy = new McpProxy(Runtime(), Workspace.CreateDemo(), allowedRoot: root);
+
+            var fwd = proxy.GateAndForward(new McpToolCall("read_file", new Dictionary<string, string> { ["path"] = "note.txt" }), client);
+
+            Assert.True(fwd.Gate.Allowed);
+            // The server receives the canonical in-root path that was validated, not the relative "note.txt".
+            Assert.Equal(System.IO.Path.GetFullPath(System.IO.Path.Combine(root, "note.txt")), forwarded);
+        }
+        finally { System.IO.Directory.Delete(root, true); }
     }
 
     [Fact]
@@ -1122,6 +1164,17 @@ public sealed class IntegrationTests
         public FakeMcpClient(Func<string> behavior) => _behavior = behavior;
         public IReadOnlyList<string> ListTools() { _behavior(); return Array.Empty<string>(); }
         public string CallTool(string name, IReadOnlyDictionary<string, string> arguments) => _behavior();
+        public void Dispose() { }
+    }
+
+    /// <summary>An IMcpClient that hands CallTool's arguments to a sink — used to assert exactly what
+    /// the proxy forwarded (e.g. the normalized path).</summary>
+    private sealed class CapturingMcpClient : IMcpClient
+    {
+        private readonly Func<IReadOnlyDictionary<string, string>, string> _onCall;
+        public CapturingMcpClient(Func<IReadOnlyDictionary<string, string>, string> onCall) => _onCall = onCall;
+        public IReadOnlyList<string> ListTools() => Array.Empty<string>();
+        public string CallTool(string name, IReadOnlyDictionary<string, string> arguments) => _onCall(arguments);
         public void Dispose() { }
     }
 

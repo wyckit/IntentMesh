@@ -8,6 +8,16 @@
         "resolved": "6.0.4",
         "contentHash": "lkhqpF8Pu2Y7IiN7OntbsTtdbpR1syMsm2F3IgX6ootA4ffRqWL5jF7XipHuZQTdVuWG/gVAAcf8mjk8Tz0xPg=="
       },
+      "Microsoft.AspNetCore.Mvc.Testing": {
+        "type": "Direct",
+        "requested": "[10.0.9, )",
+        "resolved": "10.0.9",
+        "contentHash": "Mt+5CtYz+xmog1S1TJt2owVKU8YquZtNy9bmO+kfrrtjEDZPzCw1qZ7o97PLpIEpt3yy4F5YdAUh9nKPm0CX5Q==",
+        "dependencies": {
+          "Microsoft.AspNetCore.TestHost": "10.0.9",
+          "Microsoft.Extensions.DependencyModel": "10.0.9"
+        }
+      },
       "Microsoft.NET.Test.Sdk": {
         "type": "Direct",
         "requested": "[17.14.1, )",
@@ -45,10 +55,20 @@
           "xunit.extensibility.execution": "2.4.0"
         }
       },
+      "Microsoft.AspNetCore.TestHost": {
+        "type": "Transitive",
+        "resolved": "10.0.9",
+        "contentHash": "mR4y30XFsVbn7EwV3Ic5/KMBO5QGwukTJE2ztGmpAST5ACX+Z+9r+Y6D1eibJojsOIW5KHpM4myo9/aRALJOyg=="
+      },
       "Microsoft.CodeCoverage": {
         "type": "Transitive",
         "resolved": "17.14.1",
         "contentHash": "pmTrhfFIoplzFVbhVwUquT+77CbGH+h4/3mBpdmIlYtBi9nAB+kKI6dN3A/nV4DFi3wLLx/BlHIPK+MkbQ6Tpg=="
+      },
+      "Microsoft.Extensions.DependencyModel": {
+        "type": "Transitive",
+        "resolved": "10.0.9",
+        "contentHash": "SCDTQ6HubnRvTUjR7dgMKHZvNoCb03t44ttHL8trlFTGgfDteWn/0nRdOxDhcI+lTWhKgd/flCVJEtAOPhSLNg=="
       },
       "Microsoft.TestPlatform.ObjectModel": {
         "type": "Transitive",
@@ -117,18 +137,24 @@
       "intentmesh.core": {
         "type": "Project",
         "dependencies": {
-          "IntentMesh.Tlm": "[1.0.0, )"
+          "IntentMesh.Tlm": "[1.8.0, )"
         }
       },
       "intentmesh.integrations": {
         "type": "Project",
         "dependencies": {
-          "IntentMesh.Core": "[1.0.0, )",
-          "IntentMesh.Tlm": "[1.0.0, )"
+          "IntentMesh.Core": "[1.8.0, )",
+          "IntentMesh.Tlm": "[1.8.0, )"
         }
       },
       "intentmesh.tlm": {
         "type": "Project"
+      },
+      "intentmesh.web": {
+        "type": "Project",
+        "dependencies": {
+          "IntentMesh.Core": "[1.8.0, )"
+        }
       }
     }
   }

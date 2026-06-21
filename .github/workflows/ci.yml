@@ -9,14 +9,14 @@ on:
 
 jobs:
   build-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04   # pinned runner image for reproducibility
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup .NET 10
+      - name: Setup .NET 10 (exact, matches global.json)
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: '10.0.201'
 
       # On a release tag (refs/tags/vX.Y.Z), the tag must match Directory.Build.props <Version>.
       - name: Version / tag consistency

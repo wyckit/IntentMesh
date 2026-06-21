@@ -3,6 +3,43 @@
 All notable changes to IntentMesh. Claims are test-backed; see [docs/MATURITY.md](docs/MATURITY.md)
 for the production-ready / experimental / future breakdown.
 
+## v1.9.0 — Second security review hardening pass
+
+Closes a second external review (9 High, plus Mediums and release hygiene). **191 passing + 3
+env-gated skipped.** Includes a deliberate audit-format change (bundle schema 1.1).
+
+### Signature binding (High)
+- **Whole-transcript signing (H-A):** `SignedAudit` verification now binds the FULL `AuditJson`
+  (prompt, nodes, policy, execution, verification, summary), not just the audit-event chain.
+- **Bundle top-level fields (H-B):** the `TraceBundle` signature now covers `Prompt`, `Approvals`,
+  `Summary`, `SchemaVersion`, and `KeyId` too. **Bundle schema → 1.1** (stronger scheme; pre-1.1
+  bundles do not verify under it).
+
+### Enforcement (High)
+- **MCP forward allow-list (H-C):** the proxy forwards ONLY `Allowed/Executed/Verified`; a `Halted`
+  (or any unexpected) status is no longer forwarded.
+- **Shell allow-list (H-D):** matches the executable (exact, or entry + space + args) and rejects shell
+  metacharacters — `dotnet test; rm -rf /` and `dotnet testxyz` are blocked.
+- **Per-file deletion (H-E):** a destructive delete requires explicit per-file approval
+  (`node#fileRef`); a bare node approval no longer blanket-deletes. SPA renders per-file approve buttons.
+- **Validated-path forwarding (H-F):** the MCP proxy forwards the canonical in-root path it validated,
+  and scopes no-path filesystem tools to the root (H-I).
+
+### Hardening + release (High)
+- **SSRF guard scope (H-I):** documented that the redirect/DNS-rebinding guard applies to the default
+  MCP HTTP client; a caller-supplied client is the caller's responsibility.
+- **Control Room (H-G):** the SPA sends `X-Api-Token` (from localStorage) so token auth doesn't break
+  it; the web surface is now test-gated via `WebApplicationFactory` (loopback, token enforcement, run
+  persistence).
+- **Reproducible builds (H-H):** `global.json` pins SDK 10.0.201 (`rollForward: disable`); CI uses
+  ubuntu-24.04 + exact SDK; `Deterministic` + `ContinuousIntegrationBuild` produce byte-identical
+  assemblies (verified).
+
+### Medium + docs
+- Control Room `/api` rejects bodies over 256 KB (basic DoS guard). MATURITY future section names the
+  remaining gaps honestly (rate limiting, fuzz/mutation/coverage, real-LLM/FS-MCP CI gates). README
+  license reconciled with `LICENSE.txt` (research/evaluation only).
+
 ## v1.8.0 — Security review hardening pass
 
 Closes a full external review (6 High, 7 Medium) plus release hygiene. **183 passing + 3 env-gated

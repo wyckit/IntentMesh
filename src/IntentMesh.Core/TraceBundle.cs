@@ -35,7 +35,9 @@ public sealed record TraceBundle(
 
 public static class TraceBundleBuilder
 {
-    public const string SchemaVersion = "1.0";
+    // 1.1: the bundle signature now binds the top-level fields (schema/prompt/approvals/summary/keyId)
+    // in addition to the five artifacts — a stronger scheme; pre-1.1 bundles do not verify under it.
+    public const string SchemaVersion = "1.1";
 
     private static readonly JsonSerializerOptions Canonical = new() { WriteIndented = false, PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
@@ -57,9 +59,11 @@ public static class TraceBundleBuilder
         var vr = new VerificationReportArtifact(SchemaVersion, r.Verification.All(v => v.Pass), r.Verification);
         var sa = new SignedAuditArtifact(SchemaVersion, r.Audit, signed.ChainHash, signed.Signature, signed.KeyId);
 
-        // The bundle signature covers the canonical JSON of all five artifacts, under the same key id
-        // the audit recorded — so verification later resolves THAT key, not just the current one.
-        var bundleSig = AuditSigner.SignString(Canonicalize(ig, pd, et, vr, sa), key);
+        // The bundle signature covers the displayed/replayed TOP-LEVEL fields (schema, prompt, approvals,
+        // summary, key id) AND all five artifacts, under the same key id the audit recorded — so nothing
+        // shown or replayed can be changed without breaking verification, and rotation still resolves the
+        // signing key.
+        var bundleSig = AuditSigner.SignString(Canonicalize(SchemaVersion, r.Prompt, appr, r.Summary, signed.KeyId, ig, pd, et, vr, sa), key);
         return new TraceBundle(SchemaVersion, r.Prompt, appr, r.Summary, ig, pd, et, vr, sa, bundleSig, signed.KeyId);
     }
 
@@ -87,16 +91,22 @@ public static class TraceBundleBuilder
     };
 
     private static string Canonicalize(TraceBundle b)
-        => Canonicalize(b.IntentGraph, b.PolicyDecisions, b.ExecutionTrace, b.VerificationReport, b.SignedAudit);
+        => Canonicalize(b.SchemaVersion, b.Prompt, b.Approvals, b.Summary, b.KeyId,
+            b.IntentGraph, b.PolicyDecisions, b.ExecutionTrace, b.VerificationReport, b.SignedAudit);
 
-    private static string Canonicalize(IntentGraphArtifact ig, PolicyDecisionsArtifact pd, ExecutionTraceArtifact et,
-        VerificationReportArtifact vr, SignedAuditArtifact sa)
-        => string.Join("\n",
+    private static string Canonicalize(string schemaVersion, string prompt, IReadOnlyList<string> approvals,
+        SummaryView summary, string keyId, IntentGraphArtifact ig, PolicyDecisionsArtifact pd,
+        ExecutionTraceArtifact et, VerificationReportArtifact vr, SignedAuditArtifact sa)
+    {
+        // Bind the top-level fields shown in the UI and used by replay, not only the five artifacts.
+        var header = JsonSerializer.Serialize(new { schemaVersion, prompt, approvals, summary, keyId }, Canonical);
+        return string.Join("\n", header,
             JsonSerializer.Serialize(ig, Canonical),
             JsonSerializer.Serialize(pd, Canonical),
             JsonSerializer.Serialize(et, Canonical),
             JsonSerializer.Serialize(vr, Canonical),
             JsonSerializer.Serialize(sa, Canonical));
+    }
 
     /// <summary>Verify the bundle signature with an explicit raw key (e.g. a test key). When
     /// <paramref name="key"/> is null, resolve the key the bundle recorded against the process-default

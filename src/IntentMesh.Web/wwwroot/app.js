@@ -1,4 +1,20 @@
 'use strict';
+
+// When the Control Room is run token-gated (INTENTMESH_WEB_TOKEN set, e.g. for remote access), every
+// /api call must carry the token. The operator stores it once via localStorage['intentmesh_token'];
+// we attach it to every same-origin /api request so the SPA keeps working under token auth. On a
+// loopback/local host no token is configured and nothing is added.
+(() => {
+  const _fetch = window.fetch.bind(window);
+  window.fetch = (url, opts = {}) => {
+    if (typeof url === 'string' && url.startsWith('/api')) {
+      const tok = localStorage.getItem('intentmesh_token');
+      if (tok) opts = { ...opts, headers: { ...(opts.headers || {}), 'X-Api-Token': tok } };
+    }
+    return _fetch(url, opts);
+  };
+})();
+
 const $ = (s) => document.querySelector(s);
 const el = (t, c) => { const e = document.createElement(t); if (c) e.className = c; return e; };
 const SVGNS = 'http://www.w3.org/2000/svg';
@@ -179,10 +195,23 @@ function renderExecution(r) {
     // Confirmation controls — ONLY for full-authority nodes the gate gated for confirmation.
     if (n.status === 'NeedsConfirmation' && n.trustSource === 'User') {
       const act = el('div', 'confirm-actions');
-      const ok = el('button', 'approve'); ok.textContent = '✓ Approve';
-      ok.onclick = (ev) => { ev.stopPropagation(); approve(n.id); };
-      const note = el('span', 'confirm-note'); note.textContent = 'requires your confirmation';
-      act.append(ok, note); row.appendChild(act);
+      const fileRefs = n.type === 'act-delete-files' ? deleteFileRefs(n) : [];
+      if (fileRefs.length > 0) {
+        // Destructive deletion needs explicit PER-FILE approval — one button per file (node#fileRef).
+        const note = el('span', 'confirm-note'); note.textContent = 'approve each file to delete:';
+        act.appendChild(note);
+        fileRefs.forEach(ref => {
+          const b = el('button', 'approve'); b.textContent = '✓ ' + ref;
+          b.onclick = (ev) => { ev.stopPropagation(); approve(n.id + '#' + ref); };
+          act.appendChild(b);
+        });
+      } else {
+        const ok = el('button', 'approve'); ok.textContent = '✓ Approve';
+        ok.onclick = (ev) => { ev.stopPropagation(); approve(n.id); };
+        const note = el('span', 'confirm-note'); note.textContent = 'requires your confirmation';
+        act.append(ok, note);
+      }
+      row.appendChild(act);
     } else if (APPROVALS.has(n.id) && (n.status === 'Executed' || n.status === 'Verified')) {
       const act = el('div', 'confirm-actions');
       const undoBtn = el('button', 'undo'); undoBtn.textContent = '↩ Undo approval';
@@ -617,7 +646,11 @@ $('#refreshRuns').onclick = loadRuns;
 $('#explainBtn').onclick = explainPrompt;
 
 // ── helpers ────────────────────────────────────────────────────────
-function pretty(s) { return ({ NeedsConfirmation: 'needs-confirm', Verified: 'verified', Executed: 'executed', Blocked: 'blocked', Allowed: 'allowed', Resolved: 'resolved', Pending: 'pending' })[s] || s; }
+function deleteFileRefs(n) {
+  const f = (n.fields || []).find(x => x.field === 'fileRefs');
+  return f ? f.value.split(',').map(s => s.trim()).filter(Boolean) : [];
+}
+function pretty(s) { return ({ NeedsConfirmation: 'needs-confirm', Verified: 'verified', Executed: 'executed', Blocked: 'blocked', Halted: 'halted', Allowed: 'allowed', Resolved: 'resolved', Pending: 'pending' })[s] || s; }
 function clip(s, n) { return s.length > n ? s.slice(0, n - 1) + '…' : s; }
 function statusClassFromDecision(d) { return ({ Block: 'st-Blocked', Confirm: 'st-NeedsConfirmation', Allow: 'st-Allowed', Warn: 'st-NeedsConfirmation', Review: 'st-NeedsConfirmation' })[d] || 'st-Resolved'; }
 function statusColor(s) {

@@ -66,7 +66,8 @@ public sealed class ConfirmationTests
 
         var ws = Workspace.CreateDemo();
         var before = ws.Downloads.Count;
-        var r = rt.Run(Prompt2, ws, new HashSet<string> { delId });
+        // Destructive deletion requires explicit PER-FILE approval — approve each junk candidate.
+        var r = rt.Run(Prompt2, ws, new HashSet<string> { $"{delId}#~$tempfile.tmp", $"{delId}#old_installer_v3.exe" });
 
         Assert.Equal("Verified", r.Nodes.First(n => n.Type == Kinds.DeleteFiles).Status);
         Assert.True(ws.DeletedFiles.Count > 0);

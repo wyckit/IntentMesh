@@ -28,7 +28,7 @@ public sealed class RuntimeHardeningTests
     public void Bundle_has_the_five_artifacts(string prompt)
     {
         var b = TraceBundleBuilder.From(Runtime().Run(prompt, Workspace.CreateDemo()));
-        Assert.Equal("1.0", b.SchemaVersion);
+        Assert.Equal("1.1", b.SchemaVersion);   // 1.1: signature also binds top-level fields
         Assert.NotNull(b.IntentGraph);
         Assert.NotNull(b.PolicyDecisions);
         Assert.NotNull(b.ExecutionTrace);

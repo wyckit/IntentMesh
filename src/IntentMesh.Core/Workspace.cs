@@ -140,8 +140,21 @@ public sealed class Repo
     public List<string> RanCommands { get; } = new();        // allow-listed + approved commands that ran
     public List<string> PushedRefs { get; } = new();         // stays empty in v0.3 (pushing is out of scope)
 
-    public bool IsAllowed(string command) =>
-        AllowedCommands.Any(a => command.Trim().StartsWith(a, StringComparison.OrdinalIgnoreCase));
+    // Shell metacharacters that allow chaining / redirection / substitution — a command containing any
+    // of them is never on the allow-list, so "dotnet test; rm -rf /" can't ride in on an allowed prefix.
+    private static readonly char[] ShellMeta = { ';', '|', '&', '$', '`', '\n', '\r', '>', '<', '(', ')', '{', '}' };
+
+    /// <summary>An allow-listed command must EXACTLY equal an allowed entry, or be that entry followed
+    /// by a space and arguments (so "dotnet test --filter X" is allowed but "dotnet testxyz" and
+    /// "dotnet test; rm -rf /" are not). Prefix matching alone was unsafe.</summary>
+    public bool IsAllowed(string command)
+    {
+        var c = (command ?? "").Trim();
+        if (c.Length == 0 || c.IndexOfAny(ShellMeta) >= 0) return false;
+        return AllowedCommands.Any(a =>
+            c.Equals(a, StringComparison.OrdinalIgnoreCase) ||
+            c.StartsWith(a + " ", StringComparison.OrdinalIgnoreCase));
+    }
 
     public IEnumerable<string> SecretValues =>
         Files.Where(f => f.Secret).SelectMany(f =>

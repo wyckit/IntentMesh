@@ -67,10 +67,17 @@ var demos = new[]
 // public caller from enumerating artifacts or using a real-key host as a signing/approval oracle.
 // (Full auth / rate-limiting / multi-tenant isolation remain preview-out-of-scope — see docs/MATURITY.md.)
 var apiToken = Environment.GetEnvironmentVariable("INTENTMESH_WEB_TOKEN");
+const long MaxApiBodyBytes = 256 * 1024;   // prompts/approvals are tiny; reject oversized bodies (basic DoS guard)
 app.Use(async (context, next) =>
 {
     if (context.Request.Path.StartsWithSegments("/api"))
     {
+        if (context.Request.ContentLength > MaxApiBodyBytes)
+        {
+            context.Response.StatusCode = 413;   // Payload Too Large
+            await context.Response.WriteAsJsonAsync(new { error = $"request body exceeds {MaxApiBodyBytes} bytes" });
+            return;
+        }
         var remote = context.Connection.RemoteIpAddress;
         bool loopback = remote is null || IPAddress.IsLoopback(remote);
         if (!string.IsNullOrEmpty(apiToken))
@@ -217,3 +224,6 @@ app.Run();
 // full-authority Confirm node — a blocked zero-trust node stays blocked regardless.
 record RunRequest(string? Prompt, string[]? Approvals);
 record ExportRequest(string? Prompt, string[]? Approvals, string? Format);
+
+// Exposed so the test project can host the app via WebApplicationFactory<Program>.
+public partial class Program { }

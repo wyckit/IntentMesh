@@ -61,6 +61,34 @@ public sealed class AuditOperationsTests
     }
 
     [Fact]
+    public void A_signed_audit_with_a_tampered_NON_event_field_fails_verification()
+    {
+        var result = Runtime().Run(Prompt, Workspace.CreateDemo());
+        var provider = new RotatingAuditKeyProvider("k1", Key(0x5A));
+        var signed = AuditSigner.Sign(result, provider);
+
+        // Edit the prompt field of the exported transcript — NOT an audit event. The whole AuditJson is
+        // bound to the signature, so this must fail even though the event chain is untouched.
+        var node = JsonNode.Parse(signed.AuditJson)!;
+        node["prompt"] = node["prompt"]!.GetValue<string>() + " TAMPERED";
+        var tampered = signed with { AuditJson = node.ToJsonString() };
+        Assert.False(AuditSigner.Verify(tampered, provider), "a non-event transcript edit must not verify");
+    }
+
+    [Fact]
+    public void Bundle_signature_binds_top_level_fields()
+    {
+        var bundle = TraceBundleBuilder.From(Runtime().Run(Prompt, Workspace.CreateDemo()));
+        Assert.True(TraceBundleBuilder.VerifySignature(bundle));
+
+        // None of the displayed/replayed top-level fields can be changed without breaking the signature.
+        Assert.False(TraceBundleBuilder.VerifySignature(bundle with { Prompt = bundle.Prompt + " X" }));
+        Assert.False(TraceBundleBuilder.VerifySignature(bundle with { Approvals = new[] { "forged" } }));
+        Assert.False(TraceBundleBuilder.VerifySignature(bundle with { Summary = bundle.Summary with { Blocked = 99 } }));
+        Assert.False(TraceBundleBuilder.VerifySignature(bundle with { SchemaVersion = "9.9" }));
+    }
+
+    [Fact]
     public void A_weak_rotation_key_is_rejected_at_construction()
         => Assert.Throws<InvalidOperationException>(() => new RotatingAuditKeyProvider("k", new byte[] { 1, 2, 3 }));
 
@@ -108,26 +136,22 @@ public sealed class AuditOperationsTests
     }
 
     [Fact]
-    public void A_pre_KeyId_bundle_signed_with_a_real_key_still_verifies_via_the_audit_keyid()
+    public void A_bundle_signed_with_a_real_key_verifies_and_replays_under_that_key()
     {
+        // The bundle's KeyId is now part of the signed canonical, so it always matches the signing key.
         var realKey = Key(0xC3);
         var provider = new RotatingAuditKeyProvider("k-real", realKey);
         var bundle = TraceBundleBuilder.From(Runtime().Run(Prompt, Workspace.CreateDemo()), null, provider);
         Assert.Equal("k-real", bundle.KeyId);
         Assert.Equal("k-real", bundle.SignedAudit.KeyId);
 
-        // Simulate a bundle persisted BEFORE the bundle-level KeyId field existed: the field
-        // deserializes to the demo default, but SignedAudit.KeyId still carries the real signing key.
-        var legacy = bundle with { KeyId = AuditSigner.DemoKeyId };
-
-        // It must still verify + replay under a provider holding the real key (fallback to SignedAudit.KeyId).
-        Assert.True(TraceBundleBuilder.VerifySignature(legacy, provider));
-        var replay = RunReplay.Reproduce(Runtime(), Workspace.CreateDemo(), legacy, provider);
+        Assert.True(TraceBundleBuilder.VerifySignature(bundle, provider));
+        var replay = RunReplay.Reproduce(Runtime(), Workspace.CreateDemo(), bundle, provider);
         Assert.True(replay.SignatureVerified);
         Assert.True(replay.Reproduced);
 
-        // A provider that does NOT hold the real key still fails closed — no silent demo-key pass.
-        Assert.False(TraceBundleBuilder.VerifySignature(legacy, new RotatingAuditKeyProvider("k-other", Key(0xD4))));
+        // A provider that does NOT hold the key fails closed — no silent demo-key pass.
+        Assert.False(TraceBundleBuilder.VerifySignature(bundle, new RotatingAuditKeyProvider("k-other", Key(0xD4))));
     }
 
     [Fact]

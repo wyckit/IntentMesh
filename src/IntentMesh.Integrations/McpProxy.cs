@@ -180,23 +180,21 @@ public sealed class McpProxy
         var proposer = new McpOneNodeProposer(node);
         var result = _runtime.RunWith(proposer, $"mcp:{call.Tool}", _workspace, approvals ?? new HashSet<string>());
 
-        // 3. Decide from the node's final status: it forwards only if the node actually proceeded
-        //    (Allowed/Executed/Verified). Blocked → never; NeedsConfirmation → not until approved.
+        // 3. Decide from the node's final status. ALLOW-LIST, not deny-list: forward ONLY if the node
+        //    actually proceeded (Allowed/Executed/Verified). Anything else — Blocked, NeedsConfirmation,
+        //    and notably Halted (an approved action whose adapter failed) or any Pending/Resolved state —
+        //    is NOT forwarded. A deny-list here would forward unexpected statuses (e.g. Halted).
         var policyView = result.Policy.FirstOrDefault(p => p.NodeId == "n1");
         var status = result.Nodes.FirstOrDefault(n => n.Id == "n1")?.Status ?? "Blocked";
         string reason = policyView is not null ? $"{policyView.Decision}: {policyView.Reason}" : "No policy decision recorded.";
 
-        if (status == "Blocked")
-            return new McpGateResult(Allowed: false, Reason: reason, RunResult: result);
+        if (status is "Allowed" or "Executed" or "Verified")
+            return new McpGateResult(Allowed: true, Reason: reason, RunResult: result);
 
-        if (status == "NeedsConfirmation")
-            return new McpGateResult(
-                Allowed: false,
-                Reason: $"Gated (NeedsConfirmation): {reason} — operator approval required before forwarding.",
-                RunResult: result);
-
-        // 4. Allowed (or approved) — the caller may now forward to the real MCP server.
-        return new McpGateResult(Allowed: true, Reason: reason, RunResult: result);
+        var detail = status == "NeedsConfirmation"
+            ? $"Gated (NeedsConfirmation): {reason} — operator approval required before forwarding."
+            : $"Not forwarded (status {status}): {reason}";
+        return new McpGateResult(Allowed: false, Reason: detail, RunResult: result);
     }
 
     /// <summary>
@@ -218,10 +216,49 @@ public sealed class McpProxy
             progress?.Report($"blocked {call.Tool} — not forwarded");
             return new McpForwardResult(gate, ServerResponse: null);
         }
+        // Forward the NORMALIZED call: a filesystem path is rewritten to the exact canonical in-root
+        // path the gate validated, so the server can't re-resolve a relative/aliased original arg to a
+        // different (possibly escaping) target than what was checked (time-of-check/time-of-use).
+        var forwardCall = NormalizeForForward(call);
         progress?.Report($"forwarding {call.Tool}");
-        var response = ForwardToRealMcpServer(call, client);
+        var response = ForwardToRealMcpServer(forwardCall, client);
         progress?.Report($"forwarded {call.Tool}");
         return new McpForwardResult(gate, ServerResponse: response);
+    }
+
+    /// <summary>For a filesystem call under an allowed root, rewrite each path-bearing arg to the exact
+    /// canonical in-root path the gate validated — so the forwarded call can't re-resolve a relative or
+    /// aliased original arg to a different target than was checked. Non-fs calls (or no allowed root)
+    /// are forwarded unchanged.</summary>
+    private McpToolCall NormalizeForForward(McpToolCall call)
+    {
+        if (_allowedRoot is null) return call;
+        var (action, _) = _customMapper?.Invoke(call) ?? MapToAction(call);
+        if (action is not (FsReadAction or FsWriteAction)) return call;
+
+        var root = Canonicalize(Path.TrimEndingDirectorySeparator(Path.GetFullPath(_allowedRoot)));
+        var args = new Dictionary<string, string>(call.Args, StringComparer.Ordinal);
+        bool hadPath = false;
+        foreach (var key in new[] { "path", "source", "destination" })
+            if (args.TryGetValue(key, out var p) && !string.IsNullOrEmpty(p)) { args[key] = Resolve(p, root); hadPath = true; }
+        // No-path filesystem tool under a sandbox: scope it explicitly to the root rather than letting the
+        // server fall back to its own working directory (defense in depth over the server's own sandbox).
+        if (!hadPath && !args.ContainsKey("paths"))
+            args["path"] = root;
+        if (args.TryGetValue("paths", out var multi) && !string.IsNullOrWhiteSpace(multi))
+        {
+            try
+            {
+                var parsed = JsonSerializer.Deserialize<List<string>>(multi);
+                if (parsed is not null)
+                    args["paths"] = JsonSerializer.Serialize(parsed.Select(e => string.IsNullOrEmpty(e) ? e : Resolve(e, root)).ToList());
+            }
+            catch { /* not a JSON array — it was validated as a single path; leave as-is */ }
+        }
+        return call with { Args = args };
+
+        static string Resolve(string p, string root)
+            => Canonicalize(Path.GetFullPath(Path.IsPathRooted(p) ? p : Path.Combine(root, p)));
     }
 
     /// <summary>

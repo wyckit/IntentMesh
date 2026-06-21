@@ -5,7 +5,7 @@
        Demos, tools, the web host, the E2E/bench runners, the template, and tests stay non-packable. -->
 
   <PropertyGroup>
-    <Version>1.8.0</Version>
+    <Version>1.9.0</Version>
     <Authors>Chad Sandor</Authors>
     <Company>wyckit</Company>
     <Product>IntentMesh</Product>
@@ -18,10 +18,15 @@
     <!-- License is explicit (no ambiguity): a research/evaluation license shipped in every package. -->
     <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
-    <PackageReleaseNotes>v1.8.0 — security review hardening pass. See CHANGELOG.md.</PackageReleaseNotes>
+    <PackageReleaseNotes>v1.9.0 — second security review hardening pass. See CHANGELOG.md.</PackageReleaseNotes>
 
     <!-- Reproducible restore: lock files are honored in CI via locked-mode restore. -->
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+
+    <!-- Reproducible builds: deterministic compilation, and on CI also normalize embedded source paths
+         so duplicate clean builds produce byte-identical assemblies. global.json pins the exact SDK. -->
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
 
     <!-- Default: not packable. Library projects set IsPackable=true explicitly. -->
     <IsPackable>false</IsPackable>
