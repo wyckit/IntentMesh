@@ -21,7 +21,7 @@ try { runtime = IntentMeshRuntime.Load(); }
 catch (Exception ex) { Console.Error.WriteLine($"Load failed: {ex.Message}"); return 1; }
 
 McpStdioClient client;
-try { client = McpStdioClient.ConnectNpx("@modelcontextprotocol/server-filesystem", root); }
+try { client = McpStdioClient.ConnectNpx("@modelcontextprotocol/server-filesystem@2026.1.14", root); }
 catch (Exception ex)
 {
     Console.Error.WriteLine($"Could not start the filesystem MCP server (need node/npx + network): {ex.Message}");

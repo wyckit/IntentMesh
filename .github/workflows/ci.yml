@@ -47,11 +47,18 @@ jobs:
       - name: Verify TLM bundle (round-trip + checksum)
         run: dotnet run --project src/IntentMesh.Tlm.Cli -c Release --no-build -- verify --root dataset
 
-      - name: Test
+      # Two separate test steps so the secret and the untrusted-npm execution NEVER share an environment:
+      # the live-LLM test gets ANTHROPIC_API_KEY but does NOT run npx; the real-filesystem E2E runs the
+      # pinned npx package but has NO secret in its env (a compromised package can't read the API key).
+      - name: Test (unit + live-LLM; no npx)
         env:
-          INTENTMESH_FS_E2E: '1'   # run the REAL @modelcontextprotocol/server-filesystem path (node + network present)
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}   # live-LLM test runs when the secret is configured, else skips
-        run: dotnet test IntentMesh.slnx -c Release --no-build --nologo
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}   # live-LLM test runs when configured, else skips
+        run: dotnet test IntentMesh.slnx -c Release --no-build --nologo --filter "FullyQualifiedName!~McpProxy_wires_a_real_filesystem_mcp_server_end_to_end"
+
+      - name: Real filesystem MCP E2E (pinned npx; NO secrets in env)
+        env:
+          INTENTMESH_FS_E2E: '1'   # runs `npx -y @modelcontextprotocol/server-filesystem@<pinned>` — note: no ANTHROPIC_API_KEY here
+        run: dotnet test IntentMesh.slnx -c Release --no-build --nologo --filter "FullyQualifiedName~McpProxy_wires_a_real_filesystem_mcp_server_end_to_end"
 
       - name: Policy fixtures
         run: dotnet run --project src/IntentMesh.Cli -c Release --no-build -- policy fixtures

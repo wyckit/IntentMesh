@@ -15,6 +15,40 @@ public sealed class DataAgentTests
 
     private static string DeleteId(RunResult r) => r.Nodes.First(n => n.Type == Kinds.BuildQueryPlan && n.Label.Contains("delete")).Id;
 
+    private sealed class OneNodeProposer : IIntentProposer
+    {
+        private readonly IntentNode _n;
+        public OneNodeProposer(IntentNode n) => _n = n;
+        public ProposedPlan Propose(string prompt, Workspace ws) =>
+            new(new[] { _n }, Array.Empty<string>(), Array.Empty<string>());
+    }
+
+    [Fact]
+    public void A_direct_run_query_is_bounded_by_the_row_cap()
+    {
+        var ws = Workspace.CreateDemo();
+        var table = ws.Db.Tables.First();
+        ws.Db.RowCap = 2;                                   // lower the cap below the row count
+        while (table.Rows.Count <= 2)
+            table.Rows.Add(table.Columns.Select(_ => "x").ToArray());
+
+        // A DIRECT RunQueryAction (no RowLimit field) must still be bounded by db.RowCap at execution.
+        var node = new IntentNode
+        {
+            Id = "n1",
+            Type = Kinds.RunQuery,
+            Label = "direct query",
+            Action = new RunQueryAction(table.Name, "direct run-query"),
+            SourceText = "direct",
+            TrustSource = TrustSource.User,
+            Status = NodeStatus.Resolved,
+        };
+        var r = Runtime().RunWith(new OneNodeProposer(node), "direct query", ws, new HashSet<string>());
+
+        var exec = r.Execution.First(e => e.NodeId == "n1");
+        Assert.Contains("row cap", string.Join(" ", exec.Effects), StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public void Data_contracts_are_registered()
     {

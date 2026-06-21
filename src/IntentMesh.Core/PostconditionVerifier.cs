@@ -98,6 +98,18 @@ public sealed class PostconditionVerifier
             Add("pc-no-unapproved-deletion", "no file deleted without approval",
                 ws.DeletedFiles.Count == 0 ? "none deleted" : (deleteApproved ? "deleted after approval" : "deleted WITHOUT approval!"),
                 ok, $"deleted={ws.DeletedFiles.Count}, approved-node={deleteApproved}");
+
+            // Granular check: the set of files actually deleted must be EXACTLY a subset of the per-file
+            // refs that were approved (node.ApprovedRefs) — proving the adapter deleted only approved
+            // files, not merely that a delete node ran. Catches an over-deleting/buggy adapter.
+            var approvedRefs = graph.Nodes
+                .Where(n => n.Type == Kinds.DeleteFiles)
+                .SelectMany(n => n.ApprovedRefs)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var unapproved = ws.DeletedFiles.Where(f => !approvedRefs.Contains(f)).ToList();
+            Add("pc-deletion-matches-approval", "every deleted file was individually approved",
+                unapproved.Count == 0 ? "exact match" : "deleted UNAPPROVED file(s)!", unapproved.Count == 0,
+                $"deleted -> {string.Join(", ", ws.DeletedFiles)}; approved refs -> {string.Join(", ", approvedRefs)}");
         }
 
         // ── Dev-agent postconditions ────────────────────────────────────────
