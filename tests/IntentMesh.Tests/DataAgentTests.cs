@@ -80,9 +80,12 @@ public sealed class DataAgentTests
 
         var node = new IntentNode
         {
-            Id = "q", Type = Kinds.BuildQueryPlan, Label = "plan",
+            Id = "q",
+            Type = Kinds.BuildQueryPlan,
+            Label = "plan",
             Action = new BuildQueryPlanAction(op, "signups", "x", 10),
-            TrustSource = TrustSource.User, Status = NodeStatus.Resolved,
+            TrustSource = TrustSource.User,
+            Status = NodeStatus.Resolved,
         };
         var d = gate.Evaluate(node, ctx);
         Assert.Equal(Decision.Block, d.Decision);

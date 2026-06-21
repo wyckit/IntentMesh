@@ -23,13 +23,22 @@
     <!-- Reproducible restore: lock files are honored in CI via locked-mode restore. -->
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
 
-    <!-- Reproducible builds: deterministic compilation, and on CI also normalize embedded source paths
-         so duplicate clean builds produce byte-identical assemblies. global.json pins the exact SDK. -->
+    <!-- Reproducible builds: deterministic compilation, and on CI normalize embedded source paths via
+         SourceLink so builds from DIFFERENT checkout directories produce byte-identical assemblies (not
+         just same-directory rebuilds). global.json pins the exact SDK. -->
     <Deterministic>true</Deterministic>
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
 
     <!-- Default: not packable. Library projects set IsPackable=true explicitly. -->
     <IsPackable>false</IsPackable>
   </PropertyGroup>
+
+  <!-- SourceLink: establishes a git-based SourceRoot so DeterministicSourcePaths (enabled by
+       ContinuousIntegrationBuild) maps absolute paths to a stable form across checkouts. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="all" />
+  </ItemGroup>
 
 </Project>
