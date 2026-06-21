@@ -3,6 +3,30 @@
 All notable changes to IntentMesh. Claims are test-backed; see [docs/MATURITY.md](docs/MATURITY.md)
 for the production-ready / experimental / future breakdown.
 
+## v1.9.1 — Third review hardening pass (MIT relicense + fixes)
+
+Closes a third external review (1 Critical + 8 High). **198 passing + 3 env-gated skipped.**
+
+- **Relicensed to MIT** (Critical): `LICENSE.txt` is now MIT and packages carry the `MIT` SPDX
+  expression — the "not licensed for production" block is removed; README reconciled.
+- **Replay verifies before executing (H1):** `RunReplay.Reproduce` no longer re-runs a bundle whose
+  signature fails — a tampered bundle can't become an unsigned execution path.
+- **runId bound to identity (H2):** `VerifyArtifacts` requires `runId == RunIdOf(bundle)`; a signed run
+  copied under another id is not reported intact.
+- **Query policy allow-list (H3):** only known read ops (case-insensitive) are read-only; lowercase
+  variants and unknown write ops are blocked under a read-only role.
+- **npx arg guard (H4):** `ConnectNpx` rejects shell metacharacters (Windows `cmd.exe /c` re-parsing).
+- **Always-guarded MCP HTTP (H5):** `Connect` no longer accepts an injectable `HttpClient`; the
+  SSRF-guarded client is always used.
+- **Atomic persistence + surfaced failures (H7):** artifacts are written atomically (temp + move) and
+  `/api/run` sets `X-Persist-Error` instead of silently claiming success.
+- **Cross-checkout reproducible builds (H8):** SourceLink + deterministic source paths — verified two
+  different-path checkouts produce byte-identical assembly hashes (corrects the v1.9.0 same-dir-only claim).
+- **CI runs real security paths (H9):** `INTENTMESH_FS_E2E=1` (real filesystem MCP) + `ANTHROPIC_API_KEY`
+  from secrets (live-LLM when configured).
+- **Honest Control Room scope (H6):** documented as not-production-authz (loopback/single-token,
+  caller-asserted approvals). Web `/api` body capped at 256 KB.
+
 ## v1.9.0 — Second security review hardening pass
 
 Closes a second external review (9 High, plus Mediums and release hygiene). **191 passing + 3

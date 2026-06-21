@@ -2,7 +2,7 @@
 
 The single source of truth for **what is production-ready, what is experimental, and what is future
 work.** Every "proven" claim below is backed by a test that would fail if the claim stopped being
-true (`dotnet test IntentMesh.slnx` — **191 passing, 3 env-gated skipped**). Nothing here is aspirational unless it says so.
+true (`dotnet test IntentMesh.slnx` — **198 passing, 3 env-gated skipped**). Nothing here is aspirational unless it says so.
 
 > IntentMesh is a **research prototype with a production-shaped core**: the security kernel and its
 > guarantees are proven and stable; the *operational backends* around it (KMS, DB persistence,
@@ -46,10 +46,8 @@ true (`dotnet test IntentMesh.slnx` — **191 passing, 3 env-gated skipped**). N
   single shared `INTENTMESH_WEB_TOKEN`, plus a 256 KB request-body cap — not per-tenant auth or rate limiting.)
 - **Rate limiting / quotas** on the Control Room API.
 - **Fuzz / mutation testing + enforced coverage thresholds** — the suite is example-based today.
-- **CI gates for the real LLM and real filesystem-MCP paths** — those tests skip without
-  `ANTHROPIC_API_KEY` / `INTENTMESH_FS_E2E=1`; the stdio-MCP E2E does run in CI (node present).
-- **Hardened SSRF for a caller-supplied `HttpClient`** — the redirect/DNS-rebinding guard applies to the
-  default MCP HTTP client; a caller-provided client is the caller's responsibility (documented on `Connect`).
+- **Live-LLM CI gate** — the real-Anthropic test runs in CI only when the `ANTHROPIC_API_KEY` secret is
+  configured (it skips otherwise). The real filesystem-MCP and stdio-MCP E2E paths now DO run in CI.
 
 ## How to read a claim
 
