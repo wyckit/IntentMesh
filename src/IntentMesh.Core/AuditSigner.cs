@@ -126,9 +126,18 @@ public static class AuditSigner
 
     private static SignedAudit SignWith(RunResult result, IAuditKeyProvider provider)
     {
+        var auditJson = AuditExporter.ToJson(result);
         var chain = ChainHash(result);
-        return new SignedAudit(AuditExporter.ToJson(result), chain, Hmac(chain, provider.GetKey()), provider.KeyId);
+        // The signature binds the WHOLE exported transcript (chain head + full AuditJson), not just the
+        // event chain — so editing ANY field (prompt, nodes, policy, execution, verification, summary)
+        // breaks verification, not only an edit to the audit events.
+        return new SignedAudit(auditJson, chain, Hmac(TranscriptPayload(chain, auditJson), provider.GetKey()), provider.KeyId);
     }
+
+    /// <summary>The exact bytes the standalone-audit signature covers: the chain head and the full
+    /// exported transcript JSON, length-prefixed so the two fields can't be shifted across each other.</summary>
+    private static string TranscriptPayload(string chainHash, string auditJson)
+        => $"{chainHash.Length}:{chainHash}\n{auditJson}";
 
     /// <summary>Deterministic HMAC-SHA256 (hex) over arbitrary canonical text — used to sign a
     /// trace bundle over its five artifacts' canonical JSON.</summary>
@@ -142,7 +151,7 @@ public static class AuditSigner
 
     private static bool VerifyWith(RunResult result, string signature, IAuditKeyProvider provider)
     {
-        var expected = Hmac(ChainHash(result), provider.GetKey());
+        var expected = Hmac(TranscriptPayload(ChainHash(result), AuditExporter.ToJson(result)), provider.GetKey());
         return CryptographicOperations.FixedTimeEquals(
             Encoding.UTF8.GetBytes(expected), Encoding.UTF8.GetBytes(signature ?? ""));
     }
@@ -162,8 +171,10 @@ public static class AuditSigner
         var events = ParseAuditEvents(signed.AuditJson);
         if (events is null || ChainHash(events) != signed.ChainHash) return false;
 
+        // Bind the WHOLE transcript: the signature is over the chain head + the full AuditJson, so a
+        // change to any non-event field (prompt, nodes, policy, summary, …) fails here too.
         return CryptographicOperations.FixedTimeEquals(
-            Encoding.UTF8.GetBytes(Hmac(signed.ChainHash, key)),
+            Encoding.UTF8.GetBytes(Hmac(TranscriptPayload(signed.ChainHash, signed.AuditJson), key)),
             Encoding.UTF8.GetBytes(signed.Signature ?? ""));
     }
 
