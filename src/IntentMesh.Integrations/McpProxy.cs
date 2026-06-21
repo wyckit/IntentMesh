@@ -216,10 +216,45 @@ public sealed class McpProxy
             progress?.Report($"blocked {call.Tool} — not forwarded");
             return new McpForwardResult(gate, ServerResponse: null);
         }
+        // Forward the NORMALIZED call: a filesystem path is rewritten to the exact canonical in-root
+        // path the gate validated, so the server can't re-resolve a relative/aliased original arg to a
+        // different (possibly escaping) target than what was checked (time-of-check/time-of-use).
+        var forwardCall = NormalizeForForward(call);
         progress?.Report($"forwarding {call.Tool}");
-        var response = ForwardToRealMcpServer(call, client);
+        var response = ForwardToRealMcpServer(forwardCall, client);
         progress?.Report($"forwarded {call.Tool}");
         return new McpForwardResult(gate, ServerResponse: response);
+    }
+
+    /// <summary>For a filesystem call under an allowed root, rewrite each path-bearing arg to the exact
+    /// canonical in-root path the gate validated — so the forwarded call can't re-resolve a relative or
+    /// aliased original arg to a different target than was checked. Non-fs calls (or no allowed root)
+    /// are forwarded unchanged.</summary>
+    private McpToolCall NormalizeForForward(McpToolCall call)
+    {
+        if (_allowedRoot is null) return call;
+        var (action, _) = _customMapper?.Invoke(call) ?? MapToAction(call);
+        if (action is not (FsReadAction or FsWriteAction)) return call;
+
+        var root = Canonicalize(Path.TrimEndingDirectorySeparator(Path.GetFullPath(_allowedRoot)));
+        var args = new Dictionary<string, string>(call.Args, StringComparer.Ordinal);
+        foreach (var key in new[] { "path", "source", "destination" })
+            if (args.TryGetValue(key, out var p) && !string.IsNullOrEmpty(p))
+                args[key] = Resolve(p, root);
+        if (args.TryGetValue("paths", out var multi) && !string.IsNullOrWhiteSpace(multi))
+        {
+            try
+            {
+                var parsed = JsonSerializer.Deserialize<List<string>>(multi);
+                if (parsed is not null)
+                    args["paths"] = JsonSerializer.Serialize(parsed.Select(e => string.IsNullOrEmpty(e) ? e : Resolve(e, root)).ToList());
+            }
+            catch { /* not a JSON array — it was validated as a single path; leave as-is */ }
+        }
+        return call with { Args = args };
+
+        static string Resolve(string p, string root)
+            => Canonicalize(Path.GetFullPath(Path.IsPathRooted(p) ? p : Path.Combine(root, p)));
     }
 
     /// <summary>
