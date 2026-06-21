@@ -180,23 +180,21 @@ public sealed class McpProxy
         var proposer = new McpOneNodeProposer(node);
         var result = _runtime.RunWith(proposer, $"mcp:{call.Tool}", _workspace, approvals ?? new HashSet<string>());
 
-        // 3. Decide from the node's final status: it forwards only if the node actually proceeded
-        //    (Allowed/Executed/Verified). Blocked → never; NeedsConfirmation → not until approved.
+        // 3. Decide from the node's final status. ALLOW-LIST, not deny-list: forward ONLY if the node
+        //    actually proceeded (Allowed/Executed/Verified). Anything else — Blocked, NeedsConfirmation,
+        //    and notably Halted (an approved action whose adapter failed) or any Pending/Resolved state —
+        //    is NOT forwarded. A deny-list here would forward unexpected statuses (e.g. Halted).
         var policyView = result.Policy.FirstOrDefault(p => p.NodeId == "n1");
         var status = result.Nodes.FirstOrDefault(n => n.Id == "n1")?.Status ?? "Blocked";
         string reason = policyView is not null ? $"{policyView.Decision}: {policyView.Reason}" : "No policy decision recorded.";
 
-        if (status == "Blocked")
-            return new McpGateResult(Allowed: false, Reason: reason, RunResult: result);
+        if (status is "Allowed" or "Executed" or "Verified")
+            return new McpGateResult(Allowed: true, Reason: reason, RunResult: result);
 
-        if (status == "NeedsConfirmation")
-            return new McpGateResult(
-                Allowed: false,
-                Reason: $"Gated (NeedsConfirmation): {reason} — operator approval required before forwarding.",
-                RunResult: result);
-
-        // 4. Allowed (or approved) — the caller may now forward to the real MCP server.
-        return new McpGateResult(Allowed: true, Reason: reason, RunResult: result);
+        var detail = status == "NeedsConfirmation"
+            ? $"Gated (NeedsConfirmation): {reason} — operator approval required before forwarding."
+            : $"Not forwarded (status {status}): {reason}";
+        return new McpGateResult(Allowed: false, Reason: detail, RunResult: result);
     }
 
     /// <summary>

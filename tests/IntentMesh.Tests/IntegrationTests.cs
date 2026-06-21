@@ -214,6 +214,28 @@ public sealed class IntegrationTests
     }
 
     /// <summary>
+    /// A node that ends Halted (approved, but the adapter halted) must NOT be forwarded — the proxy
+    /// forwards only Allowed/Executed/Verified, never an unexpected status.
+    /// </summary>
+    [Fact]
+    public void McpProxy_does_not_forward_a_halted_action()
+    {
+        var ws = Workspace.CreateDemo();
+        var proxy = Proxy(ws: ws);
+        var forwarded = false;
+        var client = new FakeMcpClient(() => { forwarded = true; return "{}"; });
+
+        // send_email approved → external Confirm → approved → adapter halts (no 'mcp-draft' draft) → Halted.
+        var fwd = proxy.GateAndForward(
+            new McpToolCall("send_email", new Dictionary<string, string> { ["to"] = "sarah@company.com" }),
+            client, approvals: new HashSet<string> { "n1" });
+
+        Assert.False(fwd.Gate.Allowed);
+        Assert.Null(fwd.ServerResponse);
+        Assert.False(forwarded, "a Halted action must never reach the transport");
+    }
+
+    /// <summary>
     /// A stdio server that starts but never answers the handshake must fail FAST (not hang) and clean
     /// up the child process rather than leak it — Connect disposes on a failed handshake.
     /// </summary>
