@@ -3,6 +3,21 @@
 All notable changes to IntentMesh. Claims are test-backed; see [docs/MATURITY.md](docs/MATURITY.md)
 for the production-ready / experimental / future breakdown.
 
+## v1.10.1 — Authz hardening (traversal-safe ids, body-cap)
+
+A follow-up security pass on the v1.10.0 authz surface. **232 passing + 3 env-gated skipped.**
+
+- **Traversal-safe tenant/principal ids** — `AuthIds.IsValid` now rejects ids that start with `.` or `-`
+  or contain no alphanumeric, so `.`, `..`, dotfiles, and option-like names are refused even though their
+  characters are in the allowed set. Closes a path-traversal / tenant-isolation-bypass risk where a
+  `..`-shaped tenant could resolve outside the per-tenant runs root.
+- **Tenant-path containment** — the per-tenant store factory re-validates the tenant id and verifies the
+  resolved directory stays under the runs root before constructing the store (defense-in-depth).
+- **Request-body cap holds for chunked bodies** — the `/api` size guard no longer relies only on a
+  declared `Content-Length`; it also sets the Kestrel max-request-body limit so a chunked or
+  missing-length body is rejected while binding (an omitted/spoofed `Content-Length` no longer bypasses
+  the 256 KB cap).
+
 ## v1.10.0 — Real multi-tenant authorization
 
 Builds out the authz boundary that the fourth review flagged as a not-yet-built future seam — it is now

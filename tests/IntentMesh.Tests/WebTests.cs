@@ -75,6 +75,20 @@ public sealed class WebTests
     }
 
     [Fact]
+    public async Task An_oversized_api_body_is_rejected()
+    {
+        Environment.SetEnvironmentVariable("INTENTMESH_WEB_TOKEN", null);
+        var (f, runs) = Make();
+        try
+        {
+            var huge = new string('x', 300 * 1024);   // > 256 KB cap
+            var resp = await f.CreateClient().PostAsJsonAsync("/api/run", new { prompt = huge });
+            Assert.Equal(HttpStatusCode.RequestEntityTooLarge, resp.StatusCode);
+        }
+        finally { Cleanup(f, runs); }
+    }
+
+    [Fact]
     public async Task A_run_persists_and_appears_in_history()
     {
         Environment.SetEnvironmentVariable("INTENTMESH_WEB_TOKEN", null);

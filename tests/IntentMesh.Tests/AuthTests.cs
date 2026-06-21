@@ -136,5 +136,25 @@ public sealed class AuthTests
 
         Assert.False(TrustedProxyAuth.TryFromHeaders("alice/../etc", "acme", "viewer", out _));  // traversal id
         Assert.False(TrustedProxyAuth.TryFromHeaders("alice", "", "viewer", out _));             // empty tenant
+        Assert.False(TrustedProxyAuth.TryFromHeaders("alice", "..", "viewer", out _));           // traversal tenant
     }
+
+    [Theory]
+    [InlineData("acme")]
+    [InlineData("acme-corp")]
+    [InlineData("acme.us_1")]
+    [InlineData("a")]
+    public void AuthIds_accepts_safe_ids(string id) => Assert.True(AuthIds.IsValid(id));
+
+    [Theory]
+    [InlineData(".")]            // current directory
+    [InlineData("..")]           // parent directory — the traversal segment
+    [InlineData("...")]          // all dots, no alphanumeric
+    [InlineData(".hidden")]      // leading dot (dotfile)
+    [InlineData("-rf")]          // leading dash (option-like)
+    [InlineData("a/b")]          // path separator
+    [InlineData("a\\b")]         // windows separator
+    [InlineData("")]             // empty
+    [InlineData("___")]          // no letter or digit
+    public void AuthIds_rejects_traversal_and_unsafe_ids(string id) => Assert.False(AuthIds.IsValid(id));
 }
