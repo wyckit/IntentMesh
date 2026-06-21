@@ -7,14 +7,22 @@ on:
   pull_request:
     branches: [ master ]
 
+# Least privilege by default; the job opts into exactly what build provenance needs.
+permissions:
+  contents: read
+
 jobs:
   build-test:
     runs-on: ubuntu-24.04   # pinned runner image for reproducibility
+    permissions:
+      contents: read
+      id-token: write        # for build-provenance attestation
+      attestations: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
       - name: Setup .NET 10 (exact, matches global.json)
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9  # v4
         with:
           dotnet-version: '10.0.201'
 
@@ -66,17 +74,26 @@ jobs:
             echo "::error::Vulnerable packages detected"; exit 1
           fi
 
-      - name: Pack (release libraries) + validate
+      - name: Pack (release libraries) + validate + checksums
         run: |
           dotnet pack IntentMesh.slnx -c Release --no-build -o artifacts/pack
           ls -1 artifacts/pack/*.nupkg
           for pkg in IntentMesh.Tlm IntentMesh.Core IntentMesh.Integrations; do
             ls artifacts/pack/$pkg.*.nupkg >/dev/null 2>&1 || { echo "::error::missing package $pkg"; exit 1; }
           done
+          ( cd artifacts/pack && sha256sum *.nupkg > SHA256SUMS && cat SHA256SUMS )
 
-      - name: Upload packages
-        uses: actions/upload-artifact@v4
+      - name: Attest build provenance for the packages
+        if: github.event_name == 'push'   # attestation requires write tokens (not available on fork PRs)
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be  # v2
+        with:
+          subject-path: 'artifacts/pack/*.nupkg'
+
+      - name: Upload packages + checksums
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: intentmesh-packages
-          path: artifacts/pack/*.nupkg
+          path: |
+            artifacts/pack/*.nupkg
+            artifacts/pack/SHA256SUMS
           if-no-files-found: error
