@@ -3,6 +3,28 @@
 All notable changes to IntentMesh. Claims are test-backed; see [docs/MATURITY.md](docs/MATURITY.md)
 for the production-ready / experimental / future breakdown.
 
+## v1.9.2 — Fourth review hardening pass (key floor, draft gate, capabilities, supply chain, deployment)
+
+Closes a fourth external review (2 Blockers + 7 High). **200 passing + 3 env-gated skipped.**
+
+- **128-bit key floor on every signing path (H):** `RawKeyProvider`, `FixedKeyProvider`, and the
+  `byte[]` `SignString` path now go through `AuditSigner.RequireStrongKey` and reject keys < 16 bytes —
+  the raw-key APIs can no longer bypass the floor.
+- **Draft recipient checked at the gate, pre-creation (H):** a draft to a recipient the user did not
+  name now returns `Confirm` *before* the draft exists (`pol-recipient-not-requested`), and the adapter
+  halts instead of creating it — no longer postcondition-only.
+- **Imported OpenAPI capabilities enforced at runtime (H):** `SymbolicBundle` now seeds capabilities
+  from `ActionContract.Capability`, so imported tools are gated by their declared capability after
+  registration (ToolAdapter mappings still win on conflict).
+- **Release supply-chain hardening (H):** Actions SHA-pinned, workflow permissions minimized to
+  least-privilege, packages shipped with `SHA256SUMS` and a build-provenance attestation.
+- **Production deployment model (Blocker):** `/healthz` + `/readyz` endpoints, a non-root multi-stage
+  Dockerfile with HEALTHCHECK, `AllowedHosts` tightened off `*`, and `docs/DEPLOYMENT.md` (TLS/proxy
+  contract, required env vars, host hardening).
+- **Honest scope for unbuilt backends (Blocker + H):** authz/tenant boundary, durable encrypted/WORM
+  storage, and managed KMS/HSM are documented in [docs/MATURITY.md](docs/MATURITY.md) as named-but-unbuilt
+  future seams (not fabricated) — with interim guidance to run the runs dir on an encrypted volume.
+
 ## v1.9.1 — Third review hardening pass (MIT relicense + fixes)
 
 Closes a third external review (1 Critical + 8 High). **198 passing + 3 env-gated skipped.**
