@@ -121,7 +121,13 @@ app.MapPost("/api/run", (RunRequest req, HttpResponse http) =>
         var runId = store.Save(TraceBundleBuilder.From(result, approvals.ToList(), keyProvider));
         http.Headers["X-Run-Id"] = runId;   // SPA reads this to deep-link the persisted run
     }
-    catch (Exception ex) { Console.Error.WriteLine($"WARN: could not persist run: {ex.Message}"); }
+    catch (Exception ex)
+    {
+        // Don't silently claim success: surface the persistence failure so the caller knows the run was
+        // NOT durably recorded (the pipeline result is still returned).
+        Console.Error.WriteLine($"WARN: could not persist run: {ex.Message}");
+        http.Headers["X-Persist-Error"] = ex.Message.Replace('\n', ' ').Replace('\r', ' ');
+    }
 
     return Results.Json(result);
 });

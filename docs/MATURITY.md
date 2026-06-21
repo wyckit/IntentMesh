@@ -2,7 +2,7 @@
 
 The single source of truth for **what is production-ready, what is experimental, and what is future
 work.** Every "proven" claim below is backed by a test that would fail if the claim stopped being
-true (`dotnet test IntentMesh.slnx` — **191 passing, 3 env-gated skipped**). Nothing here is aspirational unless it says so.
+true (`dotnet test IntentMesh.slnx` — **198 passing, 3 env-gated skipped**). Nothing here is aspirational unless it says so.
 
 > IntentMesh is a **research prototype with a production-shaped core**: the security kernel and its
 > guarantees are proven and stable; the *operational backends* around it (KMS, DB persistence,
@@ -33,7 +33,7 @@ true (`dotnet test IntentMesh.slnx` — **191 passing, 3 env-gated skipped**). N
 | `AnthropicLlmClient` real LLM path | Works against the live API (env-gated test); not load-tested or cost-managed |
 | IntentBench (25 scenarios) | **Architecture demonstration**, not a product benchmark: the IntentMesh column is measured (real pipeline), the vanilla/mcp-gated baselines are deterministic architecture-class *models* (not executed agents) and the criteria are coarse — see [BENCHMARK-REPORT.md](BENCHMARK-REPORT.md). `intentbench --live` runs the proposal layer against a real model. |
 | SMTP + OAuth 2.0 device flow | Real transports; need your credentials and a consent screen |
-| Control Room SPA | Useful for governance/debugging; dependency-free demo UI. The `/api` surface is **enforced local-only** — a non-loopback caller is refused unless `INTENTMESH_WEB_TOKEN` is set, in which case every API call must present it (`X-Api-Token` / `Authorization: Bearer`). It also **refuses to start in Production with the demo audit key** (`INTENTMESH_AUDIT_KEY`, or `INTENTMESH_ALLOW_INSECURE_KEY=1` to opt out). Full auth, rate-limiting, and multi-tenant isolation remain future. |
+| Control Room SPA | Useful for governance/debugging; dependency-free demo UI. The `/api` surface is **enforced local-only** — a non-loopback caller is refused unless `INTENTMESH_WEB_TOKEN` is set, in which case every API call must present it (`X-Api-Token` / `Authorization: Bearer`). It also **refuses to start in Production with the demo audit key** (`INTENTMESH_AUDIT_KEY`, or `INTENTMESH_ALLOW_INSECURE_KEY=1` to opt out). **Not production authz:** access is loopback-or-single-shared-token and approvals are caller-asserted node ids — there is no principal, tenant, role, per-run ownership, or server-issued approval challenge. Real authz is a future seam. |
 | Policy authoring | C# `PolicyGate` is authoritative; symbolic metadata + fixtures/diff support review (no declarative DSL yet) |
 
 ## 🔭 Future — named seams, not built (not faked)
@@ -46,10 +46,8 @@ true (`dotnet test IntentMesh.slnx` — **191 passing, 3 env-gated skipped**). N
   single shared `INTENTMESH_WEB_TOKEN`, plus a 256 KB request-body cap — not per-tenant auth or rate limiting.)
 - **Rate limiting / quotas** on the Control Room API.
 - **Fuzz / mutation testing + enforced coverage thresholds** — the suite is example-based today.
-- **CI gates for the real LLM and real filesystem-MCP paths** — those tests skip without
-  `ANTHROPIC_API_KEY` / `INTENTMESH_FS_E2E=1`; the stdio-MCP E2E does run in CI (node present).
-- **Hardened SSRF for a caller-supplied `HttpClient`** — the redirect/DNS-rebinding guard applies to the
-  default MCP HTTP client; a caller-provided client is the caller's responsibility (documented on `Connect`).
+- **Live-LLM CI gate** — the real-Anthropic test runs in CI only when the `ANTHROPIC_API_KEY` secret is
+  configured (it skips otherwise). The real filesystem-MCP and stdio-MCP E2E paths now DO run in CI.
 
 ## How to read a claim
 

@@ -35,6 +35,13 @@ public sealed class PolicyGate
     private readonly SymbolicBundle _bundle;
     public PolicyGate(SymbolicBundle bundle) => _bundle = bundle;
 
+    /// <summary>The closed set of READ-only query operations (case-insensitive). Everything else is a
+    /// write and is denied under a read-only role — default-deny, not deny-list.</summary>
+    private static readonly HashSet<string> QueryReadOps = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Select", "Read", "Count", "Aggregate", "Scan", "Get", "List", "Sum", "Avg", "Min", "Max",
+    };
+
     public PolicyDecision Evaluate(IntentNode node, PolicyContext ctx)
     {
         var trust = node.TrustSource.ToString();
@@ -104,7 +111,10 @@ public sealed class PolicyGate
         if (node.Action is BuildQueryPlanAction qp)
         {
             var db = ctx.Workspace.Db;
-            bool qpDestructive = qp.Operation is "Delete" or "Drop" or "Truncate" or "Update";
+            // ALLOW-LIST, case-insensitive: only known READ operations are non-destructive; anything else
+            // (Delete/Drop/Truncate/Update, a lowercase variant, or an unknown op) is treated as a write
+            // and blocked under a read-only role. A deny-list would pass unknown/odd-cased write ops.
+            bool qpDestructive = !QueryReadOps.Contains(qp.Operation ?? "");
             if (untrusted)
             {
                 var rules = new List<string> { "pol-query-untrusted" };

@@ -66,6 +66,32 @@ public sealed class DataAgentTests
         Assert.All(r.Verification, v => Assert.True(v.Pass));
     }
 
+    [Theory]
+    [InlineData("delete")]   // lowercase variant of a destructive op
+    [InlineData("DROP")]
+    [InlineData("Update")]
+    [InlineData("upsert")]   // unknown write op — default-deny
+    public void Non_read_query_ops_are_blocked_under_a_read_only_role(string op)
+    {
+        var bundle = SymbolicBundle.Load(DatasetLocator.FindCompiledDir());
+        var gate = new PolicyGate(bundle);
+        var ws = Workspace.CreateDemo();   // db.Role == "read-only"
+        var ctx = new PolicyContext(ws, new HashSet<string>(), bundle.AllCapabilities, bundle.Capabilities);
+
+        var node = new IntentNode
+        {
+            Id = "q",
+            Type = Kinds.BuildQueryPlan,
+            Label = "plan",
+            Action = new BuildQueryPlanAction(op, "signups", "x", 10),
+            TrustSource = TrustSource.User,
+            Status = NodeStatus.Resolved,
+        };
+        var d = gate.Evaluate(node, ctx);
+        Assert.Equal(Decision.Block, d.Decision);
+        Assert.Contains("pol-query-readonly", d.TriggeredRules);
+    }
+
     [Fact]
     public void A_direct_run_query_is_validated_by_the_data_policy_not_generic_allow()
     {
