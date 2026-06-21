@@ -42,7 +42,14 @@ true (`dotnet test IntentMesh.slnx` — **183 passing, 3 env-gated skipped**). N
 - **Durable persistence backends** behind `IRunArtifactStore` (file store shipped; DB/blob future).
 - **Declarative policy DSL** — see [POLICY-AUTHORING.md](POLICY-AUTHORING.md) (C# authoritative today).
 - **Live RSRM hot-load** of the `im-*` bundle.
-- **Multi-tenant isolation / authn-z** for the Control Room and run store.
+- **Multi-tenant isolation / authn-z** for the Control Room and run store. (Today: loopback-only or a
+  single shared `INTENTMESH_WEB_TOKEN`, plus a 256 KB request-body cap — not per-tenant auth or rate limiting.)
+- **Rate limiting / quotas** on the Control Room API.
+- **Fuzz / mutation testing + enforced coverage thresholds** — the suite is example-based today.
+- **CI gates for the real LLM and real filesystem-MCP paths** — those tests skip without
+  `ANTHROPIC_API_KEY` / `INTENTMESH_FS_E2E=1`; the stdio-MCP E2E does run in CI (node present).
+- **Hardened SSRF for a caller-supplied `HttpClient`** — the redirect/DNS-rebinding guard applies to the
+  default MCP HTTP client; a caller-provided client is the caller's responsibility (documented on `Connect`).
 
 ## How to read a claim
 
