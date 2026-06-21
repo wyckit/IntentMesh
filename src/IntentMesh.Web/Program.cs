@@ -217,3 +217,6 @@ app.Run();
 // full-authority Confirm node — a blocked zero-trust node stays blocked regardless.
 record RunRequest(string? Prompt, string[]? Approvals);
 record ExportRequest(string? Prompt, string[]? Approvals, string? Format);
+
+// Exposed so the test project can host the app via WebApplicationFactory<Program>.
+public partial class Program { }
