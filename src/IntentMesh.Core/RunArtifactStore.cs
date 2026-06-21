@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace IntentMesh.Core;
 
 /// <summary>
@@ -31,6 +33,11 @@ public interface IRunArtifactStore
 public sealed class FileRunArtifactStore : IRunArtifactStore
 {
     public const string BundleFile = "bundle.json";
+    /// <summary>Ownership sidecar. Deliberately NOT one of the signed split artifacts: ownership is an
+    /// access-control record (who created the run), not part of the tamper-evident audit, so writing it
+    /// does not change the bundle signature or the audit schema.</summary>
+    public const string OwnerFile = "owner.json";
+    private static readonly JsonSerializerOptions OwnerJson = new() { PropertyNameCaseInsensitive = true };
     private readonly string _root;
 
     public FileRunArtifactStore(string root)
@@ -142,6 +149,20 @@ public sealed class FileRunArtifactStore : IRunArtifactStore
         return File.Exists(path) ? File.ReadAllText(path) : null;
     }
 
+    /// <summary>Record the principal/tenant that created a run (an access-control sidecar, not part of
+    /// the signed bundle). Written atomically into the run directory.</summary>
+    public void RecordOwner(string runId, RunOwner owner)
+        => WriteAtomic(Path.Combine(RunDir(runId), OwnerFile), JsonSerializer.Serialize(owner, OwnerJson));
+
+    /// <summary>Read a run's ownership sidecar, or null if none was recorded.</summary>
+    public RunOwner? ReadOwner(string runId)
+    {
+        var path = Path.Combine(RunDir(runId), OwnerFile);
+        if (!File.Exists(path)) return null;
+        try { return JsonSerializer.Deserialize<RunOwner>(File.ReadAllText(path), OwnerJson); }
+        catch (JsonException) { return null; }
+    }
+
     public IReadOnlyList<string> List()
         => Directory.Exists(_root)
             ? Directory.GetDirectories(_root)
@@ -198,6 +219,10 @@ public sealed class FileRunArtifactStore : IRunArtifactStore
         return toArchive;
     }
 }
+
+/// <summary>Ownership record for a persisted run: the principal and tenant that created it, and when.
+/// Used for tenant-scoped access control and audit display — not part of the signed bundle.</summary>
+public sealed record RunOwner(string PrincipalId, string TenantId, long CreatedAtUnix);
 
 /// <summary>A compact, inspectable summary of one persisted run — the row an operator history view
 /// renders. Built from the persisted bundle (prompt, decision counts, signing key id, approvals).</summary>

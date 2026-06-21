@@ -104,7 +104,7 @@ dotnet run --project src/IntentMesh.Cli -- --trace "plan my Friday and draft Sar
 dotnet run --project src/IntentMesh.Web                       # then open the printed localhost URL
 
 # tests
-dotnet test IntentMesh.slnx                                   # 200 passing (+3 env-gated skipped)
+dotnet test IntentMesh.slnx                                   # 218 passing (+3 env-gated skipped)
 ```
 
 ### Wrap your own agent (the SDK on-ramp)
@@ -190,7 +190,7 @@ v1.7 platform:** Phase 1 (clarity) ✓ · Phase 2 (signed artifacts, replay, con
 Phase 3 (Control Room v1) ✓ · Phase 4 (IntentBench 25/25) ✓ · Phase 5 (SDK + MCP proxy / OpenAPI
 import / real-adapter example) ✓ · Phase 6 (manifesto, whitepaper, landing) ✓. **v1.7** adds the
 adoptable platform surface (full-lifecycle SDK + host template, real-LLM-proposer hardening,
-operator workflow, audit operations). **200 passing (+3 env-gated skipped) tests · IntentBench 25/25 · TLM 7/7.**
+operator workflow, audit operations). **218 passing (+3 env-gated skipped) tests · IntentBench 25/25 · TLM 7/7.**
 
 **Proven vs. experimental vs. future (claims discipline).** [docs/MATURITY.md](docs/MATURITY.md) is
 the canonical statement: every *proven* claim has a passing test that would fail if it stopped being
@@ -207,7 +207,7 @@ and the [CHANGELOG](CHANGELOG.md).
 ## Status
 
 Research prototype with a production-shaped core, **v1.8.0**. Symbolic layer: 7 TLMs, ~125 concepts,
-7/7 round-trip verify; typed action contracts across four domains. **xUnit 200 passing (+3 env-gated skipped).** Five demo
+7/7 round-trip verify; typed action contracts across four domains. **xUnit 218 passing (+3 env-gated skipped).** Five demo
 scenarios. See [docs/MATURITY.md](docs/MATURITY.md) for the proven / experimental / future breakdown.
 Delivered beyond v0.1:
 
@@ -250,10 +250,15 @@ Delivered beyond v0.1:
   transient retry, OAuth token-scope); policy authoring made real (fixtures, diffing,
   [review docs](docs/POLICY-REVIEW.md)). See the [CHANGELOG](CHANGELOG.md).
 
+**Multi-tenant authz is built (v1.10.0):** principal/tenant/role identity (built-in signed tokens or a
+trusted reverse-proxy/OIDC contract), tenant-isolated runs, and server-issued approval challenges — see
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
 **Deliberately future (not built, not faked) — see [docs/MATURITY.md](docs/MATURITY.md):** a KMS/HSM
-key-management *backend* behind the existing `IAuditKeyProvider` seam, durable audit-log persistence
-backends (file-based shipped; DB/blob future), live RSRM hot-load of the `im-*` bundle, a declarative
-policy DSL (see [docs/POLICY-AUTHORING.md](docs/POLICY-AUTHORING.md)), and multi-tenant isolation / authn-z.
+key-management *backend* behind the existing `IAuditKeyProvider` seam, durable encrypted/WORM persistence
+backends (per-tenant file store shipped; DB/blob future), live RSRM hot-load of the `im-*` bundle, a
+declarative policy DSL (see [docs/POLICY-AUTHORING.md](docs/POLICY-AUTHORING.md)), and SSO/SCIM
+provisioning + API rate limiting.
 
 Conventions follow PassGen: .NET 10, nullable + implicit usings, file-scoped namespaces,
 `sealed record` contracts, xUnit. Self-contained git repo. See [docs/ROADMAP.md](docs/ROADMAP.md) for the versioned plan.
