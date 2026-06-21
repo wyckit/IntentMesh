@@ -46,7 +46,16 @@ public static class RunExplain
 
         // What would approval do? Approve exactly the gated node ids and re-run on a fresh workspace.
         var widened = new HashSet<string>(appr, StringComparer.OrdinalIgnoreCase);
-        foreach (var n in awaiting) widened.Add(n.NodeId);
+        var nodeById = current.Nodes.ToDictionary(n => n.Id);
+        foreach (var n in awaiting)
+        {
+            // Destructive deletion approves per file (node#fileRef), not by node id — so the what-if
+            // projection grants the per-file tokens it would actually need.
+            if (n.Type == Kinds.DeleteFiles && nodeById.TryGetValue(n.NodeId, out var dn))
+                foreach (var r in DeleteRefs(dn)) widened.Add($"{n.NodeId}#{r}");
+            else
+                widened.Add(n.NodeId);
+        }
 
         var deltas = new List<DecisionDelta>();
         if (awaiting.Count > 0)
@@ -61,6 +70,14 @@ public static class RunExplain
         }
 
         return new RunExplanation(blocked, awaiting, deltas);
+    }
+
+    /// <summary>The file refs of a delete node, read from its serialized <c>fileRefs</c> field.</summary>
+    private static IEnumerable<string> DeleteRefs(NodeView n)
+    {
+        var f = n.Fields.FirstOrDefault(x => x.Field == "fileRefs");
+        return f is null ? Array.Empty<string>()
+            : f.Value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
     }
 
     private static GatedNode ToGated(NodeView n, IReadOnlyDictionary<string, PolicyView> policyById)

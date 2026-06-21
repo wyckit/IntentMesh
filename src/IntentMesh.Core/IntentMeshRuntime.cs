@@ -137,11 +137,11 @@ public sealed class IntentMeshRuntime
             {
                 if (node.Action is DeleteFilesAction del)
                 {
-                    // True PER-FILE approval: approve a whole node (node.Id) OR specific files
-                    // (node.Id#fileRef). The adapter deletes only these refs — one node approval can't
-                    // delete the whole batch.
+                    // Destructive deletion requires explicit PER-FILE approval (node.Id#fileRef). A bare
+                    // node-level approval does NOT blanket-approve the batch — granular consent is the
+                    // whole point of per-file approval; the adapter deletes only these exact refs.
                     node.ApprovedRefs = del.FileRefs
-                        .Where(r => effectiveApprovals.Contains(node.Id) || effectiveApprovals.Contains($"{node.Id}#{r}"))
+                        .Where(r => effectiveApprovals.Contains($"{node.Id}#{r}"))
                         .ToHashSet(StringComparer.OrdinalIgnoreCase);
                     approved = node.ApprovedRefs.Count > 0;
                 }
