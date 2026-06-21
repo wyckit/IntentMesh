@@ -50,6 +50,42 @@ public sealed class PersistenceTests
         => Assert.True(FileRunArtifactStore.IsValidRunId("6df0037087a8c7f9"));
 
     [Fact]
+    public void Replay_does_not_execute_when_the_signature_fails()
+    {
+        var saved = TraceBundleBuilder.From(Runtime().Run(Prompt, Workspace.CreateDemo()));
+        var tampered = saved with { Prompt = saved.Prompt + " (tampered)" };   // breaks the bundle signature
+
+        var replay = RunReplay.Reproduce(Runtime(), Workspace.CreateDemo(), tampered);
+
+        Assert.False(replay.SignatureVerified);
+        Assert.False(replay.Reproduced);
+        Assert.Equal("", replay.RecomputedSignature);   // empty => the run was never re-executed (early return)
+    }
+
+    [Fact]
+    public void A_signed_run_copied_under_a_different_id_is_not_intact()
+    {
+        var root = TempRoot();
+        try
+        {
+            var store = new FileRunArtifactStore(root);
+            var realId = store.Save(TraceBundleBuilder.From(Runtime().Run(Prompt, Workspace.CreateDemo())));
+            Assert.True(store.VerifyArtifacts(realId));   // intact at its own content-address
+
+            // Copy the run's files under a DIFFERENT valid-hex id.
+            var otherId = new string('a', 16);
+            var dst = Path.Combine(root, otherId);
+            Directory.CreateDirectory(dst);
+            foreach (var f in Directory.GetFiles(Path.Combine(root, realId)))
+                File.Copy(f, Path.Combine(dst, Path.GetFileName(f)));
+
+            // The bundle is byte-valid but its content-address is realId, not otherId → not intact here.
+            Assert.False(store.VerifyArtifacts(otherId));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
     public void ReadArtifact_serves_the_on_disk_file_and_reflects_tampering()
     {
         var root = TempRoot();

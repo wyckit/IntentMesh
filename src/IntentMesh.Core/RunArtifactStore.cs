@@ -75,10 +75,20 @@ public sealed class FileRunArtifactStore : IRunArtifactStore
         var id = RunIdOf(bundle);
         var dir = RunDir(id);
         Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, BundleFile), TraceBundleBuilder.ToJson(bundle));
+        WriteAtomic(Path.Combine(dir, BundleFile), TraceBundleBuilder.ToJson(bundle));
         foreach (var (name, json) in TraceBundleBuilder.SplitFiles(bundle))   // derived exports
-            File.WriteAllText(Path.Combine(dir, name), json);
+            WriteAtomic(Path.Combine(dir, name), json);
         return id;
+    }
+
+    /// <summary>Write a file atomically: stage to a temp file in the same directory, then move into
+    /// place (an atomic rename on the same volume) — a crash mid-write can't leave a half-written,
+    /// signature-failing artifact.</summary>
+    private static void WriteAtomic(string path, string content)
+    {
+        var tmp = path + ".tmp";
+        File.WriteAllText(tmp, content);
+        File.Move(tmp, path, overwrite: true);
     }
 
     public TraceBundle Load(string runId)
@@ -109,6 +119,9 @@ public sealed class FileRunArtifactStore : IRunArtifactStore
     private bool VerifyArtifacts(string runId, TraceBundle bundle, bool signatureValid)
     {
         if (!signatureValid) return false;
+        // Bind the directory to the bundle's identity: a run is content-addressed by its signature, so a
+        // valid signed bundle copied under a DIFFERENT id is not "intact" at that id.
+        if (!string.Equals(runId, RunIdOf(bundle), StringComparison.OrdinalIgnoreCase)) return false;
         var dir = RunDir(runId);
         foreach (var (name, expected) in TraceBundleBuilder.SplitFiles(bundle))
         {
@@ -205,10 +218,13 @@ public static class RunReplay
 {
     public static ReplayResult Reproduce(IntentMeshRuntime runtime, Workspace freshWorkspace, TraceBundle saved, byte[]? key = null)
     {
-        bool sigOk = TraceBundleBuilder.VerifySignature(saved, key);
+        // Trust BEFORE execution: never re-run a bundle whose signature doesn't verify — replaying a
+        // tampered bundle's prompt/approvals through real adapters would be an unsigned execution path.
+        if (!TraceBundleBuilder.VerifySignature(saved, key))
+            return new ReplayResult(SignatureVerified: false, Reproduced: false, RecomputedSignature: "");
         var approvals = saved.Approvals.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var rerun = TraceBundleBuilder.From(runtime.Run(saved.Prompt, freshWorkspace, approvals), saved.Approvals.ToList(), key);
-        return new ReplayResult(sigOk, rerun.BundleSignature == saved.BundleSignature, rerun.BundleSignature);
+        return new ReplayResult(SignatureVerified: true, rerun.BundleSignature == saved.BundleSignature, rerun.BundleSignature);
     }
 
     /// <summary>Rotation-aware replay: verify the saved bundle under the key its recorded id names, then
@@ -216,13 +232,15 @@ public static class RunReplay
     /// after the current signing key has rotated. An unknown key id can't reproduce (fail-closed).</summary>
     public static ReplayResult Reproduce(IntentMeshRuntime runtime, Workspace freshWorkspace, TraceBundle saved, IAuditKeyProvider provider)
     {
-        bool sigOk = TraceBundleBuilder.VerifySignature(saved, provider);
+        // Trust BEFORE execution: a bundle that doesn't verify (tampered, or key unknown) is never re-run.
+        if (!TraceBundleBuilder.VerifySignature(saved, provider))
+            return new ReplayResult(SignatureVerified: false, Reproduced: false, RecomputedSignature: "");
         var keyId = TraceBundleBuilder.EffectiveKeyId(saved);   // pre-KeyId bundles fall back to SignedAudit.KeyId
         var key = AuditSigner.ResolveKey(keyId, provider);
-        if (key is null) return new ReplayResult(sigOk, Reproduced: false, RecomputedSignature: "");
+        if (key is null) return new ReplayResult(SignatureVerified: false, Reproduced: false, RecomputedSignature: "");
         var approvals = saved.Approvals.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var rerun = TraceBundleBuilder.From(runtime.Run(saved.Prompt, freshWorkspace, approvals),
             saved.Approvals.ToList(), new FixedKeyProvider(keyId, key));
-        return new ReplayResult(sigOk, rerun.BundleSignature == saved.BundleSignature, rerun.BundleSignature);
+        return new ReplayResult(SignatureVerified: true, rerun.BundleSignature == saved.BundleSignature, rerun.BundleSignature);
     }
 }
