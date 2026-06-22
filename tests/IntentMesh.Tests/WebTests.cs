@@ -75,6 +75,34 @@ public sealed class WebTests
     }
 
     [Fact]
+    public void Production_refuses_to_start_without_a_real_auth_boundary()
+    {
+        // Real audit key (so the demo-key guard passes) but NO auth configured → the Production auth guard
+        // must refuse startup. This regression-tests the production guards, which Development-hosted tests
+        // never exercise: the early return surfaces as a failure to start the test host.
+        Environment.SetEnvironmentVariable("INTENTMESH_AUDIT_KEY", Convert.ToBase64String(new byte[32]));
+        Environment.SetEnvironmentVariable("INTENTMESH_PRINCIPALS", null);
+        Environment.SetEnvironmentVariable("INTENTMESH_WEB_TOKEN", null);
+        Environment.SetEnvironmentVariable("INTENTMESH_TRUSTED_PROXY", null);
+        Environment.SetEnvironmentVariable("INTENTMESH_ALLOW_INSECURE_AUTH", null);
+        var runsDir = Path.Combine(Path.GetTempPath(), "im-prod-" + Guid.NewGuid().ToString("N"));
+        Environment.SetEnvironmentVariable("INTENTMESH_RUNS_DIR", runsDir);
+        var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b => b.UseEnvironment("Production"));
+        try
+        {
+            Assert.ThrowsAny<Exception>(() => factory.CreateClient());
+        }
+        finally
+        {
+            factory.Dispose();
+            foreach (var v in new[] { "INTENTMESH_AUDIT_KEY", "INTENTMESH_PRINCIPALS", "INTENTMESH_WEB_TOKEN",
+                                      "INTENTMESH_TRUSTED_PROXY", "INTENTMESH_ALLOW_INSECURE_AUTH", "INTENTMESH_RUNS_DIR" })
+                Environment.SetEnvironmentVariable(v, null);
+            try { Directory.Delete(runsDir, recursive: true); } catch { /* best effort */ }
+        }
+    }
+
+    [Fact]
     public async Task Security_headers_are_present_on_responses()
     {
         Environment.SetEnvironmentVariable("INTENTMESH_WEB_TOKEN", null);

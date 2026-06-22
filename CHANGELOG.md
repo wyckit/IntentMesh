@@ -3,6 +3,40 @@
 All notable changes to IntentMesh. Claims are test-backed; see [docs/MATURITY.md](docs/MATURITY.md)
 for the production-ready / experimental / future breakdown.
 
+## v1.16.0 — Approval integrity, single-use challenges & concurrency safety (ninth review pass)
+
+Closes a ninth external review (5 High + Mediums). **260 passing + 3 env-gated skipped.**
+
+High:
+- **Approval can't drift from the reviewed run.** `/api/runs/{id}/approve` now requires the stored run to
+  still **reproduce** under the current runtime (`RunReplay.Reproduce(...).Reproduced`) before applying
+  approvals — if code/bundle behavior drifted since review, it returns 409. `/challenges` mints from the
+  run's **own signed policy decisions** (not a fresh re-run), so the approval queue matches the reviewed graph.
+- **Approval challenges are single-use.** A `NonceLedger` consumes each challenge's nonce on success
+  (web `/approve` and the MCP proxy), so the same challenge can't trigger repeated side effects within its TTL.
+- **Private-note drafts are blocked at the gate.** A `DraftEmailAction` whose body sources include a
+  private note is refused (`pol-draft-private-ref`) **before** the adapter dereferences private content —
+  not merely flagged as a postcondition after the fact.
+- **Concurrent prune can't lose audit history.** `Archive` is serialized and never deletes an existing
+  archive destination (a content-addressed run already there is the same run); racing prunes drop the
+  redundant live copy instead. Temp files use unique names so a save racing a prune can't clobber staging.
+- **Production startup guards are regression-tested.** A test hosts the app in **Production** and asserts
+  it refuses to start without a real auth boundary — so the guards can't silently stop firing.
+
+Medium:
+- **Rotation-aware sidecar verification** — owner/external-call signatures verify under the *recorded*
+  key id (resolved via the provider), so key rotation doesn't invalidate older signed sidecars.
+- **Docker healthcheck uses `curl`** (installed in the image) — the base aspnet image ships no `wget`/`curl`,
+  so the prior probe never worked.
+- **Live-Anthropic test fails (not passes) on a dead transport** — it now asserts a non-empty bounded
+  proposal, so a swallowed transport error can't go green.
+- **CI guards against a zero-match FS-E2E filter** (a renamed test would otherwise pass vacuously).
+- Stale README version snippet replaced with a non-drifting reference.
+
+> Known constraints (documented, not regressions): an `McpStdioClient` wraps one server subprocess and is
+> not safe to share across threads (use one client per connection); tenant-wide run visibility is the
+> chosen model; NuGet cryptographic signing is wired in CI but needs a certificate.
+
 ## v1.15.0 — Container startup, audit binding & production-auth hardening (eighth review pass)
 
 Closes an eighth external review (3 High + 6 Medium). **256 passing + 3 env-gated skipped.**

@@ -218,6 +218,38 @@ public sealed class LlmProposerTests
     /// Real Anthropic call — env-gated (ANTHROPIC_API_KEY). Proves the AnthropicLlmClient transport
     /// is wired; deterministic logic is covered by the scripted tests above.
     /// </summary>
+    private sealed class SingleNodeProposer : IIntentProposer
+    {
+        private readonly IntentNode _n;
+        public SingleNodeProposer(IntentNode n) => _n = n;
+        public ProposedPlan Propose(string prompt, Workspace ws) =>
+            new(new[] { _n }, Array.Empty<string>(), Array.Empty<string>());
+    }
+
+    [Fact]
+    public void A_draft_referencing_a_private_note_is_blocked_before_dereferencing()
+    {
+        // A proposer (LLM or full-authority) that sources a draft body from a PRIVATE note must be blocked
+        // AT THE GATE — before the adapter pulls the private content into the message.
+        var node = new IntentNode
+        {
+            Id = "n1",
+            Type = Kinds.DraftEmail,
+            Label = "draft to Sarah",
+            Action = new DraftEmailAction("Sarah", "Update", new[] { "note-strategy" }),   // note-strategy is Private
+            SourceText = "draft",
+            TrustSource = TrustSource.User,
+            Status = NodeStatus.Resolved,
+        };
+        var ws = Workspace.CreateDemo();
+        var r = IntentMeshRuntime.Load().RunWith(new SingleNodeProposer(node), "Draft Sarah from my notes.", ws, new HashSet<string>());
+
+        var view = r.Nodes.First(n => n.Id == "n1");
+        Assert.Equal("Blocked", view.Status);
+        Assert.Contains("pol-draft-private-ref", r.Policy.First(p => p.NodeId == "n1").TriggeredRules);
+        Assert.Empty(ws.Drafts);   // the private note was never dereferenced into a draft
+    }
+
     [SkippableFact]
     public void LlmProposer_against_the_real_api_when_configured()
     {
@@ -225,6 +257,9 @@ public sealed class LlmProposerTests
         if (client is null) { Skip.If(true, "ANTHROPIC_API_KEY not set — real-API test skipped"); return; }
         var bundle = Bundle();
         var plan = new LlmIntentProposer(bundle, client).Propose("Read my calendar for Friday.", Workspace.CreateDemo());
-        Assert.NotNull(plan);   // a real model should propose something registry-bounded (or nothing) without throwing
+        // When the key IS configured this must prove the REAL transport worked: a clear "read my calendar"
+        // prompt yields at least one registry-bounded node. A swallowed transport failure returns an empty
+        // plan, which now FAILS here rather than passing — the test can't go green on a dead transport.
+        Assert.NotEmpty(plan.Nodes);
     }
 }

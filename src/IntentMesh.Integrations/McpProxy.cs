@@ -112,6 +112,7 @@ public sealed class McpProxy
     private readonly ApprovalChallengeService? _approvalService;
     private readonly string _tenantId;
     private readonly string _principalId;
+    private readonly NonceLedger _approvalLedger = new();   // approval challenges are single-use within TTL
 
     /// <param name="runtime">
     /// A loaded IntentMeshRuntime. The caller controls which capabilities are
@@ -249,7 +250,7 @@ public sealed class McpProxy
             var fingerprint = CallFingerprint(call);
             var verified = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var token in effectiveApprovals)
-                if (_approvalService.TryVerify(token, fingerprint, _tenantId, now, out var approvedNode))
+                if (_approvalService.TryVerify(token, fingerprint, _tenantId, now, out var approvedNode, _approvalLedger))
                     verified.Add(approvedNode);
             effectiveApprovals = verified;
         }

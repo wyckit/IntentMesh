@@ -122,7 +122,12 @@ jobs:
       - name: Real filesystem MCP E2E (pinned npx; runs after packing; NO secrets in env)
         env:
           INTENTMESH_FS_E2E: '1'   # runs `npx -y @modelcontextprotocol/server-filesystem@<pinned>` — note: no ANTHROPIC_API_KEY here
-        run: dotnet test IntentMesh.slnx -c Release --no-build --nologo --filter "FullyQualifiedName~McpProxy_wires_a_real_filesystem_mcp_server_end_to_end"
+        run: |
+          out=$(dotnet test IntentMesh.slnx -c Release --no-build --nologo \
+            --filter "FullyQualifiedName~McpProxy_wires_a_real_filesystem_mcp_server_end_to_end" 2>&1)
+          echo "$out"
+          # Guard against a renamed test silently matching zero cases (dotnet test exits 0 on "no match").
+          echo "$out" | grep -qE "Total:[[:space:]]+1\b" || { echo "::error::FS-E2E filter matched no test (expected exactly 1)"; exit 1; }
 
   # Build-provenance attestation runs in a SEPARATE job that holds the only id-token/attestations write
   # scopes — so the build/test/pack job above has no write tokens. Push events only (fork PRs can't sign).

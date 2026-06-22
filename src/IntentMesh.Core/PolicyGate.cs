@@ -177,6 +177,15 @@ public sealed class PolicyGate
 
         if (node.Type == Kinds.DraftEmail && IsEmail(node.Action, out var to))
         {
+            // Block BEFORE the adapter dereferences private note bodies into the draft: a draft whose body
+            // sources include a PRIVATE note is refused at the gate (not merely flagged as a postcondition
+            // failure after the private content was already pulled into the message).
+            if (node.Action is DraftEmailAction d
+                && d.BodySourceRefs.Any(r => ctx.Workspace.Notes.Any(n => n.Id == r && n.Private)))
+                return new PolicyDecision(node.Id, Decision.Block, risk,
+                    "Draft references a private note — blocked before any private content is dereferenced into the message.",
+                    new[] { "pol-draft-private-ref" }, false, trust, sensitive, false, false);
+
             // Check the recipient AT THE GATE, before the draft is created — not only as a postcondition.
             // A draft to a recipient the user never named is gated for confirmation, even from a
             // full-authority proposer (which could invent one).
