@@ -3,6 +3,25 @@
 All notable changes to IntentMesh. Claims are test-backed; see [docs/MATURITY.md](docs/MATURITY.md)
 for the production-ready / experimental / future breakdown.
 
+## v1.14.1 — Per-tool MCP forward-arg allowlist (all built-ins)
+
+Extends (and corrects) the v1.14.0 forward-arg stripping. **251 passing + 3 env-gated skipped.**
+
+- **Strict allowlist for every built-in tool**, not just filesystem: `send_email` → `{to,subject,body}`,
+  `run_command` → `{cmd}`, `read_calendar` → `{range}`, plus the full `@modelcontextprotocol/server-filesystem`
+  tool set. Any argument outside a tool's known surface is stripped before forwarding, so an
+  unrecognized/unchecked key can't be honored by the server.
+- **Fixes a v1.14.0 over-strip:** the previous blanket fs key-set (`path/source/destination/paths/content`)
+  would have dropped legitimate args of richer fs tools (`edit_file`'s `edits`, `search_files`'s `pattern`,
+  `directory_tree`'s `excludePatterns`, `read_text_file`'s `head/tail`, `list_directory_with_sizes`'s
+  `sortBy`). Each tool now lists its full legitimate arg surface, so strictness no longer breaks function.
+- A custom-mapper tool not in the allowlist is forwarded unchanged (the mapper owns its arg surface).
+- New tests cover a non-fs strip (`read_calendar`), full-surface preservation (`search_files` keeps
+  `pattern`), and the live FS-E2E continues to exercise read/write against the real server.
+
+> The filesystem allowlists track the pinned server version (`@modelcontextprotocol/server-filesystem@2026.1.14`);
+> bump them alongside the package.
+
 ## v1.14.0 — Audit fidelity, verification & supply-chain hardening (seventh review pass)
 
 Closes a seventh external review (7 High + 3 Medium). **249 passing + 3 env-gated skipped.**

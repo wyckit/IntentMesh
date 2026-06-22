@@ -323,53 +323,88 @@ public sealed class McpProxy
         return new McpForwardResult(gate, ServerResponse: response);
     }
 
-    /// <summary>For a filesystem call under an allowed root, rewrite each path-bearing arg to the exact
-    /// canonical in-root path the gate validated — so the forwarded call can't re-resolve a relative or
-    /// aliased original arg to a different target than was checked. Non-fs calls (or no allowed root)
-    /// are forwarded unchanged.</summary>
+    /// <summary>
+    /// The EXACT argument keys forwarded to the server for each BUILT-IN tool — every other key is stripped
+    /// before the call leaves the proxy, so an argument the typed mapping never represented (and the policy
+    /// never checked) can't be honored unsigned/unchecked by the server. Each entry is the tool's FULL
+    /// legitimate arg surface (so strictness doesn't break the tool). The filesystem entries track the
+    /// pinned <c>@modelcontextprotocol/server-filesystem</c> version; bump them with the server. A
+    /// custom-mapper tool that is NOT listed here is forwarded unchanged — the custom mapper owns its
+    /// server's arg surface (and is responsible for its own allowlisting).
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, string[]> ForwardArgAllowlist =
+        new Dictionary<string, string[]>(StringComparer.Ordinal)
+        {
+            // Non-filesystem built-ins (small, fully-modeled surfaces).
+            ["send_email"] = new[] { "to", "subject", "body" },
+            ["run_command"] = new[] { "cmd" },
+            ["read_calendar"] = new[] { "range" },
+            // @modelcontextprotocol/server-filesystem tools.
+            ["read_file"] = new[] { "path", "head", "tail" },
+            ["read_text_file"] = new[] { "path", "head", "tail" },
+            ["read_media_file"] = new[] { "path" },
+            ["read_multiple_files"] = new[] { "paths" },
+            ["get_file_info"] = new[] { "path" },
+            ["list_directory"] = new[] { "path" },
+            ["list_directory_with_sizes"] = new[] { "path", "sortBy" },
+            ["directory_tree"] = new[] { "path", "excludePatterns" },
+            ["search_files"] = new[] { "path", "pattern", "excludePatterns" },
+            ["list_allowed_directories"] = Array.Empty<string>(),
+            ["write_file"] = new[] { "path", "content" },
+            ["edit_file"] = new[] { "path", "edits", "dryRun" },
+            ["create_directory"] = new[] { "path" },
+            ["move_file"] = new[] { "source", "destination" },
+        };
+
+    /// <summary>Normalize a call for forwarding: (1) for a filesystem call under a sandbox root, rewrite
+    /// each path-bearing arg to the exact canonical in-root path the gate validated (so the server can't
+    /// re-resolve a relative/aliased original to a different target than was checked); (2) for any built-in
+    /// tool, strip every argument outside that tool's allowlist so an unrecognized/unchecked key can't be
+    /// honored. A custom-mapper tool not in the allowlist is forwarded with its args intact.</summary>
     private McpToolCall NormalizeForForward(McpToolCall call)
     {
-        if (_allowedRoot is null) return call;
         var (action, _) = _customMapper?.Invoke(call) ?? MapToAction(call);
-        if (action is not (FsReadAction or FsWriteAction)) return call;
-
-        var root = Canonicalize(Path.TrimEndingDirectorySeparator(Path.GetFullPath(_allowedRoot)));
         var args = new Dictionary<string, string>(call.Args, StringComparer.Ordinal);
-        bool hadPath = false;
-        foreach (var key in new[] { "path", "source", "destination" })
-            if (args.TryGetValue(key, out var p) && !string.IsNullOrEmpty(p)) { args[key] = Resolve(p, root); hadPath = true; }
 
-        // Custom-mapper paths: a per-server mapper may carry the path in a NON-standard arg (e.g. "target",
-        // "filepath"). The typed action already exposes the validated path(s); rewrite whichever raw arg
-        // holds that value to the exact canonical in-root path, so the forwarded call can't re-resolve a
-        // relative/aliased original to a different target than the gate checked.
-        foreach (var typed in TypedPaths(action))
+        if (_allowedRoot is not null && action is FsReadAction or FsWriteAction)
         {
-            var canonical = Resolve(typed, root);
-            foreach (var key in args.Keys.ToList())
-                if (!string.IsNullOrEmpty(args[key]) && Resolve(args[key], root) == canonical) { args[key] = canonical; hadPath = true; }
-        }
-        // No-path filesystem tool under a sandbox: scope it explicitly to the root rather than letting the
-        // server fall back to its own working directory (defense in depth over the server's own sandbox).
-        if (!hadPath && !args.ContainsKey("paths"))
-            args["path"] = root;
-        if (args.TryGetValue("paths", out var multi) && !string.IsNullOrWhiteSpace(multi))
-        {
-            try
+            var root = Canonicalize(Path.TrimEndingDirectorySeparator(Path.GetFullPath(_allowedRoot)));
+            bool hadPath = false;
+            foreach (var key in new[] { "path", "source", "destination" })
+                if (args.TryGetValue(key, out var p) && !string.IsNullOrEmpty(p)) { args[key] = Resolve(p, root); hadPath = true; }
+
+            // Custom-mapper paths: a per-server mapper may carry the path in a NON-standard arg (e.g.
+            // "target"). The typed action exposes the validated path(s); rewrite whichever raw arg holds
+            // that value to the canonical in-root path.
+            foreach (var typed in TypedPaths(action))
             {
-                var parsed = JsonSerializer.Deserialize<List<string>>(multi);
-                if (parsed is not null)
-                    args["paths"] = JsonSerializer.Serialize(parsed.Select(e => string.IsNullOrEmpty(e) ? e : Resolve(e, root)).ToList());
+                var canonical = Resolve(typed, root);
+                foreach (var key in args.Keys.ToList())
+                    if (!string.IsNullOrEmpty(args[key]) && Resolve(args[key], root) == canonical) { args[key] = canonical; hadPath = true; }
             }
-            catch { /* not a JSON array — it was validated as a single path; leave as-is */ }
+            // No-path filesystem tool under a sandbox: scope it explicitly to the root rather than letting
+            // the server fall back to its own working directory (defense in depth over the server's sandbox).
+            if (!hadPath && !args.ContainsKey("paths"))
+                args["path"] = root;
+            if (args.TryGetValue("paths", out var multi) && !string.IsNullOrWhiteSpace(multi))
+            {
+                try
+                {
+                    var parsed = JsonSerializer.Deserialize<List<string>>(multi);
+                    if (parsed is not null)
+                        args["paths"] = JsonSerializer.Serialize(parsed.Select(e => string.IsNullOrEmpty(e) ? e : Resolve(e, root)).ToList());
+                }
+                catch { /* not a JSON array — it was validated as a single path; leave as-is */ }
+            }
         }
 
-        // Forward ONLY the recognized filesystem arguments — strip any extra/unknown key so an argument the
-        // typed action never represented (and the path policy never checked) cannot be honored by the
-        // server. The forwarded payload is therefore exactly the policy-checked fields.
-        var allowed = new HashSet<string>(new[] { "path", "source", "destination", "paths", "content" }, StringComparer.Ordinal);
-        foreach (var key in args.Keys.Where(k => !allowed.Contains(k)).ToList())
-            args.Remove(key);
+        // Forward-arg allowlist for every built-in tool — strip anything outside the tool's known surface.
+        if (ForwardArgAllowlist.TryGetValue(call.Tool, out var allowed))
+        {
+            var allowedSet = new HashSet<string>(allowed, StringComparer.Ordinal);
+            foreach (var key in args.Keys.Where(k => !allowedSet.Contains(k)).ToList())
+                args.Remove(key);
+        }
 
         return call with { Args = args };
 

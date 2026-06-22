@@ -508,6 +508,57 @@ public sealed class IntegrationTests
         finally { Directory.Delete(root, true); }
     }
 
+    /// <summary>A non-filesystem built-in forward (read_calendar) also carries ONLY its allowlisted args —
+    /// an extra/unknown key is stripped before the call reaches the server.</summary>
+    [Fact]
+    public void Non_filesystem_forward_strips_unknown_args()
+    {
+        var root = TempRoot();
+        try
+        {
+            IReadOnlyDictionary<string, string>? forwarded = null;
+            var client = new CapturingMcpClient(args => { forwarded = args; return "{}"; });
+            var proxy = new McpProxy(Runtime(), Workspace.CreateDemo(), allowedRoot: root,
+                auditStore: new FileRunArtifactStore(TempRoot()), auditKeyProvider: McpTestKeyProvider,
+                approvalService: NewApprovalService(), tenantId: "test");
+
+            var fwd = proxy.GateAndForward(
+                new McpToolCall("read_calendar", new Dictionary<string, string> { ["range"] = "Friday", ["evil"] = "x" }), client);
+
+            Assert.True(fwd.Gate.Allowed);
+            Assert.NotNull(forwarded);
+            Assert.True(forwarded!.ContainsKey("range"));    // the legitimate arg is kept
+            Assert.False(forwarded.ContainsKey("evil"));     // the unknown arg is stripped
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    /// <summary>The allowlist keeps each tool's FULL legitimate surface — a tool with more args than
+    /// path/content (search_files: path + pattern) is not over-stripped, while an unknown arg still is.</summary>
+    [Fact]
+    public void Forward_allowlist_keeps_a_tools_full_arg_surface()
+    {
+        var root = TempRoot();
+        try
+        {
+            IReadOnlyDictionary<string, string>? forwarded = null;
+            var client = new CapturingMcpClient(args => { forwarded = args; return "[]"; });
+            var proxy = new McpProxy(Runtime(), Workspace.CreateDemo(), allowedRoot: root,
+                auditStore: new FileRunArtifactStore(TempRoot()), auditKeyProvider: McpTestKeyProvider,
+                approvalService: NewApprovalService(), tenantId: "test");
+
+            var fwd = proxy.GateAndForward(
+                new McpToolCall("search_files", new Dictionary<string, string> { ["path"] = root, ["pattern"] = "note", ["evil"] = "x" }), client);
+
+            Assert.True(fwd.Gate.Allowed);
+            Assert.NotNull(forwarded);
+            Assert.True(forwarded!.ContainsKey("pattern"));   // a legitimate non-path arg is preserved
+            Assert.True(forwarded.ContainsKey("path"));
+            Assert.False(forwarded.ContainsKey("evil"));      // ...but an unknown one is still stripped
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
     /// <summary>The audit sink and challenge service are MANDATORY for the dangerous operations: a proxy
     /// not wired with them cannot forward (no audit-less side effect) and cannot accept a raw approval —
     /// both throw rather than silently taking an unsafe path. A pure Gate decision still works.</summary>

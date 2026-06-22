@@ -5,7 +5,7 @@
        Demos, tools, the web host, the E2E/bench runners, the template, and tests stay non-packable. -->
 
   <PropertyGroup>
-    <Version>1.14.0</Version>
+    <Version>1.14.1</Version>
     <Authors>Chad Sandor</Authors>
     <Company>wyckit</Company>
     <Product>IntentMesh</Product>
@@ -18,7 +18,7 @@
     <!-- MIT-licensed (SPDX expression in package metadata). -->
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
-    <PackageReleaseNotes>v1.14.0 — seventh review pass: MCP bundles record applied approvals + strip unknown forward args; granular email/calendar verification; CI requires real FS-MCP + packs before npx; digest-pinned Docker with .dockerignore + writable runs volume; proxy-mode dedicated auth key; explain no longer honors caller approvals. See CHANGELOG.md.</PackageReleaseNotes>
+    <PackageReleaseNotes>v1.14.1 — per-tool MCP forward-arg allowlist for ALL built-in tools (send_email/run_command/read_calendar + the full filesystem tool set), replacing the v1.14.0 fs key-set that over-stripped richer tools (edit_file/search_files/etc.). See CHANGELOG.md.</PackageReleaseNotes>
 
     <!-- Reproducible restore: lock files are honored in CI via locked-mode restore. -->
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
