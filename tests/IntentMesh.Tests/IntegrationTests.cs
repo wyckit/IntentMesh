@@ -688,6 +688,52 @@ public sealed class IntegrationTests
             "a side-effecting GET must still be gated — confirmation keys on side effect, not verb.");
     }
 
+    /// <summary>An UNTRUSTED spec cannot suppress confirmation for a side-effecting GET/HEAD via
+    /// SideEffectHint:"none" — the semantic inference overrides the hint. A TRUSTED spec keeps control.</summary>
+    [Fact]
+    public void OpenApiImporter_untrusted_none_hint_cannot_suppress_a_side_effecting_get()
+    {
+        var schema = new ToolSchema(
+            Name: "send_reminder", Method: "GET", Summary: "Send a reminder email.",
+            Parameters: new[] { "id" }, SideEffectHint: "none");
+
+        var untrusted = OpenApiImporter.ToContract(schema);
+        Assert.NotEqual("none", untrusted.SideEffect);
+        Assert.True(untrusted.RequiresConfirmation);
+
+        var trusted = OpenApiImporter.ToContract(schema, trusted: true);
+        Assert.Equal("none", trusted.SideEffect);
+        Assert.False(trusted.RequiresConfirmation);
+    }
+
+    /// <summary>The MCP pre-forward audit binds the EXACT forwarded payload (signed), including data fields
+    /// the typed action doesn't model — e.g. write_file.content — so what was sent is tamper-evident.</summary>
+    [Fact]
+    public void Mcp_forward_records_the_signed_exact_payload_including_content()
+    {
+        var root = TempRoot();
+        var auditDir = TempRoot();
+        try
+        {
+            var store = new FileRunArtifactStore(auditDir);
+            var proxy = new McpProxy(Runtime(), Workspace.CreateDemo(), allowedRoot: root,
+                auditStore: store, auditKeyProvider: McpTestKeyProvider, approvalService: NewApprovalService(), tenantId: "acme");
+            var write = new McpToolCall("write_file", new Dictionary<string, string>
+            { ["path"] = Path.Combine(root, "out.txt"), ["content"] = "TOP-SECRET-DATA" });
+            var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var token = proxy.MintApprovalChallenge(write, now, now + 300, "n");
+
+            var fwd = proxy.GateAndForward(write, new FakeMcpClient(() => "ok"), new HashSet<string> { token });
+            Assert.True(fwd.Gate.Allowed);
+
+            var id = store.List().Single();
+            var ext = store.ReadExternalCall(id, McpTestKeyProvider);   // verifies the signature under the audit key
+            Assert.NotNull(ext);
+            Assert.Contains("TOP-SECRET-DATA", ext!.Payload);          // content (absent from the typed action) is bound + signed
+        }
+        finally { Directory.Delete(root, true); Directory.Delete(auditDir, true); }
+    }
+
     /// <summary>
     /// A DELETE without a risk hint infers Risk=high from the method.
     /// </summary>

@@ -104,6 +104,25 @@ public sealed class WebTests
     }
 
     [Fact]
+    public async Task Retention_caps_live_runs_per_tenant()
+    {
+        Environment.SetEnvironmentVariable("INTENTMESH_WEB_TOKEN", null);
+        Environment.SetEnvironmentVariable("INTENTMESH_RUNS_KEEP", "1");
+        var (f, runs) = Make();
+        try
+        {
+            var c = f.CreateClient();
+            // Two DISTINCT prompts → two content-addressed runs; with KEEP=1 the older is archived.
+            (await c.PostAsJsonAsync("/api/run", new { prompt = "Plan my Friday, move anything flexible, book an hour for the gym, and draft Sarah the meeting notes." })).EnsureSuccessStatusCode();
+            (await c.PostAsJsonAsync("/api/run", new { prompt = "Clean up my downloads and delete anything that looks like junk." })).EnsureSuccessStatusCode();
+
+            var history = await c.GetFromJsonAsync<object[]>("/api/runs");
+            Assert.Single(history!);   // only the newest live run remains
+        }
+        finally { Environment.SetEnvironmentVariable("INTENTMESH_RUNS_KEEP", null); Cleanup(f, runs); }
+    }
+
+    [Fact]
     public async Task A_run_persists_and_appears_in_history()
     {
         Environment.SetEnvironmentVariable("INTENTMESH_WEB_TOKEN", null);

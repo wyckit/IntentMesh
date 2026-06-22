@@ -3,6 +3,37 @@
 All notable changes to IntentMesh. Claims are test-backed; see [docs/MATURITY.md](docs/MATURITY.md)
 for the production-ready / experimental / future breakdown.
 
+## v1.15.0 — Container startup, audit binding & production-auth hardening (eighth review pass)
+
+Closes an eighth external review (3 High + 6 Medium). **256 passing + 3 env-gated skipped.**
+
+High:
+- **Container startup uses the embedded bundle.** The web host now falls back to the bundle embedded in
+  `IntentMesh.Core` when no `dataset/compiled` dir is on disk — a published/containerized host starts
+  self-contained (as the Dockerfile states) instead of exiting fatally.
+- **MCP audit binds the exact forwarded payload.** Alongside the signed bundle, `GateAndForward` persists
+  a **signed `external.call.json`** recording the precise normalized JSON-RPC payload sent — including data
+  fields the typed action doesn't model (`write_file.content`, `edit_file.edits`, `search_files.pattern`,
+  email body). Owner records are now HMAC-signed and use a distinct principal (not tenant==principal).
+- **Production auth hardening.** `INTENTMESH_AUTH_KEY` must DIFFER from `INTENTMESH_AUDIT_KEY`;
+  `INTENTMESH_PROXY_SECRET` must be ≥16 chars in Production; and the rate-limit client key uses the
+  **last** `X-Forwarded-For` hop (stamped by the trusted proxy), not the spoofable leftmost.
+
+Medium:
+- **Untrusted `SideEffectHint:"none"` can't suppress a side-effecting GET/HEAD** — inference overrides the
+  hint for untrusted specs (trusted specs keep control).
+- **128-bit run ids + collision-fail.** Run ids are now 32 hex; `Save` fails closed if a different signed
+  bundle already exists at an id (idempotent re-save still allowed).
+- **Signed, tamper-evident owner sidecar** (see above) + distinct MCP principal.
+- **Retention enforced by the web host.** After each persist, the per-tenant live-run set is capped to
+  `INTENTMESH_RUNS_KEEP` (default 1000; older runs archived) so clients can't grow it without bound.
+- **Opt-in NuGet signing wired in CI** — signs the packages when a `NUGET_SIGN_CERT_BASE64` /
+  `NUGET_SIGN_CERT_PASSWORD` secret is configured (checksums computed after signing); ships unsigned
+  otherwise (provenance attestation + SHA256SUMS still apply). Cryptographic signing still needs you to
+  supply a certificate.
+- **Doc/version drift fixed** — README status reflects the current version; the stale `INTENTMESH_WEB_TOKEN`
+  reverse-proxy guidance is replaced with the token/proxy-mode contract.
+
 ## v1.14.1 — Per-tool MCP forward-arg allowlist (all built-ins)
 
 Extends (and corrects) the v1.14.0 forward-arg stripping. **251 passing + 3 env-gated skipped.**

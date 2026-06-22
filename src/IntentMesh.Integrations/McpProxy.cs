@@ -111,6 +111,7 @@ public sealed class McpProxy
     private readonly IAuditKeyProvider? _auditKeyProvider;
     private readonly ApprovalChallengeService? _approvalService;
     private readonly string _tenantId;
+    private readonly string _principalId;
 
     /// <param name="runtime">
     /// A loaded IntentMeshRuntime. The caller controls which capabilities are
@@ -139,10 +140,12 @@ public sealed class McpProxy
     /// token with <see cref="MintApprovalChallenge"/> and pass it as the approval. Supplying approvals
     /// without this service throws (a gated call simply stays blocked if nothing is approved).</param>
     /// <param name="tenantId">Tenant the proxy acts for (binds approval challenges + audit ownership).</param>
+    /// <param name="principalId">The principal recorded as the run owner — distinct from the tenant (the
+    /// actor identity, e.g. the connected client/service), defaulting to <c>mcp-proxy</c>.</param>
     public McpProxy(IntentMeshRuntime runtime, Workspace workspace, string? allowedRoot = null,
         Func<McpToolCall, (TypedAction? action, string label)?>? customMapper = null,
         IRunArtifactStore? auditStore = null, IAuditKeyProvider? auditKeyProvider = null,
-        ApprovalChallengeService? approvalService = null, string? tenantId = null)
+        ApprovalChallengeService? approvalService = null, string? tenantId = null, string? principalId = null)
     {
         _runtime = runtime;
         _workspace = workspace;
@@ -152,19 +155,26 @@ public sealed class McpProxy
         _auditKeyProvider = auditKeyProvider;
         _approvalService = approvalService;
         _tenantId = tenantId ?? "default";
+        _principalId = principalId ?? "mcp-proxy";
         if (_auditStore is not null && _auditKeyProvider is null)
             throw new ArgumentException("auditKeyProvider is required when auditStore is set (the pre-forward audit must be signed).", nameof(auditKeyProvider));
+    }
+
+    /// <summary>The canonical, key-sorted payload of a call (tool + args) — the exact bytes bound into the
+    /// signed external-call record (so data fields the typed action doesn't model, e.g. file content or an
+    /// email body, are still part of the tamper-evident audit).</summary>
+    private static string CanonicalPayload(McpToolCall call)
+    {
+        var sorted = new SortedDictionary<string, string>(StringComparer.Ordinal);
+        foreach (var kv in call.Args) sorted[kv.Key] = kv.Value;
+        return call.Tool + "\n" + JsonSerializer.Serialize(sorted);
     }
 
     /// <summary>A deterministic fingerprint of a call (tool + canonical, key-sorted args) — the identity an
     /// approval challenge is bound to, so a challenge for one (tool, args) can't approve a different call.</summary>
     public static string CallFingerprint(McpToolCall call)
-    {
-        var sorted = new SortedDictionary<string, string>(StringComparer.Ordinal);
-        foreach (var kv in call.Args) sorted[kv.Key] = kv.Value;
-        var canonical = call.Tool + "\n" + JsonSerializer.Serialize(sorted);
-        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
-    }
+        => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(CanonicalPayload(call)))).ToLowerInvariant();
 
     /// <summary>Mint a server-issued approval challenge bound to this exact call + tenant + expiry. The
     /// returned token is the ONLY thing that approves the call's gated node — a raw node id cannot.
@@ -294,15 +304,24 @@ public sealed class McpProxy
             return new McpForwardResult(gate, ServerResponse: null);
         }
 
+        // Compute the NORMALIZED forward call FIRST so the EXACT bytes that will be sent (including data
+        // fields the typed action doesn't model — file content, edits, email body) are bound into the
+        // signed audit, not just the typed decision.
+        var forwardCall = NormalizeForForward(call);
+
         // Durable signed audit BEFORE the external side effect: persist a signed TraceBundle of the
-        // approved gate decision first. FAIL-CLOSED — if the audit can't be written, the call is NOT
-        // forwarded, so a real MCP side effect can never occur without a record.
+        // approved gate decision, a signed owner record, and the signed exact forwarded payload. FAIL-CLOSED
+        // — if the audit can't be written, the call is NOT forwarded, so a real MCP side effect can never
+        // occur without a complete signed record.
         try
         {
             var bundle = TraceBundleBuilder.From(gate.RunResult, (gate.AppliedApprovals ?? Array.Empty<string>()).ToList(), _auditKeyProvider);
             var runId = _auditStore.Save(bundle);
             if (_auditStore is FileRunArtifactStore fs)
-                fs.RecordOwner(runId, new RunOwner(_tenantId, _tenantId, DateTimeOffset.UtcNow.ToUnixTimeSeconds()));
+            {
+                fs.RecordOwner(runId, new RunOwner(_principalId, _tenantId, DateTimeOffset.UtcNow.ToUnixTimeSeconds()), _auditKeyProvider);
+                fs.RecordExternalCall(runId, CanonicalPayload(forwardCall), _auditKeyProvider);
+            }
             progress?.Report($"audited {call.Tool} (run {runId})");
         }
         catch (Exception ex)
@@ -313,10 +332,6 @@ public sealed class McpProxy
                 ServerResponse: null);
         }
 
-        // Forward the NORMALIZED call: a filesystem path is rewritten to the exact canonical in-root
-        // path the gate validated, so the server can't re-resolve a relative/aliased original arg to a
-        // different (possibly escaping) target than what was checked (time-of-check/time-of-use).
-        var forwardCall = NormalizeForForward(call);
         progress?.Report($"forwarding {call.Tool}");
         var response = ForwardToRealMcpServer(forwardCall, client);
         progress?.Report($"forwarded {call.Tool}");

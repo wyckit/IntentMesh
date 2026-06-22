@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 
 namespace IntentMesh.Core;
@@ -37,6 +39,8 @@ public sealed class FileRunArtifactStore : IRunArtifactStore
     /// access-control record (who created the run), not part of the tamper-evident audit, so writing it
     /// does not change the bundle signature or the audit schema.</summary>
     public const string OwnerFile = "owner.json";
+    /// <summary>Signed record of the exact external call forwarded for this run (e.g. an MCP payload).</summary>
+    public const string ExternalCallFile = "external.call.json";
     private static readonly JsonSerializerOptions OwnerJson = new() { PropertyNameCaseInsensitive = true };
     private readonly string _root;
 
@@ -46,9 +50,11 @@ public sealed class FileRunArtifactStore : IRunArtifactStore
         Directory.CreateDirectory(_root);
     }
 
-    /// <summary>Deterministic run id: the first 16 hex of the bundle signature.</summary>
+    /// <summary>Deterministic content-address: the first 32 hex (128-bit) of the bundle signature — long
+    /// enough that a collision between two DIFFERENT runs is negligible (<see cref="Save"/> still fails
+    /// closed on the astronomically-unlikely collision rather than overwriting a different run).</summary>
     public static string RunIdOf(TraceBundle bundle)
-        => bundle.BundleSignature[..Math.Min(16, bundle.BundleSignature.Length)];
+        => bundle.BundleSignature[..Math.Min(32, bundle.BundleSignature.Length)];
 
     /// <summary>A run id is 1–64 hex characters — exactly the shape <see cref="RunIdOf"/> produces. By
     /// construction it has no path separator, drive, or <c>..</c>, so it can never escape the runs root.</summary>
@@ -81,8 +87,18 @@ public sealed class FileRunArtifactStore : IRunArtifactStore
     {
         var id = RunIdOf(bundle);
         var dir = RunDir(id);
+        var bundlePath = Path.Combine(dir, BundleFile);
+        if (File.Exists(bundlePath))
+        {
+            // Content-addressed: the same id MUST mean the same bundle. Re-saving an identical run is
+            // idempotent; a different signature under the same id is a collision — fail closed rather than
+            // overwrite a distinct run's audit record.
+            var existing = TraceBundleBuilder.FromJson(File.ReadAllText(bundlePath));
+            if (!string.Equals(existing.BundleSignature, bundle.BundleSignature, StringComparison.Ordinal))
+                throw new InvalidOperationException($"Run id '{id}' collision: a different signed bundle already exists at this id.");
+        }
         Directory.CreateDirectory(dir);
-        WriteAtomic(Path.Combine(dir, BundleFile), TraceBundleBuilder.ToJson(bundle));
+        WriteAtomic(bundlePath, TraceBundleBuilder.ToJson(bundle));
         foreach (var (name, json) in TraceBundleBuilder.SplitFiles(bundle))   // derived exports
             WriteAtomic(Path.Combine(dir, name), json);
         return id;
@@ -149,18 +165,64 @@ public sealed class FileRunArtifactStore : IRunArtifactStore
         return File.Exists(path) ? File.ReadAllText(path) : null;
     }
 
-    /// <summary>Record the principal/tenant that created a run (an access-control sidecar, not part of
-    /// the signed bundle). Written atomically into the run directory.</summary>
-    public void RecordOwner(string runId, RunOwner owner)
-        => WriteAtomic(Path.Combine(RunDir(runId), OwnerFile), JsonSerializer.Serialize(owner, OwnerJson));
+    /// <summary>Record the principal/tenant that created a run. When a <paramref name="signer"/> is given,
+    /// the record is HMAC-signed so tampering with the (otherwise plain) sidecar is detectable on read.</summary>
+    public void RecordOwner(string runId, RunOwner owner, IAuditKeyProvider? signer = null)
+    {
+        if (signer is not null)
+            owner = owner with { Signature = AuditSigner.SignString(OwnerCanonical(owner), signer), KeyId = signer.KeyId };
+        WriteAtomic(Path.Combine(RunDir(runId), OwnerFile), JsonSerializer.Serialize(owner, OwnerJson));
+    }
 
-    /// <summary>Read a run's ownership sidecar, or null if none was recorded.</summary>
-    public RunOwner? ReadOwner(string runId)
+    /// <summary>Read a run's ownership sidecar, or null if none was recorded. When a
+    /// <paramref name="verifier"/> is given, an unsigned or tamper-detected record returns null (the
+    /// ownership claim is rejected rather than trusted).</summary>
+    public RunOwner? ReadOwner(string runId, IAuditKeyProvider? verifier = null)
     {
         var path = Path.Combine(RunDir(runId), OwnerFile);
         if (!File.Exists(path)) return null;
-        try { return JsonSerializer.Deserialize<RunOwner>(File.ReadAllText(path), OwnerJson); }
+        RunOwner? owner;
+        try { owner = JsonSerializer.Deserialize<RunOwner>(File.ReadAllText(path), OwnerJson); }
         catch (JsonException) { return null; }
+        if (owner is null) return null;
+        if (verifier is not null)
+        {
+            if (string.IsNullOrEmpty(owner.Signature)) return null;
+            var expected = AuditSigner.SignString(OwnerCanonical(owner), verifier);
+            if (!CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(expected), Encoding.UTF8.GetBytes(owner.Signature)))
+                return null;
+        }
+        return owner;
+    }
+
+    /// <summary>The fields the owner signature covers (everything but the signature itself).</summary>
+    private static string OwnerCanonical(RunOwner o) => $"{o.PrincipalId}\n{o.TenantId}\n{o.CreatedAtUnix}";
+
+    /// <summary>Record the EXACT external call forwarded to a downstream server (e.g. an MCP JSON-RPC
+    /// payload), HMAC-signed with the audit key — so the precise bytes sent (including data fields the
+    /// typed action doesn't model, like file content or an email body) are bound to the run, tamper-evident.</summary>
+    public void RecordExternalCall(string runId, string canonicalPayload, IAuditKeyProvider signer)
+    {
+        var rec = new ExternalCallRecord(canonicalPayload, AuditSigner.SignString(canonicalPayload, signer), signer.KeyId);
+        WriteAtomic(Path.Combine(RunDir(runId), ExternalCallFile), JsonSerializer.Serialize(rec, OwnerJson));
+    }
+
+    /// <summary>Read the signed external-call record, or null if none / signature invalid under the verifier.</summary>
+    public ExternalCallRecord? ReadExternalCall(string runId, IAuditKeyProvider? verifier = null)
+    {
+        var path = Path.Combine(RunDir(runId), ExternalCallFile);
+        if (!File.Exists(path)) return null;
+        ExternalCallRecord? rec;
+        try { rec = JsonSerializer.Deserialize<ExternalCallRecord>(File.ReadAllText(path), OwnerJson); }
+        catch (JsonException) { return null; }
+        if (rec is null) return null;
+        if (verifier is not null)
+        {
+            var expected = AuditSigner.SignString(rec.Payload, verifier);
+            if (!CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(expected), Encoding.UTF8.GetBytes(rec.Signature)))
+                return null;
+        }
+        return rec;
     }
 
     public IReadOnlyList<string> List()
@@ -221,8 +283,14 @@ public sealed class FileRunArtifactStore : IRunArtifactStore
 }
 
 /// <summary>Ownership record for a persisted run: the principal and tenant that created it, and when.
-/// Used for tenant-scoped access control and audit display — not part of the signed bundle.</summary>
-public sealed record RunOwner(string PrincipalId, string TenantId, long CreatedAtUnix);
+/// Used for tenant-scoped access control and audit display. Optionally HMAC-signed (<see cref="Signature"/>
+/// under <see cref="KeyId"/>) so a tamper of this otherwise-plain sidecar is detectable on read.</summary>
+public sealed record RunOwner(string PrincipalId, string TenantId, long CreatedAtUnix,
+    string? Signature = null, string? KeyId = null);
+
+/// <summary>Signed record of the exact external (e.g. MCP JSON-RPC) call forwarded for a run — the
+/// canonical payload bytes plus an HMAC over them, so what was actually sent is bound to the run.</summary>
+public sealed record ExternalCallRecord(string Payload, string Signature, string KeyId);
 
 /// <summary>A compact, inspectable summary of one persisted run — the row an operator history view
 /// renders. Built from the persisted bundle (prompt, decision counts, signing key id, approvals).</summary>

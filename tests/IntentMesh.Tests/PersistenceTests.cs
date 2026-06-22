@@ -22,6 +22,42 @@ public sealed class PersistenceTests
         return root;
     }
 
+    [Fact]
+    public void Run_id_is_a_128_bit_content_address_and_resave_is_idempotent()
+    {
+        var root = TempRoot();
+        try
+        {
+            var store = new FileRunArtifactStore(root);
+            var bundle = TraceBundleBuilder.From(Runtime().Run(Prompt, Workspace.CreateDemo()));
+            var id = store.Save(bundle);
+            Assert.Equal(32, id.Length);                 // 128-bit content address (was 64-bit/16 hex)
+            Assert.Equal(id, store.Save(bundle));         // same content → idempotent, no collision throw
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void A_signed_owner_sidecar_detects_tampering_under_verification()
+    {
+        var root = TempRoot();
+        try
+        {
+            var store = new FileRunArtifactStore(root);
+            var key = new FixedKeyProvider("test", System.Text.Encoding.UTF8.GetBytes("owner-test-key-0123456789abcdef"));
+            var id = store.Save(TraceBundleBuilder.From(Runtime().Run(Prompt, Workspace.CreateDemo())));
+            store.RecordOwner(id, new RunOwner("alice", "acme", 1700000000), key);
+
+            Assert.NotNull(store.ReadOwner(id, key));                 // intact → verifies
+            Assert.Equal("alice", store.ReadOwner(id, key)!.PrincipalId);
+
+            var ownerPath = Path.Combine(root, id, FileRunArtifactStore.OwnerFile);
+            File.WriteAllText(ownerPath, File.ReadAllText(ownerPath).Replace("alice", "mallory"));
+            Assert.Null(store.ReadOwner(id, key));                    // tampered → rejected under verification
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
     [Theory]
     [InlineData("../escape")]
     [InlineData("..\\escape")]
