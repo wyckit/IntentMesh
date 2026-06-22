@@ -16,6 +16,10 @@ jobs:
     runs-on: ubuntu-24.04   # pinned runner image for reproducibility
     permissions:
       contents: read         # build/test/pack run with NO write scopes — provenance signing is a separate job
+    env:
+      # Opt-in NuGet signing: true only when a code-signing cert secret is configured (evaluated here so
+      # the step `if:` doesn't reference secrets directly).
+      HAS_SIGN_CERT: ${{ secrets.NUGET_SIGN_CERT_BASE64 != '' }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
@@ -74,14 +78,33 @@ jobs:
             echo "::error::Vulnerable packages detected"; exit 1
           fi
 
-      - name: Pack (release libraries) + validate + checksums
+      - name: Pack (release libraries) + validate
         run: |
           dotnet pack IntentMesh.slnx -c Release --no-build -o artifacts/pack
           ls -1 artifacts/pack/*.nupkg
           for pkg in IntentMesh.Tlm IntentMesh.Core IntentMesh.Integrations; do
             ls artifacts/pack/$pkg.*.nupkg >/dev/null 2>&1 || { echo "::error::missing package $pkg"; exit 1; }
           done
-          ( cd artifacts/pack && sha256sum *.nupkg > SHA256SUMS && cat SHA256SUMS )
+
+      # Cryptographic NuGet signing is opt-in: it runs ONLY when a code-signing certificate is provided via
+      # the NUGET_SIGN_CERT_BASE64 / NUGET_SIGN_CERT_PASSWORD secrets. Without a cert the packages ship
+      # unsigned (provenance attestation + SHA256SUMS still apply). Signing happens BEFORE checksums so the
+      # published SHA256SUMS cover the final bytes.
+      - name: Sign packages (opt-in; requires a code-signing cert secret)
+        if: ${{ env.HAS_SIGN_CERT == 'true' }}
+        env:
+          CERT_B64: ${{ secrets.NUGET_SIGN_CERT_BASE64 }}
+          CERT_PWD: ${{ secrets.NUGET_SIGN_CERT_PASSWORD }}
+        run: |
+          echo "$CERT_B64" | base64 -d > "$RUNNER_TEMP/signcert.pfx"
+          for pkg in artifacts/pack/*.nupkg; do
+            dotnet nuget sign "$pkg" --certificate-path "$RUNNER_TEMP/signcert.pfx" \
+              --certificate-password "$CERT_PWD" --timestamper http://timestamp.digicert.com
+          done
+          rm -f "$RUNNER_TEMP/signcert.pfx"
+
+      - name: Checksums (over the final, possibly-signed packages)
+        run: ( cd artifacts/pack && sha256sum *.nupkg > SHA256SUMS && cat SHA256SUMS )
 
       - name: Upload packages + checksums
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4

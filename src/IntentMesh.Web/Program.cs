@@ -51,10 +51,17 @@ var app = builder.Build();
 IntentMeshRuntime runtime;
 try
 {
-    string compiled;
+    // Prefer a dataset/compiled dir if one is present (dev), else fall back to the bundle EMBEDDED in
+    // IntentMesh.Core — so a published/containerized host with no dataset/ on disk still starts (the
+    // image is self-contained, as the Dockerfile states). Only a genuine load failure is fatal.
+    string? compiled = null;
     try { compiled = DatasetLocator.FindCompiledDir(); }
-    catch { compiled = DatasetLocator.FindCompiledDir(AppContext.BaseDirectory); }
-    runtime = IntentMeshRuntime.Load(compiled);
+    catch
+    {
+        try { compiled = DatasetLocator.FindCompiledDir(AppContext.BaseDirectory); }
+        catch { compiled = null; }
+    }
+    runtime = IntentMeshRuntime.Load(compiled);   // null => embedded bundle
 }
 catch (Exception ex)
 {
@@ -68,6 +75,10 @@ catch (Exception ex)
 var runsDir = Environment.GetEnvironmentVariable("INTENTMESH_RUNS_DIR")
     ?? Path.Combine(Directory.GetCurrentDirectory(), "runs");
 Directory.CreateDirectory(runsDir);
+
+// Retention guard: after each persisted run, keep at most this many LIVE runs PER TENANT (older ones are
+// archived) so distributed clients can't grow the live set without bound. 0 disables. Default 1000.
+var runsKeep = int.TryParse(Environment.GetEnvironmentVariable("INTENTMESH_RUNS_KEEP"), out var rk) && rk >= 0 ? rk : 1000;
 
 // The audit key provider, rotation-aware: prior keys (INTENTMESH_AUDIT_PRIOR_KEYS) let runs signed
 // before a key rotation still verify/replay. Sign and verify go through THIS provider so a bundle's
@@ -123,14 +134,15 @@ if (app.Environment.IsProduction() && !realAuthConfigured
     return;
 }
 
-// Production safety #2b: trusted-proxy mode in Production MUST require a shared proxy secret — otherwise
-// asserted X-Auth-* headers would be trusted from any loopback-presenting source.
-if (app.Environment.IsProduction() && trustedProxy && string.IsNullOrEmpty(proxySecret)
+// Production safety #2b: trusted-proxy mode in Production MUST require a shared proxy secret of real
+// strength (>=16 chars) — otherwise asserted X-Auth-* headers would be trusted from any loopback-presenting
+// source, or a trivially-guessable secret would.
+if (app.Environment.IsProduction() && trustedProxy && (proxySecret is null || proxySecret.Length < 16)
     && Environment.GetEnvironmentVariable("INTENTMESH_ALLOW_INSECURE_AUTH") != "1")
 {
     Console.Error.WriteLine(
-        "FATAL: trusted-proxy mode in Production requires INTENTMESH_PROXY_SECRET — the upstream proxy must present " +
-        "it as X-Proxy-Secret so injected X-Auth-* headers are trusted only from the real proxy hop.");
+        "FATAL: trusted-proxy mode in Production requires INTENTMESH_PROXY_SECRET (>=16 chars) — the upstream proxy must " +
+        "present it as X-Proxy-Secret so injected X-Auth-* headers are trusted only from the real proxy hop.");
     return;
 }
 
@@ -143,6 +155,18 @@ if (app.Environment.IsProduction() && realAuthConfigured && authKeyRaw is null
     Console.Error.WriteLine(
         "FATAL: a Production auth boundary (token or trusted-proxy) requires a dedicated INTENTMESH_AUTH_KEY (>=128-bit), " +
         "separate from the audit key — it signs session tokens and approval challenges.");
+    return;
+}
+
+// Production safety #3b: the dedicated auth key must DIFFER from the audit key — sharing one key means a
+// leaked audit key forges session tokens + approval challenges (and vice versa). Compare the parsed bytes
+// (so base64-vs-utf8 spellings of the same key are caught).
+if (app.Environment.IsProduction() && realAuthConfigured && authKeyRaw is not null
+    && System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(effectiveAuthKey, keyProvider.GetKey())
+    && Environment.GetEnvironmentVariable("INTENTMESH_ALLOW_INSECURE_AUTH") != "1")
+{
+    Console.Error.WriteLine(
+        "FATAL: INTENTMESH_AUTH_KEY must differ from INTENTMESH_AUDIT_KEY — auth/approval signing must not share the audit key.");
     return;
 }
 
@@ -322,13 +346,14 @@ app.MapPost("/api/run", (RunRequest req, HttpContext http) =>
     try
     {
         runId = store.Save(TraceBundleBuilder.From(result, new List<string>(), keyProvider));
-        store.RecordOwner(runId, new RunOwner(p.PrincipalId, p.TenantId, NowUnix()));
+        store.RecordOwner(runId, new RunOwner(p.PrincipalId, p.TenantId, NowUnix()), keyProvider);   // signed owner
     }
     catch (Exception ex)
     {
         Console.Error.WriteLine($"ERROR: could not persist run: {ex}");
         return Results.Json(new { error = "run could not be durably persisted" }, statusCode: 503);
     }
+    Retain(store);   // enforce the per-tenant live-run cap (best effort; the run is already persisted)
 
     http.Response.Headers["X-Run-Id"] = runId;
     if (req.Approvals is { Length: > 0 })
@@ -475,13 +500,14 @@ app.MapPost("/api/runs/{id}/approve", (string id, ApproveRequest req, HttpContex
     try
     {
         newId = store.Save(TraceBundleBuilder.From(result, approved.ToList(), keyProvider));
-        store.RecordOwner(newId, new RunOwner(p.PrincipalId, p.TenantId, now));
+        store.RecordOwner(newId, new RunOwner(p.PrincipalId, p.TenantId, now), keyProvider);   // signed owner
     }
     catch (Exception ex)
     {
         Console.Error.WriteLine($"ERROR: could not persist approved run: {ex}");
         return Results.Json(new { error = "approved run could not be durably persisted" }, statusCode: 503);
     }
+    Retain(store);   // enforce the per-tenant live-run cap
     http.Response.Headers["X-Run-Id"] = newId;
     return Results.Json(result);
 });
@@ -546,14 +572,27 @@ static string? ClientKey(HttpContext c, bool trustedProxy, string? proxySecret)
         : remote is null || IPAddress.IsLoopback(remote));
     if (proxyTrusted)
     {
+        // Use the LAST X-Forwarded-For hop — the value stamped by the trusted proxy (the client as IT saw
+        // it). The leftmost entries are client-supplied and forgeable, so a direct client can't rotate a
+        // spoofed prefix to mint fresh rate-limit buckets. (Contract: a single trusted proxy that appends
+        // or sets XFF to the real client — see docs/DEPLOYMENT.md.)
         var fwd = c.Request.Headers["X-Forwarded-For"].FirstOrDefault();
-        if (!string.IsNullOrWhiteSpace(fwd)) return fwd.Split(',')[0].Trim();
+        if (!string.IsNullOrWhiteSpace(fwd)) return fwd.Split(',')[^1].Trim();
     }
     return remote?.ToString();
 }
 
 static bool CanRead(AuthPrincipal p)
     => p.Has(Roles.Viewer) || p.Has(Roles.Operator) || p.Has(Roles.Approver);   // admin covered by Has
+
+// Retention guard: keep at most runsKeep live runs in this tenant's store (older are archived). Best
+// effort — a prune failure must not fail an already-persisted run.
+void Retain(FileRunArtifactStore store)
+{
+    if (runsKeep <= 0) return;
+    try { store.Prune(runsKeep); }
+    catch (Exception ex) { Console.Error.WriteLine($"WARN: retention prune failed: {ex.Message}"); }
+}
 
 // Per-tenant run store: each tenant's runs live under {runsDir}/t/{tenant} — isolation by construction.
 // Defense-in-depth: the tenant id is already validated when the principal is resolved, but re-validate

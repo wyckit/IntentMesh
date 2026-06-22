@@ -96,8 +96,10 @@ Mode A (token) or Mode B (proxy), which give per-principal identity and real app
 - Terminate **TLS at a reverse proxy** (nginx/Caddy/cloud LB) in front of the host; the app speaks
   plain HTTP on `:8080` inside the trust boundary.
 - The proxy must set `Host` to your configured `AllowedHosts` value and forward to the container.
-- Send the `INTENTMESH_WEB_TOKEN` as `X-Api-Token` (or `Authorization: Bearer`) — the app rejects
-  non-loopback `/api` calls without it.
+- Authenticate per the mode you configured above: forward the bearer **session token** (`X-Api-Token` /
+  `Authorization: Bearer`) for token mode, or the verified `X-Auth-*` headers + `X-Proxy-Secret` for
+  trusted-proxy mode. The proxy must **strip client-supplied `X-Auth-*` / `X-Proxy-Secret` / `X-Forwarded-For`**
+  headers. (`INTENTMESH_WEB_TOKEN` is dev-only and is not a production boundary — see Authentication above.)
 
 ## Health checks
 

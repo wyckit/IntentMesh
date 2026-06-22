@@ -205,9 +205,15 @@ public static class OpenApiImporter
             ? schema.SideEffectHint.ToLowerInvariant()
             : InferSideEffect(schema.Name, schema.Summary, schema.Method);
 
-        // SSRF-of-confirmation guard: an untrusted spec can't claim a mutating op is side-effect-free.
-        if (mutating && !trusted && sideEffect == "none")
-            sideEffect = InferSideEffect(schema.Name, schema.Summary, schema.Method);
+        // SSRF-of-confirmation guard: an untrusted spec can't claim a SIDE-EFFECTING op is side-effect-free
+        // — regardless of the HTTP verb. If the hint says "none" but semantics (name/summary) or the verb
+        // infer a real side effect, the inference wins for an untrusted spec, so a side-effecting GET/HEAD
+        // can't suppress confirmation via SideEffectHint:"none". A trusted spec keeps full control.
+        if (!trusted && sideEffect == "none")
+        {
+            var inferred = InferSideEffect(schema.Name, schema.Summary, schema.Method);
+            if (inferred != "none") sideEffect = inferred;
+        }
 
         // Resolve risk: caller hint wins; otherwise infer from method AND the semantic side effect.
         var risk = !string.IsNullOrWhiteSpace(schema.RiskHint)
