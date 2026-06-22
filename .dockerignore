@@ -1,0 +1,20 @@
+# Keep the build context minimal and reproducible: never copy local build outputs, VCS history, secrets,
+# persisted runs, or packaged artifacts into the image. Only source needed to restore+publish is sent.
+**/bin/
+**/obj/
+artifacts/
+**/runs/
+.git/
+.github/
+.vs/
+.vscode/
+*.user
+*.nupkg
+*.snupkg
+**/.audit/
+**/*.env
+*.pfx
+*.key
+*.pem
+secrets*.json
+principals*.json
