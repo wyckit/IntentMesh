@@ -104,7 +104,7 @@ dotnet run --project src/IntentMesh.Cli -- --trace "plan my Friday and draft Sar
 dotnet run --project src/IntentMesh.Web                       # then open the printed localhost URL
 
 # tests
-dotnet test IntentMesh.slnx                                   # 246 passing (+3 env-gated skipped)
+dotnet test IntentMesh.slnx                                   # 249 passing (+3 env-gated skipped)
 ```
 
 ### Wrap your own agent (the SDK on-ramp)
@@ -190,7 +190,7 @@ v1.7 platform:** Phase 1 (clarity) ✓ · Phase 2 (signed artifacts, replay, con
 Phase 3 (Control Room v1) ✓ · Phase 4 (IntentBench 25/25) ✓ · Phase 5 (SDK + MCP proxy / OpenAPI
 import / real-adapter example) ✓ · Phase 6 (manifesto, whitepaper, landing) ✓. **v1.7** adds the
 adoptable platform surface (full-lifecycle SDK + host template, real-LLM-proposer hardening,
-operator workflow, audit operations). **246 passing (+3 env-gated skipped) tests · IntentBench 25/25 · TLM 7/7.**
+operator workflow, audit operations). **249 passing (+3 env-gated skipped) tests · IntentBench 25/25 · TLM 7/7.**
 
 **Proven vs. experimental vs. future (claims discipline).** [docs/MATURITY.md](docs/MATURITY.md) is
 the canonical statement: every *proven* claim has a passing test that would fail if it stopped being
@@ -207,7 +207,7 @@ and the [CHANGELOG](CHANGELOG.md).
 ## Status
 
 Research prototype with a production-shaped core, **v1.8.0**. Symbolic layer: 7 TLMs, ~125 concepts,
-7/7 round-trip verify; typed action contracts across four domains. **xUnit 246 passing (+3 env-gated skipped).** Five demo
+7/7 round-trip verify; typed action contracts across four domains. **xUnit 249 passing (+3 env-gated skipped).** Five demo
 scenarios. See [docs/MATURITY.md](docs/MATURITY.md) for the proven / experimental / future breakdown.
 Delivered beyond v0.1:
 

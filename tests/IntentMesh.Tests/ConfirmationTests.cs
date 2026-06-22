@@ -59,6 +59,19 @@ public sealed class ConfirmationTests
     }
 
     [Fact]
+    public void Granular_block_check_passes_when_the_committed_block_matches_an_approved_node()
+    {
+        var rt = Runtime();
+        var blockId = NodeId(rt.Run(Prompt1, Workspace.CreateDemo()), Kinds.CreateCalendarBlock);
+        var ws = Workspace.CreateDemo();
+        var r = rt.Run(Prompt1, ws, new HashSet<string> { blockId });
+
+        // The granular check (every committed block maps to an approved executed block node) must pass.
+        var v = r.Verification.First(x => x.Id == "pc-block-matches-approval");
+        Assert.True(v.Pass);
+    }
+
+    [Fact]
     public void Verification_proves_deleted_files_match_the_approved_refs()
     {
         var rt = Runtime();

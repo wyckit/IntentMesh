@@ -457,6 +457,57 @@ public sealed class IntegrationTests
         finally { Directory.Delete(root, true); }
     }
 
+    /// <summary>An approved MCP forward persists the APPLIED approvals in the signed bundle header (not an
+    /// empty list), so an approved side-effect bundle carries its own approval provenance.</summary>
+    [Fact]
+    public void Approved_mcp_forward_persists_the_applied_approvals()
+    {
+        var root = TempRoot();
+        var auditDir = TempRoot();
+        try
+        {
+            var store = new FileRunArtifactStore(auditDir);
+            var proxy = new McpProxy(Runtime(), Workspace.CreateDemo(), allowedRoot: root,
+                auditStore: store, auditKeyProvider: McpTestKeyProvider, approvalService: NewApprovalService(), tenantId: "test");
+            var write = new McpToolCall("write_file", new Dictionary<string, string> { ["path"] = Path.Combine(root, "out.txt"), ["content"] = "x" });
+            var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var token = proxy.MintApprovalChallenge(write, now, now + 300, "n");
+
+            var fwd = proxy.GateAndForward(write, new FakeMcpClient(() => "ok"), new HashSet<string> { token });
+            Assert.True(fwd.Gate.Allowed);
+
+            var bundle = store.Load(store.List().Single());
+            Assert.Contains("n1", bundle.Approvals);   // the applied approval is signed into the bundle, not dropped
+        }
+        finally { Directory.Delete(root, true); Directory.Delete(auditDir, true); }
+    }
+
+    /// <summary>A filesystem forward carries ONLY the recognized/validated args — an extra/unknown arg is
+    /// stripped before the call reaches the server, so it can't be honored unsigned and unchecked.</summary>
+    [Fact]
+    public void Filesystem_forward_strips_unknown_args()
+    {
+        var root = TempRoot();
+        File.WriteAllText(Path.Combine(root, "note.txt"), "hi");
+        try
+        {
+            IReadOnlyDictionary<string, string>? forwarded = null;
+            var client = new CapturingMcpClient(args => { forwarded = args; return "{}"; });
+            var proxy = new McpProxy(Runtime(), Workspace.CreateDemo(), allowedRoot: root,
+                auditStore: new FileRunArtifactStore(TempRoot()), auditKeyProvider: McpTestKeyProvider,
+                approvalService: NewApprovalService(), tenantId: "test");
+
+            var fwd = proxy.GateAndForward(
+                new McpToolCall("read_file", new Dictionary<string, string> { ["path"] = Path.Combine(root, "note.txt"), ["evil"] = "rm -rf /" }), client);
+
+            Assert.True(fwd.Gate.Allowed);
+            Assert.NotNull(forwarded);
+            Assert.False(forwarded!.ContainsKey("evil"));   // the unknown arg never reached the server
+            Assert.True(forwarded.ContainsKey("path"));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
     /// <summary>The audit sink and challenge service are MANDATORY for the dangerous operations: a proxy
     /// not wired with them cannot forward (no audit-less side effect) and cannot accept a raw approval —
     /// both throw rather than silently taking an unsafe path. A pure Gate decision still works.</summary>
@@ -480,18 +531,20 @@ public sealed class IntegrationTests
     [SkippableFact]
     public void McpProxy_wires_a_real_filesystem_mcp_server_end_to_end()
     {
+        // Skip ONLY when not requested. When INTENTMESH_FS_E2E=1 (CI), this test must actually exercise the
+        // real server — a missing node, a launch failure, or an empty tool list is a FAILURE, not a skip,
+        // so green CI genuinely proves the real filesystem-MCP path ran.
         if (Environment.GetEnvironmentVariable("INTENTMESH_FS_E2E") != "1") { Skip.If(true, "set INTENTMESH_FS_E2E=1 to run the real @modelcontextprotocol/server-filesystem E2E"); return; }
-        if (!NodeAvailable()) { Skip.If(true, "node not available — the real stdio MCP server requires it"); return; }
+        Assert.True(NodeAvailable(), "INTENTMESH_FS_E2E=1 but node is not available — the real stdio MCP server requires it.");
 
         var root = TempRoot();
         File.WriteAllText(Path.Combine(root, "note.txt"), "hello from the sandbox");
         McpStdioClient? client = null;
         try
         {
-            try { client = McpStdioClient.ConnectNpx("@modelcontextprotocol/server-filesystem@2026.1.14", root); }
-            catch { Skip.If(true, "could not launch @modelcontextprotocol/server-filesystem via npx"); return; }
+            client = McpStdioClient.ConnectNpx("@modelcontextprotocol/server-filesystem@2026.1.14", root);   // throws → test fails
             var tools = client.ListTools();
-            if (tools.Count == 0) { Skip.If(true, "filesystem MCP server exposed no tools"); return; }
+            Assert.NotEmpty(tools);                                                                          // empty → test fails
             Assert.Contains("read_file", tools);
             Assert.Contains("write_file", tools);
 

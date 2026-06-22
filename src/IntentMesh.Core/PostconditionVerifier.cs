@@ -46,6 +46,18 @@ public sealed class PostconditionVerifier
                 ws.SentEmails.Count == 0 ? "none sent" : (sentApproved ? "sent after approval" : "sent WITHOUT approval!"),
                 noUnapprovedSend, $"drafts={ws.Drafts.Count}, sent={ws.SentEmails.Count}, approved-send-node={sentApproved}");
 
+            // Granular: EVERY sent email must map to an executed (approved) send node addressed to that
+            // recipient — not merely that "some send node ran". An adapter regression that sent an extra
+            // message would pass the coarse check above but fail here.
+            var approvedSendRecipients = graph.Nodes
+                .Where(n => n.Type == Kinds.SendEmail && n.Status == NodeStatus.Executed && n.Action is SendEmailAction)
+                .Select(n => ((SendEmailAction)n.Action).Recipient)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var unapprovedSends = ws.SentEmails.Where(rcpt => !approvedSendRecipients.Contains(rcpt)).ToList();
+            Add("pc-send-matches-approval", "every sent email maps to an approved executed send",
+                unapprovedSends.Count == 0 ? "all sends approved" : "sent to UNAPPROVED recipient(s)!", unapprovedSends.Count == 0,
+                $"sent -> {string.Join(", ", ws.SentEmails)}; approved send recipients -> {string.Join(", ", approvedSendRecipients)}");
+
             bool rmatch = ws.Drafts.All(d => userRecipients.Contains(d.Recipient, StringComparer.OrdinalIgnoreCase));
             Add("pc-recipient-matches-request", "every draft recipient was named by the user",
                 rmatch ? "match" : "mismatch", rmatch,
@@ -89,6 +101,16 @@ public sealed class PostconditionVerifier
             Add("pc-block-committed-only-with-approval", "no block committed without approval",
                 !anyCommitted ? "proposal only" : (blockCommitApproved ? "committed after approval" : "committed WITHOUT approval!"),
                 ok, $"proposed={ws.ProposedBlocks.Count}, committed={ws.ProposedBlocks.Count(b => b.Committed)}, approved-node={blockCommitApproved}");
+
+            // Granular: EVERY committed block must map to an executed (approved) block node with that title.
+            var approvedBlockTitles = graph.Nodes
+                .Where(n => n.Type == Kinds.CreateCalendarBlock && n.Status == NodeStatus.Executed && n.Action is CreateCalendarBlockAction)
+                .Select(n => ((CreateCalendarBlockAction)n.Action).Title)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var unapprovedBlocks = ws.ProposedBlocks.Where(b => b.Committed && !approvedBlockTitles.Contains(b.Title)).Select(b => b.Title).ToList();
+            Add("pc-block-matches-approval", "every committed block maps to an approved executed block",
+                unapprovedBlocks.Count == 0 ? "all commits approved" : "committed UNAPPROVED block(s)!", unapprovedBlocks.Count == 0,
+                $"committed -> {string.Join(", ", ws.ProposedBlocks.Where(b => b.Committed).Select(b => b.Title))}; approved block titles -> {string.Join(", ", approvedBlockTitles)}");
         }
 
         // Files: deleted only with approval.

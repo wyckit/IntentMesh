@@ -3,6 +3,34 @@
 All notable changes to IntentMesh. Claims are test-backed; see [docs/MATURITY.md](docs/MATURITY.md)
 for the production-ready / experimental / future breakdown.
 
+## v1.14.0 — Audit fidelity, verification & supply-chain hardening (seventh review pass)
+
+Closes a seventh external review (7 High + 3 Medium). **249 passing + 3 env-gated skipped.**
+
+High:
+- **Approved MCP bundles record their approvals.** `GateAndForward` now persists the *applied* approvals
+  (the verified challenge-attested node ids), not an empty list — an approved side-effect bundle carries
+  its own signed approval header.
+- **Filesystem forwards strip unknown args.** Only recognized keys (`path/source/destination/paths/content`)
+  reach the server; an extra/unknown arg the policy never checked is dropped before forwarding.
+- **CI requires real FS-MCP behavior.** The real-filesystem E2E now *fails* (not skips) under
+  `INTENTMESH_FS_E2E=1` on a missing node / launch failure / empty tool list — green CI proves it ran.
+- **Network npm runs after packing.** The npx FS-E2E step is sequenced *after* pack + upload, so
+  network-fetched code can't mutate release artifacts (built/uploaded from a clean workspace first).
+- **Production-grade Docker.** Base images are **digest-pinned**; a `.dockerignore` keeps build outputs /
+  secrets / runs out of the context; `/data/runs` is created + `chown`ed for the non-root UID and exposed
+  as a `VOLUME`; `HEALTHCHECK` now hits `/readyz` (write-probe), not `/healthz`.
+- **Granular side-effect verification.** New `pc-send-matches-approval` and `pc-block-matches-approval`
+  prove *every* sent email / committed block maps to an approved executed node — not merely that "some
+  approved node ran" (matches the per-file delete check).
+
+Medium:
+- **Proxy-mode dedicated auth key.** In Production, trusted-proxy mode (like token mode) now requires a
+  dedicated `INTENTMESH_AUTH_KEY` so approval challenges don't share the audit key.
+- **`/api/explain` no longer honors caller approvals** — consistent with `/api/run` and `/api/export`; it
+  projects approving every gated node (kernel-computed), not caller-supplied node ids.
+- **NuGet package signing** remains a documented residual (needs a code-signing certificate).
+
 ## v1.13.0 — MCP audit + challenge approvals are now mandatory (BREAKING)
 
 Removes the opt-in/unsafe MCP paths introduced in v1.12.0. **246 passing + 3 env-gated skipped.**

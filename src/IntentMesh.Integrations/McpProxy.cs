@@ -51,7 +51,10 @@ public sealed record McpToolCall(
 /// The full IntentMesh pipeline result (nodes, policy, audit) for inspection,
 /// logging, or rendering in a control-room UI.
 /// </param>
-public sealed record McpGateResult(bool Allowed, string Reason, RunResult RunResult);
+public sealed record McpGateResult(bool Allowed, string Reason, RunResult RunResult,
+    // The approvals (verified challenge-attested node ids) actually applied to this run — recorded in the
+    // signed audit so an approved forward's bundle carries its own approval header.
+    IReadOnlyList<string>? AppliedApprovals = null);
 
 /// <summary>The outcome of <see cref="McpProxy.GateAndForward"/>: the gate decision, plus the real
 /// MCP server's raw JSON response when (and only when) the call was approved and forwarded.</summary>
@@ -256,7 +259,7 @@ public sealed class McpProxy
         string reason = policyView is not null ? $"{policyView.Decision}: {policyView.Reason}" : "No policy decision recorded.";
 
         if (status is "Allowed" or "Executed" or "Verified")
-            return new McpGateResult(Allowed: true, Reason: reason, RunResult: result);
+            return new McpGateResult(Allowed: true, Reason: reason, RunResult: result, AppliedApprovals: effectiveApprovals.ToList());
 
         var detail = status == "NeedsConfirmation"
             ? $"Gated (NeedsConfirmation): {reason} — operator approval required before forwarding."
@@ -296,7 +299,7 @@ public sealed class McpProxy
         // forwarded, so a real MCP side effect can never occur without a record.
         try
         {
-            var bundle = TraceBundleBuilder.From(gate.RunResult, new List<string>(), _auditKeyProvider);
+            var bundle = TraceBundleBuilder.From(gate.RunResult, (gate.AppliedApprovals ?? Array.Empty<string>()).ToList(), _auditKeyProvider);
             var runId = _auditStore.Save(bundle);
             if (_auditStore is FileRunArtifactStore fs)
                 fs.RecordOwner(runId, new RunOwner(_tenantId, _tenantId, DateTimeOffset.UtcNow.ToUnixTimeSeconds()));
@@ -360,6 +363,14 @@ public sealed class McpProxy
             }
             catch { /* not a JSON array — it was validated as a single path; leave as-is */ }
         }
+
+        // Forward ONLY the recognized filesystem arguments — strip any extra/unknown key so an argument the
+        // typed action never represented (and the path policy never checked) cannot be honored by the
+        // server. The forwarded payload is therefore exactly the policy-checked fields.
+        var allowed = new HashSet<string>(new[] { "path", "source", "destination", "paths", "content" }, StringComparer.Ordinal);
+        foreach (var key in args.Keys.Where(k => !allowed.Contains(k)).ToList())
+            args.Remove(key);
+
         return call with { Args = args };
 
         static string Resolve(string p, string root)

@@ -134,13 +134,15 @@ if (app.Environment.IsProduction() && trustedProxy && string.IsNullOrEmpty(proxy
     return;
 }
 
-// Production safety #3: token mode must use a DEDICATED auth key, not the audit-key fallback (purpose
-// separation between audit signing and session/approval signing).
-if (app.Environment.IsProduction() && tokenMode && authKeyRaw is null
+// Production safety #3: a real auth boundary (token OR trusted-proxy) must use a DEDICATED auth key, not
+// the audit-key fallback — session tokens AND approval challenges are signed with it, so it must be
+// separate from the audit signing key in BOTH modes.
+if (app.Environment.IsProduction() && realAuthConfigured && authKeyRaw is null
     && Environment.GetEnvironmentVariable("INTENTMESH_ALLOW_INSECURE_AUTH") != "1")
 {
     Console.Error.WriteLine(
-        "FATAL: token auth in Production requires a dedicated INTENTMESH_AUTH_KEY (>=128-bit), separate from the audit key.");
+        "FATAL: a Production auth boundary (token or trusted-proxy) requires a dedicated INTENTMESH_AUTH_KEY (>=128-bit), " +
+        "separate from the audit key — it signs session tokens and approval challenges.");
     return;
 }
 
@@ -490,8 +492,10 @@ app.MapPost("/api/explain", (RunRequest req, HttpContext http) =>
     if (!Principal(http).Has(Roles.Operator)) return Forbidden(Roles.Operator);
     var prompt = (req.Prompt ?? "").Trim();
     if (string.IsNullOrEmpty(prompt)) return Results.BadRequest(new { error = "empty prompt" });
-    var approvals = (req.Approvals ?? Array.Empty<string>()).ToHashSet(StringComparer.OrdinalIgnoreCase);
-    return Results.Json(RunExplain.Explain(runtime, prompt, Workspace.CreateDemo, approvals));
+    // Caller-asserted approvals are NOT honored (consistent with /api/run and /api/export). Explain is a
+    // pure simulation: it projects what approving EVERY gated node would do, computed by the kernel — it
+    // does not take caller-supplied node ids.
+    return Results.Json(RunExplain.Explain(runtime, prompt, Workspace.CreateDemo));
 });
 
 // Export the run as the canonical, deterministic audit artifact (replayable; no timestamps).

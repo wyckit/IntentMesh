@@ -55,11 +55,6 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}   # live-LLM test runs when configured, else skips
         run: dotnet test IntentMesh.slnx -c Release --no-build --nologo --filter "FullyQualifiedName!~McpProxy_wires_a_real_filesystem_mcp_server_end_to_end"
 
-      - name: Real filesystem MCP E2E (pinned npx; NO secrets in env)
-        env:
-          INTENTMESH_FS_E2E: '1'   # runs `npx -y @modelcontextprotocol/server-filesystem@<pinned>` — note: no ANTHROPIC_API_KEY here
-        run: dotnet test IntentMesh.slnx -c Release --no-build --nologo --filter "FullyQualifiedName~McpProxy_wires_a_real_filesystem_mcp_server_end_to_end"
-
       - name: Policy fixtures
         run: dotnet run --project src/IntentMesh.Cli -c Release --no-build -- policy fixtures
 
@@ -96,6 +91,15 @@ jobs:
             artifacts/pack/*.nupkg
             artifacts/pack/SHA256SUMS
           if-no-files-found: error
+
+      # The real-filesystem E2E runs LAST and downloads a pinned npm package via npx. It is sequenced
+      # AFTER pack + upload so network-fetched code can never mutate the release artifacts (they are
+      # already built and uploaded from a clean workspace). No secret is in this step's env. The test
+      # FAILS (does not skip) under INTENTMESH_FS_E2E=1, so a green run proves the real path executed.
+      - name: Real filesystem MCP E2E (pinned npx; runs after packing; NO secrets in env)
+        env:
+          INTENTMESH_FS_E2E: '1'   # runs `npx -y @modelcontextprotocol/server-filesystem@<pinned>` — note: no ANTHROPIC_API_KEY here
+        run: dotnet test IntentMesh.slnx -c Release --no-build --nologo --filter "FullyQualifiedName~McpProxy_wires_a_real_filesystem_mcp_server_end_to_end"
 
   # Build-provenance attestation runs in a SEPARATE job that holds the only id-token/attestations write
   # scopes — so the build/test/pack job above has no write tokens. Push events only (fork PRs can't sign).
