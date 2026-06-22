@@ -109,7 +109,9 @@ public sealed class FileRunArtifactStore : IRunArtifactStore
     /// signature-failing artifact.</summary>
     private static void WriteAtomic(string path, string content)
     {
-        var tmp = path + ".tmp";
+        // Unique temp name per write so concurrent writers (e.g. a save racing a prune) can't clobber each
+        // other's staging file — each stages to its own temp, then atomically renames into place.
+        var tmp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         File.WriteAllText(tmp, content);
         File.Move(tmp, path, overwrite: true);
     }
@@ -188,7 +190,11 @@ public sealed class FileRunArtifactStore : IRunArtifactStore
         if (verifier is not null)
         {
             if (string.IsNullOrEmpty(owner.Signature)) return null;
-            var expected = AuditSigner.SignString(OwnerCanonical(owner), verifier);
+            // Verify under the key id the record was SIGNED with (resolved via the rotation-aware provider),
+            // not the provider's current key — so rotation doesn't invalidate older signed sidecars.
+            var key = AuditSigner.ResolveKey(owner.KeyId ?? verifier.KeyId, verifier);
+            if (key is null) return null;
+            var expected = AuditSigner.SignString(OwnerCanonical(owner), key);
             if (!CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(expected), Encoding.UTF8.GetBytes(owner.Signature)))
                 return null;
         }
@@ -218,7 +224,10 @@ public sealed class FileRunArtifactStore : IRunArtifactStore
         if (rec is null) return null;
         if (verifier is not null)
         {
-            var expected = AuditSigner.SignString(rec.Payload, verifier);
+            // Verify under the recorded key id (rotation-aware), not the provider's current key.
+            var key = AuditSigner.ResolveKey(rec.KeyId, verifier);
+            if (key is null) return null;
+            var expected = AuditSigner.SignString(rec.Payload, key);
             if (!CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(expected), Encoding.UTF8.GetBytes(rec.Signature)))
                 return null;
         }
@@ -255,15 +264,23 @@ public sealed class FileRunArtifactStore : IRunArtifactStore
 
     /// <summary>Move a run's artifacts to a <c>.archive/</c> subdirectory (preserving verifiability),
     /// so retention doesn't destroy the audit trail.</summary>
+    private static readonly object _archiveLock = new();
     public void Archive(string runId)
     {
-        var src = RunDir(runId);
-        if (!Directory.Exists(src)) return;
-        var archiveRoot = Path.Combine(_root, ".archive");
-        Directory.CreateDirectory(archiveRoot);
-        var dest = Path.Combine(archiveRoot, runId);
-        if (Directory.Exists(dest)) Directory.Delete(dest, true);
-        Directory.Move(src, dest);
+        // Serialize archiving (across store instances in the process) and NEVER delete an existing archive
+        // destination: a run is content-addressed, so a dest with the same id IS the same run. Racing
+        // prunes therefore drop the redundant live copy rather than risk deleting the only archived copy.
+        lock (_archiveLock)
+        {
+            var src = RunDir(runId);
+            if (!Directory.Exists(src)) return;
+            var archiveRoot = Path.Combine(_root, ".archive");
+            Directory.CreateDirectory(archiveRoot);
+            var dest = Path.Combine(archiveRoot, runId);
+            if (Directory.Exists(dest)) { Directory.Delete(src, true); return; }   // already archived — drop the live dup
+            try { Directory.Move(src, dest); }
+            catch (IOException) when (Directory.Exists(dest)) { if (Directory.Exists(src)) Directory.Delete(src, true); }
+        }
     }
 
     /// <summary>Retention: keep the <paramref name="keepNewest"/> most-recent runs live and archive

@@ -144,8 +144,11 @@ public sealed class ApprovalChallengeService
     }
 
     /// <summary>Verify a presented challenge against the run+tenant the caller is acting on. Returns the
-    /// attested node id only when the signature, type, run, tenant, and expiry all hold.</summary>
-    public bool TryVerify(string? token, string expectedRunId, string expectedTenant, long nowUnix, out string nodeId)
+    /// attested node id only when the signature, type, run, tenant, and expiry all hold. When a
+    /// <paramref name="ledger"/> is supplied the challenge is SINGLE-USE: its nonce is consumed on success,
+    /// so the same token can't trigger a repeated side effect within its TTL.</summary>
+    public bool TryVerify(string? token, string expectedRunId, string expectedTenant, long nowUnix,
+        out string nodeId, NonceLedger? ledger = null)
     {
         nodeId = "";
         if (!SignedToken.TryDecode(token, _key, out var json)) return false;
@@ -155,8 +158,25 @@ public sealed class ApprovalChallengeService
         if (p is null || p.typ != "appr" || p.exp <= nowUnix) return false;
         if (!string.Equals(p.run, expectedRunId, StringComparison.Ordinal)) return false;
         if (!string.Equals(p.ten, expectedTenant, StringComparison.Ordinal)) return false;
+        // Consume the nonce LAST (after every other check passes) so a single-use challenge is burned only
+        // when it would actually be honored. A reused token fails here.
+        if (ledger is not null && !ledger.TryConsume(p.jti, p.exp, nowUnix)) return false;
         nodeId = p.node;
         return true;
+    }
+}
+
+/// <summary>A thread-safe single-use ledger of challenge nonces (jti). A nonce is accepted at most once;
+/// expired entries are evicted opportunistically so memory stays bounded to live (unexpired) challenges.</summary>
+public sealed class NonceLedger
+{
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, long> _seen = new();
+
+    public bool TryConsume(string jti, long expiresAtUnix, long nowUnix)
+    {
+        foreach (var kv in _seen)                      // evict expired (bounds memory to active challenges)
+            if (kv.Value <= nowUnix) _seen.TryRemove(kv.Key, out _);
+        return _seen.TryAdd(jti, expiresAtUnix);       // false if this nonce was already consumed
     }
 }
 

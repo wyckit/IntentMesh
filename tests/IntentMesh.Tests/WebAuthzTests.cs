@@ -195,6 +195,29 @@ public sealed class WebAuthzTests
     }
 
     [Fact]
+    public async Task A_used_approval_challenge_cannot_be_replayed()
+    {
+        var (f, runs) = MakeTokenMode();
+        try
+        {
+            var alice = await ClientFor(f, AliceKey);
+            var id = (await alice.PostAsJsonAsync("/api/run", new { prompt = Demo1 }))
+                .Headers.GetValues("X-Run-Id").First();
+            var challenges = (await (await alice.PostAsync($"/api/runs/{id}/challenges", null))
+                .Content.ReadFromJsonAsync<ChallengesResp>())!;
+            var tokens = challenges.challenges.Select(x => x.challenge).ToArray();
+
+            // First approval consumes the single-use challenges.
+            (await alice.PostAsJsonAsync($"/api/runs/{id}/approve", new { challenges = tokens })).EnsureSuccessStatusCode();
+
+            // Replaying the SAME challenges must not trigger a second approved run.
+            var replay = await alice.PostAsJsonAsync($"/api/runs/{id}/approve", new { challenges = tokens });
+            Assert.Equal(HttpStatusCode.BadRequest, replay.StatusCode);
+        }
+        finally { Cleanup(f, runs); }
+    }
+
+    [Fact]
     public async Task The_approver_role_is_required_to_approve()
     {
         var (f, runs) = MakeTokenMode();

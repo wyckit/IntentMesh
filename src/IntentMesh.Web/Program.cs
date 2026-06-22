@@ -98,6 +98,7 @@ var authKeyRaw = Environment.GetEnvironmentVariable("INTENTMESH_AUTH_KEY");
 var effectiveAuthKey = authKeyRaw is not null ? AuthKeys.Parse(authKeyRaw) : keyProvider.GetKey();
 var tokenSvc = new AuthTokenService(effectiveAuthKey);
 var challengeSvc = new ApprovalChallengeService(effectiveAuthKey);
+var approvalLedger = new NonceLedger();   // makes each approval challenge SINGLE-USE within its TTL
 var principals = PrincipalStore.FromEnvironment();
 var webToken = Environment.GetEnvironmentVariable("INTENTMESH_WEB_TOKEN");   // legacy single-token (default tenant)
 var tokenMode = principals.Count > 0;
@@ -446,15 +447,15 @@ app.MapPost("/api/runs/{id}/challenges", (string id, HttpContext http) =>
     try { saved = StoreFor(p.TenantId).Load(id); }
     catch (Exception ex) when (ex is FileNotFoundException or ArgumentException) { return Results.NotFound(new { error = $"no run '{id}'" }); }
 
-    // Trust the stored run BEFORE re-running it: a tampered bundle must not become input to a freshly
-    // signed approved run. (Mirrors RunReplay, which verifies before re-execution.)
     if (!TraceBundleBuilder.VerifySignature(saved, keyProvider))
         return Results.Json(new { error = "stored run failed integrity verification" }, statusCode: 409);
 
-    var res = runtime.Run(saved.Prompt, Workspace.CreateDemo(), new HashSet<string>());
+    // Mint challenges from the REVIEWED run's OWN signed policy decisions — not a fresh re-run — so the
+    // approval queue can't drift from the graph that was actually reviewed (the signed bundle is the
+    // source of truth).
     var now = NowUnix();
     var exp = now + ChallengeTtlSeconds;
-    var challenges = res.Policy.Where(x => x.RequiresConfirmation).SelectMany(x =>
+    var challenges = saved.PolicyDecisions.Decisions.Where(x => x.RequiresConfirmation).SelectMany(x =>
         // No refs → one challenge for the bare node; per-file delete → one challenge per "node#ref".
         (x.ApprovalRefs.Count == 0 ? new[] { (unit: x.NodeId, fileRef: (string?)null) }
             : x.ApprovalRefs.Select(r => (unit: $"{x.NodeId}#{r}", fileRef: (string?)r)).ToArray())
@@ -482,15 +483,19 @@ app.MapPost("/api/runs/{id}/approve", (string id, ApproveRequest req, HttpContex
     try { saved = store.Load(id); }
     catch (Exception ex) when (ex is FileNotFoundException or ArgumentException) { return Results.NotFound(new { error = $"no run '{id}'" }); }
 
-    // Trust the stored run BEFORE re-running it under approval — a tampered bundle must never become
-    // input to a newly signed approved run.
-    if (!TraceBundleBuilder.VerifySignature(saved, keyProvider))
+    // Bind approval to the EXACT reviewed graph: require the stored run to still REPRODUCE under the
+    // current runtime (signature verifies AND a deterministic re-run is byte-identical). If code/bundle
+    // behavior drifted since review, the approved graph could differ from the reviewed one — refuse.
+    var replay = RunReplay.Reproduce(runtime, Workspace.CreateDemo(), saved, keyProvider);
+    if (!replay.SignatureVerified)
         return Results.Json(new { error = "stored run failed integrity verification" }, statusCode: 409);
+    if (!replay.Reproduced)
+        return Results.Json(new { error = "stored run no longer reproduces under the current runtime (behavior drift) — re-create the run before approving" }, statusCode: 409);
 
     var now = NowUnix();
     var approved = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     foreach (var token in req.Challenges ?? Array.Empty<string>())
-        if (challengeSvc.TryVerify(token, id, p.TenantId, now, out var unit))
+        if (challengeSvc.TryVerify(token, id, p.TenantId, now, out var unit, approvalLedger))   // single-use
             approved.Add(unit);   // unit is a bare node id, or "node#fileRef" for a per-file delete
     if (approved.Count == 0)
         return Results.Json(new { error = "no valid approval challenge presented" }, statusCode: 400);

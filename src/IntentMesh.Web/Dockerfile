@@ -21,7 +21,12 @@ FROM mcr.microsoft.com/dotnet/aspnet@sha256:ddcf70ad1ab963a4fcd41fbd722a6b660e40
 WORKDIR /app
 # Run as a non-root user, and pre-create the runs volume mount point owned by that user so persistence
 # works with a named volume (the app writes signed bundles + a /readyz write-probe there).
-RUN useradd -u 10001 -m app \
+# Non-root user + the runs volume mount point (owned by that user), and curl for the HEALTHCHECK — the
+# base aspnet image ships neither wget nor curl, so the probe tool must be installed explicitly.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl \
+ && rm -rf /var/lib/apt/lists/* \
+ && useradd -u 10001 -m app \
  && mkdir -p /data/runs \
  && chown -R 10001:10001 /data/runs
 COPY --from=build /app .
@@ -39,6 +44,6 @@ VOLUME ["/data/runs"]
 #   docker run -e INTENTMESH_AUDIT_KEY=<base64 >=16 bytes> -e INTENTMESH_AUTH_KEY=<base64 >=16 bytes> \
 #              -e INTENTMESH_PRINCIPALS=/run/secrets/principals.json -e "AllowedHosts=mesh.example.com" \
 #              -v intentmesh-runs:/data/runs -p 8080:8080 intentmesh-controlroom
-HEALTHCHECK --interval=30s --timeout=3s --retries=3 CMD wget -qO- http://localhost:8080/readyz || exit 1
+HEALTHCHECK --interval=30s --timeout=3s --retries=3 CMD curl -fsS http://localhost:8080/readyz || exit 1
 
 ENTRYPOINT ["dotnet", "IntentMesh.Web.dll"]

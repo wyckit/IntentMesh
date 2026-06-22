@@ -128,6 +128,21 @@ public sealed class AuthTests
     }
 
     [Fact]
+    public void An_approval_challenge_is_single_use_with_a_ledger()
+    {
+        var svc = new ApprovalChallengeService(Key);
+        var ledger = new NonceLedger();
+        var token = svc.Mint("runA", "n1", "acme", Now, Now + 300, "nonce-x");
+
+        Assert.True(svc.TryVerify(token, "runA", "acme", Now + 10, out _, ledger));    // first use consumes it
+        Assert.False(svc.TryVerify(token, "runA", "acme", Now + 10, out _, ledger));   // reuse within TTL is rejected
+
+        // Without a ledger the call is stateless (back-compat) — verification alone doesn't consume.
+        Assert.True(svc.TryVerify(token, "runA", "acme", Now + 10, out _));
+        Assert.True(svc.TryVerify(token, "runA", "acme", Now + 10, out _));
+    }
+
+    [Fact]
     public void Trusted_proxy_headers_map_to_a_principal_and_reject_invalid_ids()
     {
         Assert.True(TrustedProxyAuth.TryFromHeaders("alice", "acme", "operator, approver", out var p));
